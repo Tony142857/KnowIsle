@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}知屿 KnowIsle{% endblock %}</title>
+  {# TODO(v0.9 前端): 答辩前将 CDN 依赖本地化到 static/vendor，保证断网兜底演示 #}
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/htmx.org@1.9.12"></script>
+  <script defer src="https://unpkg.com/alpinejs@3.14.1/dist/cdn.min.js"></script>
+  <link rel="stylesheet" href="/static/css/main.css">
+  {% block head %}{% endblock %}
+</head>
+<body class="bg-slate-50 text-slate-800 min-h-screen flex flex-col">
+  <header class="bg-white border-b border-slate-200">
+    <nav class="max-w-6xl mx-auto px-4 h-14 flex items-center justify-between">
+      <a href="/" class="text-lg font-bold text-sky-700">知屿 <span class="text-sm font-normal text-slate-400">KnowIsle</span></a>
+      <div class="flex items-center gap-4 text-sm">
+        {# TODO(v0.6): 通知未读角标（HTMX 每 30s 轮询 /api/notifications） #}
+        <a href="/login" class="text-slate-600 hover:text-sky-700">登录</a>
+      </div>
+    </nav>
+  </header>
+
+  <main class="flex-1 max-w-6xl w-full mx-auto px-4 py-8">
+    {% block content %}{% endblock %}
+  </main>
+
+  <footer class="border-t border-slate-200 py-4 text-center text-xs text-slate-400">
+    知屿 KnowIsle · 每门课程是一座知识岛屿
+  </footer>
+</body>
+</html>

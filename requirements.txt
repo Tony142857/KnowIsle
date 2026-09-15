@@ -1,0 +1,39 @@
+# ---------- Web ----------
+fastapi>=0.115,<1.0
+uvicorn[standard]>=0.30
+gunicorn>=22.0
+jinja2>=3.1
+python-multipart>=0.0.9
+aiofiles>=23.2
+sse-starlette>=2.1          # SSE 流式问答（/api/chat）
+
+# ---------- 配置与校验 ----------
+pydantic>=2.7
+pydantic-settings>=2.3
+email-validator>=2.1
+
+# ---------- 存储 ----------
+sqlalchemy[asyncio]>=2.0,<3.0
+asyncpg>=0.29
+alembic>=1.13
+redis>=5.0
+arq>=0.26
+aioboto3>=12.0              # 异步 S3 客户端（对象存储 SeaweedFS）
+httpx>=0.27                 # LLM / Chroma HTTP 客户端
+
+# ---------- 文档解析（模块 A1）----------
+pdfplumber>=0.11
+PyMuPDF>=1.24
+python-pptx>=1.0
+python-docx>=1.1
+markdown>=3.6
+rank-bm25>=0.2.2
+
+# ---------- 安全 ----------
+passlib[bcrypt]>=1.7
+itsdangerous>=2.2
+cryptography>=42            # Fernet：用户自定义 Key 加密
+PyJWT>=2.8                  # API 通道 JWT
+
+# TODO(v0.3, Embedding): sentence-transformers + torch(CPU)，本地 bge-small-zh-v1.5
+# 体积较大（约 2GB 级镜像增量），随 core/embeddings 模块落地时引入，容器内安装

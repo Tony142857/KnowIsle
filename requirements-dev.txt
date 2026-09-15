@@ -1,0 +1,6 @@
+-r requirements.txt
+
+# 测试与代码质量（CI 使用，不进入生产镜像）
+pytest>=8.0
+pytest-asyncio>=0.23
+ruff>=0.5

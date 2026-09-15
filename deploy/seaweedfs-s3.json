@@ -1,0 +1,14 @@
+{
+  "identities": [
+    {
+      "name": "knowisle",
+      "credentials": [
+        {
+          "accessKey": "knowisle",
+          "secretKey": "knowisle_dev_secret"
+        }
+      ],
+      "actions": ["Admin", "Read", "Write"]
+    }
+  ]
+}

@@ -1,0 +1,30 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# 测试与工具缓存
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# 环境与密钥（绝不提交）
+.env
+
+# 构建产物
+dist/
+build/
+client/dist/
+client/build/
+
+# 备份与本地数据
+backups/
+
+# IDE / 系统
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db

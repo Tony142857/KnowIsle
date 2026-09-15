@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block title %}登录 · 知屿 KnowIsle{% endblock %}
+{% block content %}
+<div class="max-w-sm mx-auto py-12">
+  <h1 class="text-xl font-bold text-center">登录知屿</h1>
+  {# TODO(v0.2): AUTH_PROVIDER=cas 时跳转学校统一认证；email_fallback 时启用下方表单 #}
+  <form class="mt-6 space-y-4" hx-post="/api/auth/email/verify" hx-target="this" hx-swap="outerHTML">
+    <input type="text" name="student_no" placeholder="学号" required
+           class="w-full rounded border border-slate-300 px-3 py-2 text-sm">
+    <input type="email" name="email" placeholder="校园邮箱（@edu.cn）" required
+           class="w-full rounded border border-slate-300 px-3 py-2 text-sm">
+    <button type="submit"
+            class="w-full rounded bg-sky-600 py-2 text-sm text-white hover:bg-sky-700">
+      发送验证码
+    </button>
+  </form>
+  <p class="mt-4 text-center text-xs text-slate-400">登录即认证 · 不对校外开放注册</p>
+</div>
+{% endblock %}

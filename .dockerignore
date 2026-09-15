@@ -1,0 +1,12 @@
+.git
+.github
+.env
+**/__pycache__
+**/*.pyc
+.pytest_cache
+.ruff_cache
+client/dist
+client/build
+backups
+*.md
+!README.md

@@ -1,0 +1,114 @@
+# 知屿 KnowIsle 单机一键部署（§15.2）
+# 用法（项目根目录）：docker compose -f deploy/docker-compose.yml up -d --build
+name: knowisle
+
+services:
+  app:                                # FastAPI（Gunicorn + Uvicorn workers）
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    image: knowisle-app:latest
+    env_file: ../.env
+    command: >
+      sh -c "alembic upgrade head &&
+             gunicorn app.main:app -k uvicorn.workers.UvicornWorker -w 4 -b 0.0.0.0:8000"
+    ports:
+      - "127.0.0.1:8000:8000"         # 开发调试直连（生产仅经 nginx）
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      seaweedfs:
+        condition: service_healthy
+      chroma:
+        condition: service_started
+    restart: unless-stopped
+
+  worker:                             # ARQ 异步任务进程（与 app 同镜像，不同启动命令）
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    image: knowisle-app:latest
+    env_file: ../.env
+    command: arq app.workers.settings.WorkerSettings
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      seaweedfs:
+        condition: service_healthy
+      chroma:
+        condition: service_started
+    restart: unless-stopped
+
+  postgres:                           # 业务数据 + 元数据（§7.2）
+    image: postgres:16-alpine
+    env_file: ../.env                 # 读取 POSTGRES_USER / POSTGRES_PASSWORD / POSTGRES_DB
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+    restart: unless-stopped
+
+  redis:                              # 会话 / 缓存 / ARQ 队列 / 贡献榜 / 限流
+    image: redis:7-alpine
+    command: redis-server --appendonly yes
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+    restart: unless-stopped
+
+  seaweedfs:                          # 对象存储：原始文件 + 预览产物（S3 兼容，Apache-2.0）
+    image: chrislusf/seaweedfs:4.47
+    command: >-
+      server -dir=/data
+      -master.port=9333 -volume.port=8080
+      -filer -filer.port=8888
+      -s3 -s3.port=8333 -s3.config=/etc/seaweedfs/s3.json
+      -master.volumeSizeLimitMB=2048
+    volumes:
+      - seaweeddata:/data
+      - ./seaweedfs-s3.json:/etc/seaweedfs/s3.json:ro
+    ports:
+      - "127.0.0.1:8888:8888"         # Filer Web 界面（仅本机，调试用）
+      - "127.0.0.1:8333:8333"         # S3 API（仅本机，调试用）
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://127.0.0.1:9333/cluster/status > /dev/null || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+    restart: unless-stopped
+
+  chroma:                             # 向量库（双 Collection：chunks_public / chunks_personal）
+    image: chromadb/chroma:1.0.15
+    environment:
+      IS_PERSISTENT: "TRUE"
+      ANONYMIZED_TELEMETRY: "FALSE"
+    volumes:
+      - chromadata:/data
+    restart: unless-stopped
+
+  nginx:                              # 反向代理 / TLS（云端可选）/ 静态资源 / 限流
+    image: nginx:1.27-alpine
+    volumes:
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    ports:
+      - "8080:80"                     # 本地演示入口 http://localhost:8080
+    depends_on:
+      - app
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+  redisdata:
+  seaweeddata:
+  chromadata:
