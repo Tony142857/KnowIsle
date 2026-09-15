@@ -6,6 +6,11 @@
 
 技术栈：FastAPI + Jinja2/HTMX/Tailwind · PostgreSQL 16 · Redis 7 · SeaweedFS（S3） · Chroma · ARQ · Docker Compose
 
+## 当前状态
+
+**v0.1 已完成**（2026-09-15）：项目骨架 ✅ · Docker Compose 一键拉起 ✅ · 数据库 24 表 DDL + Alembic 迁移 ✅ · CI（ruff + pytest）✅ · Jinja2 基础布局 ✅（导航栏 / 板块占位页 / 通知角标轮询 / 404 页面）
+进度详情见 [docs/开发进度与目标.md](docs/开发进度与目标.md)。
+
 ## 快速开始（开发 / 演示环境）
 
 前置：已安装并启动 Docker Desktop（Windows 11 + WSL2）。
@@ -33,7 +38,8 @@ docker compose -f deploy/docker-compose.yml down -v       # 停止并删除数�
 app/            FastAPI 应用（api/ web/ core/ community/ identity/ moderation/ workers/ storage/）
 client/         桌面客户端薄壳（pywebview + NSIS 安装包）
 alembic/        数据库迁移
-deploy/         docker-compose.yml / nginx.conf / backup.sh
+deploy/         docker-compose.yml / nginx.conf / backup.sh / seaweedfs-s3.json
+docs/           开发进度与目标.md（进度跟踪，每迭代更新）
 scripts/        init_majors.py / create_admin.py / seed_demo.py
 tests/          pytest（unit / integration / e2e）
 ```
