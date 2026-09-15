@@ -1,10 +1,32 @@
 {% extends "base.html" %}
 {% block title %}首页 · 知屿 KnowIsle{% endblock %}
 {% block content %}
-<div class="text-center py-16">
+<div class="text-center py-14">
   <h1 class="text-3xl font-bold text-slate-800">每门课程是一座知识岛屿</h1>
   <p class="mt-3 text-slate-500">学生社区驱动 · 结构化 RAG-AI 学习引擎</p>
-  {# TODO(v0.2): 动态流（关注课程的新资料/热帖）、搜索框、专业入口 #}
-  <p class="mt-10 text-sm text-slate-400">项目骨架已就绪，功能模块开发中（v0.1）。</p>
 </div>
+
+{# 功能板块总览（§4.2），卡片链接到各板块（未就绪的进入占位页） #}
+<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+  {% set cards = [
+    ('课程空间', '/majors', '专业 → 课程 → 资料库 + AI 问答 + 讨论 + 贡献榜', 'v0.2'),
+    ('个人知识库', '/library', '私有资料上传 → 结构化 → 问答 / 溯源 / 大纲 / 习题', 'v0.3'),
+    ('知屿问答', '/boards/qa', '提问 → AI 基于公共库先答 → 学生补充 → 采纳沉淀', 'v0.5'),
+    ('经验长廊', '/boards/experience', '保研 / 竞赛 / 实习 / 选课 / 转专业经验沉淀', 'v0.7'),
+    ('资料求援', '/boards/bounty', '悬赏贡献分求资料，响应者上传获赏金', 'v0.7'),
+    ('个人中心', '/me', '成长看板 / 收藏关注 / 通知 / AI 额度与 Key 配置', 'v0.6'),
+  ] %}
+  {% for name, href, desc, version in cards %}
+  <a href="{{ href }}"
+     class="block rounded-lg border border-slate-200 bg-white p-5 hover:border-sky-300 hover:shadow-sm transition">
+    <div class="flex items-center justify-between">
+      <h2 class="font-semibold text-slate-700">{{ name }}</h2>
+      <span class="text-xs text-slate-400">{{ version }}</span>
+    </div>
+    <p class="mt-2 text-sm text-slate-500">{{ desc }}</p>
+  </a>
+  {% endfor %}
+</div>
+
+{# TODO(v0.2): 登录后展示动态流（关注课程的新资料/热帖）、搜索框、专业入口 #}
 {% endblock %}

@@ -12,22 +12,77 @@
   {% block head %}{% endblock %}
 </head>
 <body class="bg-slate-50 text-slate-800 min-h-screen flex flex-col">
-  <header class="bg-white border-b border-slate-200">
-    <nav class="max-w-6xl mx-auto px-4 h-14 flex items-center justify-between">
-      <a href="/" class="text-lg font-bold text-sky-700">知屿 <span class="text-sm font-normal text-slate-400">KnowIsle</span></a>
-      <div class="flex items-center gap-4 text-sm">
-        {# TODO(v0.6): 通知未读角标（HTMX 每 30s 轮询 /api/notifications） #}
-        <a href="/login" class="text-slate-600 hover:text-sky-700">登录</a>
+  {# ===== 导航栏（§13 通用交互规范：含通知未读角标，30s 轮询） ===== #}
+  <header class="bg-white border-b border-slate-200 sticky top-0 z-40">
+    <nav class="max-w-6xl mx-auto px-4 h-14 flex items-center gap-6">
+      <a href="/" class="text-lg font-bold text-sky-700 shrink-0">
+        知屿 <span class="text-sm font-normal text-slate-400">KnowIsle</span>
+      </a>
+
+      {# 功能板块入口（§4.2）；active 变量由页面路由传入用于高亮 #}
+      {% set nav_items = [
+        ('majors',     '/majors',            '课程空间'),
+        ('library',    '/library',           '个人知识库'),
+        ('qa',         '/boards/qa',         '知屿问答'),
+        ('experience', '/boards/experience', '经验长廊'),
+        ('bounty',     '/boards/bounty',     '资料求援'),
+      ] %}
+      <div class="hidden md:flex items-center gap-1 text-sm">
+        {% for key, href, label in nav_items %}
+        <a href="{{ href }}"
+           class="px-3 py-1.5 rounded-md transition-colors
+                  {{ 'bg-sky-50 text-sky-700 font-medium' if active == key
+                     else 'text-slate-600 hover:text-sky-700 hover:bg-slate-100' }}">
+          {{ label }}
+        </a>
+        {% endfor %}
+      </div>
+
+      <div class="ml-auto flex items-center gap-4">
+        {# 通知未读角标（模块 B5）：HTMX 加载时 + 每 30s 轮询 #}
+        <a href="/me" class="relative text-slate-500 hover:text-sky-700" title="站内通知"
+           hx-get="/api/notifications/unread-count" hx-trigger="load, every 30s" hx-swap="none">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2"
+               viewBox="0 0 24 24" aria-hidden="true">
+            <path stroke-linecap="round" stroke-linejoin="round"
+                  d="M15 17h5l-1.4-1.4A2 2 0 0 1 18 14.2V11a6 6 0 1 0-12 0v3.2a2 2 0 0 1-.6 1.4L4 17h5m6 0v1a3 3 0 1 1-6 0v-1m6 0H9"/>
+          </svg>
+          <span id="notif-badge"
+                class="absolute -top-1 -right-1 hidden min-w-4 h-4 px-1 rounded-full
+                       bg-red-500 text-white text-[10px] leading-4 text-center">0</span>
+        </a>
+        <a href="/me" class="text-sm text-slate-600 hover:text-sky-700">个人中心</a>
+        {# TODO(v0.2): 登录态接入后改为「头像 + 昵称 / 退出」 #}
+        <a href="/login" class="text-sm rounded-md bg-sky-600 text-white px-3 py-1.5 hover:bg-sky-700">登录</a>
       </div>
     </nav>
   </header>
+
+  {# ===== 全局提示（表单提交 / 操作结果的 flash 区域，HTMX 可局部替换） ===== #}
+  <div id="flash" class="max-w-6xl w-full mx-auto px-4 mt-4 empty:mt-0">
+    {% block flash %}{% endblock %}
+  </div>
 
   <main class="flex-1 max-w-6xl w-full mx-auto px-4 py-8">
     {% block content %}{% endblock %}
   </main>
 
   <footer class="border-t border-slate-200 py-4 text-center text-xs text-slate-400">
-    知屿 KnowIsle · 每门课程是一座知识岛屿
+    知屿 KnowIsle · 每门课程是一座知识岛屿 · 学习通管理"教"，知屿沉淀"学"
   </footer>
+
+  {# 未读角标更新：服务端返回 {"unread": n}，>0 时显示数字 #}
+  <script>
+    document.body.addEventListener('htmx:ajaxRequest', function () { /* 保持静默 */ });
+    document.body.addEventListener('htmx:afterRequest', function (evt) {
+      if (!evt.detail.pathInfo || evt.detail.pathInfo.requestPath !== '/api/notifications/unread-count') return;
+      try {
+        var data = JSON.parse(evt.detail.xhr.responseText);
+        var badge = document.getElementById('notif-badge');
+        badge.textContent = data.unread > 99 ? '99+' : data.unread;
+        badge.classList.toggle('hidden', !data.unread);
+      } catch (e) { /* 接口未就绪时忽略 */ }
+    });
+  </script>
 </body>
 </html>

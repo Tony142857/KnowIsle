@@ -1,0 +1,10 @@
+{% extends "base.html" %}
+{% block title %}页面不存在 · 知屿 KnowIsle{% endblock %}
+{% block content %}
+<div class="text-center py-20">
+  <p class="text-5xl font-black text-slate-300">404</p>
+  <p class="mt-4 text-slate-500">页面不存在，或你没有访问该资源的权限</p>
+  {# 注：越权访问统一返回 404 而非 403，避免暴露资源存在性（文档 §3.2） #}
+  <a href="/" class="inline-block mt-8 text-sm text-sky-600 hover:underline">← 返回首页</a>
+</div>
+{% endblock %}
