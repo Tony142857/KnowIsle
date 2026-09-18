@@ -52,8 +52,25 @@
                        bg-red-500 text-white text-[10px] leading-4 text-center">0</span>
         </a>
         <a href="/me" class="text-sm text-slate-600 hover:text-sky-700">个人中心</a>
-        {# TODO(v0.2): 登录态接入后改为「头像 + 昵称 / 退出」 #}
+        {# 登录态：已登录显示昵称 + 退出，未登录显示登录按钮（§13） #}
+        {% if user %}
+        <span class="flex items-center gap-2 text-sm">
+          {% if user.avatar_url %}
+          <img src="{{ user.avatar_url }}" alt="" class="w-7 h-7 rounded-full object-cover">
+          {% else %}
+          <span class="w-7 h-7 rounded-full bg-sky-100 text-sky-700 flex items-center justify-center text-xs font-medium">
+            {{ user.nickname[:1] }}
+          </span>
+          {% endif %}
+          <span class="text-slate-700">{{ user.nickname }}</span>
+          {% if user.role == 'admin' %}
+          <span class="text-[10px] rounded bg-amber-100 text-amber-700 px-1 py-0.5">管理员</span>
+          {% endif %}
+        </span>
+        <a href="/logout" class="text-sm text-slate-400 hover:text-sky-700">退出</a>
+        {% else %}
         <a href="/login" class="text-sm rounded-md bg-sky-600 text-white px-3 py-1.5 hover:bg-sky-700">登录</a>
+        {% endif %}
       </div>
     </nav>
   </header>

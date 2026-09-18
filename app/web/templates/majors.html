@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block title %}课程空间 · 知屿 KnowIsle{% endblock %}
+{% block content %}
+<div class="mb-6">
+  <h1 class="text-2xl font-bold text-slate-800">课程空间</h1>
+  <p class="mt-1 text-sm text-slate-500">
+    {{ college_name or '本站' }} · 专业 → 课程 → 资料库 + AI 问答 + 讨论 + 贡献榜（§4.1）
+  </p>
+</div>
+
+{% if majors %}
+<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+  {% for m in majors %}
+  <a href="/majors/{{ m.id }}"
+     class="block rounded-lg border border-slate-200 bg-white p-5 hover:border-sky-300 hover:shadow-sm transition">
+    <div class="flex items-center justify-between">
+      <h2 class="font-semibold text-slate-700">{{ m.name }}</h2>
+      {% if m.code %}<span class="text-xs text-slate-400">{{ m.code }}</span>{% endif %}
+    </div>
+    <p class="mt-2 text-sm text-slate-500">{{ m.course_count }} 个课程空间</p>
+  </a>
+  {% endfor %}
+</div>
+{% else %}
+<div class="rounded-lg border border-dashed border-slate-300 bg-white p-12 text-center text-slate-400">
+  <p>暂未导入专业名单</p>
+  <p class="mt-2 text-xs">管理员可在容器内执行
+    <code class="rounded bg-slate-100 px-1">python scripts/init_majors.py majors.csv</code>
+    批量导入（§4.1）</p>
+</div>
+{% endif %}
+{% endblock %}
