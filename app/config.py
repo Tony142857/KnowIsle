@@ -45,6 +45,17 @@ class Settings(BaseSettings):
     # ---------- 安全 ----------
     secret_key: str = "change-me"  # 会话签名 + 自定义 Key 加密（Fernet）
 
+    # ---------- 会话与令牌（§7.4 双通道：Redis Session 页面 + JWT API） ----------
+    session_cookie_name: str = "knowisle_session"
+    session_ttl_seconds: int = 7 * 24 * 3600  # Redis Session 有效期（滑动续期）
+    jwt_ttl_seconds: int = 7 * 24 * 3600  # API 通道 JWT 有效期
+
+    # ---------- 邮箱降级认证（§3.1，开发期默认通道） ----------
+    email_code_ttl_seconds: int = 600  # 验证码有效期 10 分钟
+    email_code_cooldown_seconds: int = 60  # 同学号重发冷却（防滥用，模块 B1）
+    allowed_email_suffix: str = ""  # 校园邮箱域名限制，如 ".edu.cn"；空为不限制（演示便利）
+    email_code_echo: bool = True  # 开发期假通道：响应回显 dev_code 并写日志（生产务必关闭）
+
 
 @lru_cache
 def get_settings() -> Settings:

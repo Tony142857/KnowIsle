@@ -1,19 +1,120 @@
 {% extends "base.html" %}
 {% block title %}登录 · 知屿 KnowIsle{% endblock %}
 {% block content %}
-<div class="max-w-sm mx-auto py-12">
+<div class="max-w-sm mx-auto py-12" x-data="loginForm()">
   <h1 class="text-xl font-bold text-center">登录知屿</h1>
-  {# TODO(v0.2): AUTH_PROVIDER=cas 时跳转学校统一认证；email_fallback 时启用下方表单 #}
-  <form class="mt-6 space-y-4" hx-post="/api/auth/email/verify" hx-target="this" hx-swap="outerHTML">
-    <input type="text" name="student_no" placeholder="学号" required
-           class="w-full rounded border border-slate-300 px-3 py-2 text-sm">
-    <input type="email" name="email" placeholder="校园邮箱（@edu.cn）" required
-           class="w-full rounded border border-slate-300 px-3 py-2 text-sm">
-    <button type="submit"
-            class="w-full rounded bg-sky-600 py-2 text-sm text-white hover:bg-sky-700">
+  {% if college_name %}
+  <p class="mt-1 text-center text-xs text-slate-400">{{ college_name }}</p>
+  {% endif %}
+  <p class="mt-1 text-center text-xs text-slate-400">登录即认证 · 不对校外开放注册（§3.1 邮箱降级通道）</p>
+
+  {# 错误 / 提示信息 #}
+  <p x-show="error" x-text="error" class="mt-4 rounded bg-red-50 px-3 py-2 text-sm text-red-600"></p>
+  <p x-show="hint" x-text="hint" class="mt-4 rounded bg-sky-50 px-3 py-2 text-sm text-sky-700"></p>
+
+  {# 第一步：学号 + 校园邮箱，发送验证码 #}
+  <div class="mt-6 space-y-4">
+    <input type="text" x-model="student_no" placeholder="学号" :disabled="step > 1"
+           class="w-full rounded border border-slate-300 px-3 py-2 text-sm disabled:bg-slate-50">
+    <input type="email" x-model="email" placeholder="校园邮箱（@edu.cn）" :disabled="step > 1"
+           class="w-full rounded border border-slate-300 px-3 py-2 text-sm disabled:bg-slate-50">
+    <button x-show="step === 1" @click="sendCode()" :disabled="loading"
+            class="w-full rounded bg-sky-600 py-2 text-sm text-white hover:bg-sky-700 disabled:opacity-50">
       发送验证码
     </button>
-  </form>
-  <p class="mt-4 text-center text-xs text-slate-400">登录即认证 · 不对校外开放注册</p>
+  </div>
+
+  {# 第二步：输入验证码 #}
+  <div x-show="step >= 2" class="mt-4 space-y-4">
+    <input type="text" x-model="code" placeholder="6 位验证码" maxlength="6"
+           class="w-full rounded border border-slate-300 px-3 py-2 text-sm">
+  </div>
+
+  {# 第三步（仅首次登录）：补全学籍资料后建档（§3.1） #}
+  <div x-show="step === 3" class="mt-4 space-y-4 rounded border border-slate-200 bg-white p-4">
+    <p class="text-sm font-medium text-slate-700">首次登录，请补全资料建档</p>
+    <input type="text" x-model="real_name" placeholder="真实姓名（仅认证核验用，不公开）"
+           class="w-full rounded border border-slate-300 px-3 py-2 text-sm">
+    <input type="text" x-model="nickname" placeholder="昵称（社区内展示，唯一）"
+           class="w-full rounded border border-slate-300 px-3 py-2 text-sm">
+    <input type="text" x-model="grade" placeholder="年级（如 2023级，选填）"
+           class="w-full rounded border border-slate-300 px-3 py-2 text-sm">
+    <select x-model="major_id" class="w-full rounded border border-slate-300 px-3 py-2 text-sm">
+      <option value="">选择专业（选填）</option>
+      <template x-for="m in majors" :key="m.id">
+        <option :value="m.id" x-text="m.name"></option>
+      </template>
+    </select>
+  </div>
+
+  <button x-show="step >= 2" @click="verify()" :disabled="loading"
+          class="mt-4 w-full rounded bg-sky-600 py-2 text-sm text-white hover:bg-sky-700 disabled:opacity-50">
+    <span x-text="step === 3 ? '建档并登录' : '登录'"></span>
+  </button>
+  <button x-show="step >= 2" @click="reset()"
+          class="mt-2 w-full text-xs text-slate-400 hover:text-sky-700">重新填写学号 / 邮箱</button>
 </div>
+
+<script>
+function loginForm() {
+  return {
+    step: 1, loading: false, error: '', hint: '',
+    student_no: '', email: '', code: '',
+    real_name: '', nickname: '', grade: '', major_id: '', majors: [],
+
+    async post(url, body) {
+      this.loading = true; this.error = ''; this.hint = '';
+      try {
+        const resp = await fetch(url, {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify(body),
+        });
+        const data = await resp.json().catch(() => ({}));
+        if (!resp.ok) throw new Error(data.detail || ('请求失败 ' + resp.status));
+        return data;
+      } finally { this.loading = false; }
+    },
+
+    async sendCode() {
+      if (!this.student_no || !this.email) { this.error = '请填写学号与校园邮箱'; return; }
+      try {
+        const data = await this.post('/api/auth/email/code',
+          {student_no: this.student_no, email: this.email});
+        this.step = 2;
+        // 开发期假通道：接口回显验证码便于联调（email_code_echo，生产关闭）
+        this.hint = data.dev_code
+          ? ('开发模式验证码：' + data.dev_code + '（10 分钟内有效）')
+          : '验证码已发送到邮箱，10 分钟内有效';
+      } catch (e) { this.error = e.message; }
+    },
+
+    async verify() {
+      const body = {student_no: this.student_no, email: this.email, code: this.code};
+      if (this.step === 3) {
+        Object.assign(body, {
+          real_name: this.real_name, nickname: this.nickname,
+          grade: this.grade || null,
+          major_id: this.major_id ? Number(this.major_id) : null,
+        });
+      }
+      try {
+        const data = await this.post('/api/auth/email/verify', body);
+        if (data.need_profile) {
+          this.step = 3;
+          this.hint = '该学号首次登录，请补全资料完成建档';
+          if (!this.majors.length) {
+            const mj = await fetch('/api/majors').then(r => r.json());
+            this.majors = mj.items || [];
+          }
+          return;
+        }
+        window.location.href = '/';
+      } catch (e) { this.error = e.message; }
+    },
+
+    reset() { this.step = 1; this.code = ''; this.error = ''; this.hint = ''; },
+  };
+}
+</script>
 {% endblock %}

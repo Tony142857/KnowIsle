@@ -27,7 +27,8 @@ def test_login_page():
 
 
 def test_placeholder_pages():
-    for path in ("/majors", "/library", "/me", "/boards/qa", "/boards/experience"):
+    # /majors 已在 v0.2 交付为真实页面（需数据库，不在冒烟范围内）
+    for path in ("/library", "/me", "/boards/qa", "/boards/experience"):
         resp = client.get(path)
         assert resp.status_code == 200, path
         assert "建设中" in resp.text
