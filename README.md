@@ -1,14 +1,15 @@
 # 知屿 KnowIsle · 智能课程知识社区
 
 > 以学生社区为驱动、以结构化 RAG-AI 为学习引擎的大学课程知识平台。
-> 详细设计见《知屿-智能课程知识社区-项目文档.md》（v3.2.1）。
+> 详细设计见《知屿-智能课程知识社区-项目文档.md》（v3.2.3）。
 > 进度跟踪见 [docs/开发进度与目标.md](docs/开发进度与目标.md)（每迭代更新）。
 
 技术栈：FastAPI + Jinja2/HTMX/Tailwind · PostgreSQL 16 · Redis 7 · SeaweedFS（S3） · Chroma · ARQ · Docker Compose
 
 ## 当前状态
 
-**v0.2 已完成**（2026-09-18）：邮箱降级认证（验证码 + 首次登录建档补全）✅ · Redis Session + JWT 双通道 ✅ · RBAC 四角色门控（越权 404）✅ · 专业名单导入（脚本 + 管理接口）✅ · 课程空间（创建/申请/审批 + 章节树）✅ · 登录页 / 导航栏登录态 / 专业与课程卡片页 / 课程空间页 ✅
+**v0.3 已完成**（2026-09-19）：个人库 RAG 全链路端到端可用（M1 里程碑达成）——文档上传（异步解析）✅ · 四格式解析 + 语义切块 ✅ · 本地 bge-small-zh-v1.5 向量化（模型烘焙进镜像，运行时离线）✅ · Chroma 双 Collection + BM25/语义 RRF 融合检索 ✅ · SSE 流式问答 + 块级引用溯源 ✅ · AI 日额度与 qa_logs 落库 ✅ · 个人库页 / AI 对话页 / 原文溯源页 ✅
+（此前 v0.2：邮箱降级认证 · Redis Session + JWT 双通道 · RBAC 四角色门控 · 专业名单导入 · 课程空间结构）
 进度详情见 [docs/开发进度与目标.md](docs/开发进度与目标.md)。
 
 ## 快速开始（开发 / 演示环境）
@@ -36,7 +37,11 @@ docker compose -f deploy/docker-compose.yml exec app python scripts/init_majors.
 #    开发期为假通道，验证码直接显示在页面上（EMAIL_CODE_ECHO=true），也可在
 #    `docker compose -f deploy/docker-compose.yml logs -f app` 中查看
 
-# 6. 停止 / 清理
+# 6. 个人库体验（v0.3 起）：登录后进入 http://localhost:8080/library
+#    新建学期/课程 → 上传课件（pdf/pptx/docx/md）→ 解析完成后点「AI 问答」
+#    流式提问，回答中的引用可点击跳转原文溯源页高亮对应文本块
+
+# 7. 停止 / 清理
 docker compose -f deploy/docker-compose.yml down          # 停止
 docker compose -f deploy/docker-compose.yml down -v       # 停止并删除数据卷（慎用）
 ```
@@ -58,6 +63,8 @@ tests/          pytest（unit / integration / e2e）
 - Git 工作流：`main` 保护分支 + `feature/xxx` + PR（≥1 人 review，CI 通过才可合并）
 - Commit 规范：Conventional Commits（`feat:` / `fix:` / `refactor:` / `test:` / `docs:`）
 - 本地检查：`pip install -r requirements-dev.txt && ruff check app tests scripts && pytest -q`
+- 依赖分层：`requirements.txt` 为应用与 CI 共用；`requirements-ml.txt`（torch CPU + sentence-transformers）仅由 Dockerfile 装入镜像，应用代码对其一律惰性导入
+- Embedding 模型 bge-small-zh-v1.5 在镜像构建时预下载（经 hf-mirror），运行时 `HF_HUB_OFFLINE=1` 离线加载
 - 数据库迁移：`alembic revision --autogenerate -m "..."`，迁移随 app 容器启动自动执行
 
 ## 许可

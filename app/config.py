@@ -37,6 +37,8 @@ class Settings(BaseSettings):
     # ---------- Embedding ----------
     embedding_mode: str = "local"  # local | remote
     embedding_model: str = "bge-small-zh-v1.5"
+    embedding_base_url: str = ""  # remote 模式：OpenAI 兼容端点（不含 /embeddings 后缀亦可）
+    embedding_api_key: str = ""  # remote 模式：Bearer Key
 
     # ---------- AI 额度策略 ----------
     ai_daily_free_quota: int = 30

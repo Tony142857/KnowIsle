@@ -8,6 +8,7 @@ from app.api import (
     chat,
     courses,
     documents,
+    library,
     notifications,
     posts,
     reports,
@@ -23,6 +24,7 @@ api_router.include_router(auth.router)
 api_router.include_router(users.router)
 api_router.include_router(courses.router)
 api_router.include_router(documents.router)
+api_router.include_router(library.router)
 api_router.include_router(resources.router)
 api_router.include_router(chat.router)
 api_router.include_router(review.router)

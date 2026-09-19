@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% block title %}{{ doc.file_name }} · 原文溯源 · 知屿 KnowIsle{% endblock %}
+{% block content %}
+<div class="mb-6">
+  <a href="/library" class="text-sm text-sky-600 hover:underline">← 返回个人知识库</a>
+  <h1 class="mt-2 text-2xl font-bold text-slate-800 break-all">{{ doc.file_name }}</h1>
+  <p class="mt-1 text-sm text-slate-500">
+    {% if course %}{{ course.name }} · {% endif %}共 {{ chunks|length }} 个文本块
+    · {{ {'parsing': '解析中', 'parsed': '已完成', 'failed': '解析失败'}.get(doc.status, doc.status) }}
+  </p>
+</div>
+
+{% if chunks %}
+<div class="space-y-4">
+  {% for c in chunks %}
+  <div id="{{ c.chunk_id }}"
+       class="chunk-card scroll-mt-20 rounded-lg border border-slate-200 bg-white p-4 transition-shadow">
+    <div class="flex flex-wrap items-center gap-3 text-xs text-slate-400">
+      <span class="font-mono">{{ c.chunk_id }}</span>
+      {% if c.section %}<span>{{ c.section }}</span>{% endif %}
+      {% if c.page_num is not none %}<span>第 {{ c.page_num }} 页</span>{% endif %}
+    </div>
+    <p class="mt-2 whitespace-pre-wrap text-sm leading-6 text-slate-700">{{ c.content }}</p>
+  </div>
+  {% endfor %}
+</div>
+{% else %}
+<div class="rounded-lg border border-dashed border-slate-300 bg-white py-16 text-center text-sm text-slate-400">
+  该文档暂无解析文本块{% if doc.status == 'parsing' %}，解析完成后请刷新查看{% endif %}。
+</div>
+{% endif %}
+
+<script>
+// URL hash 定位高亮：引用卡片跳转 /documents/{id}/source#{chunk_id}
+(function () {
+  function highlightHash() {
+    document.querySelectorAll('.chunk-card.ring-2').forEach(function (el) {
+      el.classList.remove('ring-2', 'ring-sky-400', 'border-sky-300');
+    });
+    if (!location.hash) return;
+    var el = document.getElementById(decodeURIComponent(location.hash.slice(1)));
+    if (!el) return;
+    el.classList.add('ring-2', 'ring-sky-400', 'border-sky-300');
+    el.scrollIntoView({behavior: 'smooth', block: 'start'});
+  }
+  window.addEventListener('hashchange', highlightHash);
+  highlightHash();
+})();
+</script>
+{% endblock %}

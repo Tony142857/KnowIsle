@@ -1,7 +1,8 @@
 """页面路由（§13）：服务端渲染入口，按板块拆分到本包内各模块。
 
-v0.2 落地：登录页 / 专业列表页 / 课程空间页（含章节树侧边栏）；
-个人知识库（v0.3）、社区板块（v0.5+）、个人中心（v0.6）仍为占位页。
+v0.3 落地：登录页 / 专业列表页 / 课程空间页（含章节树侧边栏）/
+个人知识库（库树管理 + 上传轮询）/ AI 对话页 / 原文溯源页；
+社区板块（v0.5+）、个人中心（v0.6）仍为占位页。
 """
 
 from pathlib import Path
@@ -18,7 +19,7 @@ from app.identity.rbac import get_current_user_optional
 from app.identity.session import destroy_session
 from app.storage.cache import get_redis
 from app.storage.db import get_db
-from app.storage.models import Chapter, Course, Major, User
+from app.storage.models import Chapter, Chunk, Course, Document, Major, Semester, User
 
 router = APIRouter(include_in_schema=False)
 templates = Jinja2Templates(directory=Path(__file__).resolve().parents[1] / "templates")
@@ -33,13 +34,19 @@ BOARDS = {
 
 # 板块占位页配置：路由 → (板块名, 交付版本, 说明, 导航高亮键)
 PLACEHOLDER_PAGES = {
-    "library": ("个人知识库", "v0.3", "私有资料上传 → 结构化 → 问答 / 溯源 / 大纲 / 习题 / 串讲", "library"),
     "me": ("个人中心", "v0.6", "成长看板 / 我的上传与审核进度 / 收藏关注 / 通知 / AI 额度与 Key 配置", ""),
 }
 
 
 def _ctx(user: User | None, **extra) -> dict:
     return {"user": user, **extra}
+
+
+def _login_redirect(user: User | None) -> RedirectResponse | None:
+    """需登录页面的统一处理：未登录 303 重定向到 /login。"""
+    if user is None:
+        return RedirectResponse("/login", status_code=303)
+    return None
 
 
 @router.get("/")
@@ -161,6 +168,125 @@ async def course_detail(
 
 
 # ---------------------------------------------------------------------------
+# 个人知识库板块（§4.3 / §13）：库树管理 + 上传 → AI 问答 → 原文溯源
+# 注意：/library 为单段路径，必须先于 /{page} 通配占位注册。
+# ---------------------------------------------------------------------------
+
+
+@router.get("/library")
+async def library(
+    request: Request,
+    user: Annotated[User | None, Depends(get_current_user_optional)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    """个人知识库页：学期 → 课程 → 文档 三级库树，服务端渲染首屏。"""
+    if (resp := _login_redirect(user)) is not None:
+        return resp
+    semesters = (
+        await db.execute(
+            select(Semester).where(Semester.owner_id == user.id).order_by(Semester.id)
+        )
+    ).scalars().all()
+    courses = (
+        await db.execute(
+            select(Course)
+            .where(Course.scope == "personal", Course.owner_id == user.id)
+            .order_by(Course.id)
+        )
+    ).scalars().all()
+
+    chapter_map: dict[int, list[Chapter]] = {}
+    doc_map: dict[int, list[Document]] = {}
+    course_ids = [c.id for c in courses]
+    if course_ids:
+        chapters = (
+            await db.execute(
+                select(Chapter)
+                .where(Chapter.course_id.in_(course_ids))
+                .order_by(Chapter.order_idx, Chapter.id)
+            )
+        ).scalars().all()
+        for ch in chapters:
+            chapter_map.setdefault(ch.course_id, []).append(ch)
+        documents = (
+            await db.execute(
+                select(Document)
+                .where(Document.course_id.in_(course_ids))
+                .order_by(Document.created_at.desc(), Document.id.desc())
+            )
+        ).scalars().all()
+        for d in documents:
+            doc_map.setdefault(d.course_id, []).append(d)
+
+    def course_item(c: Course) -> dict:
+        return {
+            "course": c,
+            "chapters": chapter_map.get(c.id, []),
+            "documents": doc_map.get(c.id, []),
+        }
+
+    semester_groups = [
+        {
+            "semester": s,
+            "courses": [course_item(c) for c in courses if c.semester_id == s.id],
+        }
+        for s in semesters
+    ]
+    uncategorized = [course_item(c) for c in courses if c.semester_id is None]
+    return templates.TemplateResponse(
+        request, "library.html",
+        _ctx(user, active="library", semester_groups=semester_groups,
+             uncategorized=uncategorized, semesters=semesters),
+    )
+
+
+@router.get("/library/chat")
+async def library_chat(
+    request: Request,
+    user: Annotated[User | None, Depends(get_current_user_optional)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    course_id: int | None = None,
+):
+    """AI 对话页：SSE 流式问答 + 引用溯源（scope 三态切换）。"""
+    if (resp := _login_redirect(user)) is not None:
+        return resp
+    if course_id is None:
+        return RedirectResponse("/library", status_code=303)
+    course = await db.get(Course, course_id)
+    if course is None or course.scope != "personal" or course.owner_id != user.id:
+        raise HTTPException(status_code=404)
+    return templates.TemplateResponse(
+        request, "library_chat.html",
+        _ctx(user, active="library", course=course),
+    )
+
+
+@router.get("/documents/{document_id}/source")
+async def document_source(
+    document_id: int,
+    request: Request,
+    user: Annotated[User | None, Depends(get_current_user_optional)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    """原文溯源页：按 chunk 渲染解析文本，URL hash 定位高亮（仅本人文档）。"""
+    if (resp := _login_redirect(user)) is not None:
+        return resp
+    doc = await db.get(Document, document_id)
+    if doc is None or doc.owner_id != user.id:
+        raise HTTPException(status_code=404)
+    chunks = (
+        await db.execute(
+            select(Chunk).where(Chunk.document_id == document_id).order_by(Chunk.id)
+        )
+    ).scalars().all()
+    course = await db.get(Course, doc.course_id)
+    return templates.TemplateResponse(
+        request, "document_source.html",
+        _ctx(user, active="library", doc=doc, course=course, chunks=chunks),
+    )
+
+
+# ---------------------------------------------------------------------------
 # 占位页（未交付板块）
 # ---------------------------------------------------------------------------
 
@@ -186,7 +312,7 @@ async def placeholder_page(
     request: Request,
     user: Annotated[User | None, Depends(get_current_user_optional)],
 ):
-    """板块占位页：/library、/me（其余路径交给 FastAPI 默认 404）。"""
+    """板块占位页：/me（其余路径交给 FastAPI 默认 404）。"""
     if page not in PLACEHOLDER_PAGES:
         raise HTTPException(status_code=404)
     name, version, note, active = PLACEHOLDER_PAGES[page]

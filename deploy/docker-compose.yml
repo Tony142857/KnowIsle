@@ -9,6 +9,8 @@ services:
       dockerfile: Dockerfile
     image: knowisle-app:latest
     env_file: ../.env
+    environment:
+      HF_HUB_OFFLINE: "1"               # Embedding 模型已烘焙进镜像，运行时离线加载
     command: >
       sh -c "alembic upgrade head &&
              gunicorn app.main:app -k uvicorn.workers.UvicornWorker -w 4 -b 0.0.0.0:8000"
@@ -31,6 +33,8 @@ services:
       dockerfile: Dockerfile
     image: knowisle-app:latest
     env_file: ../.env
+    environment:
+      HF_HUB_OFFLINE: "1"               # 同上：worker 加载本地 Embedding 模型不联网
     command: arq app.workers.settings.WorkerSettings
     depends_on:
       postgres:

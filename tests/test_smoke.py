@@ -27,11 +27,19 @@ def test_login_page():
 
 
 def test_placeholder_pages():
-    # /majors 已在 v0.2 交付为真实页面（需数据库，不在冒烟范围内）
-    for path in ("/library", "/me", "/boards/qa", "/boards/experience"):
+    # /majors、/library 已交付为真实页面（需数据库，不在冒烟范围内）
+    for path in ("/me", "/boards/qa", "/boards/experience"):
         resp = client.get(path)
         assert resp.status_code == 200, path
         assert "建设中" in resp.text
+
+
+def test_library_pages_require_login():
+    # v0.3：个人知识库 / AI 对话 / 原文溯源 均需登录，未登录 303 重定向到 /login
+    for path in ("/library", "/library/chat?course_id=1", "/documents/1/source"):
+        resp = client.get(path, follow_redirects=False)
+        assert resp.status_code == 303, path
+        assert resp.headers["location"] == "/login"
 
 
 def test_invalid_board_returns_404_html():
