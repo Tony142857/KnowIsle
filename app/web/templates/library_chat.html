@@ -109,8 +109,9 @@ function chatPage(courseId) {
       this.sending = true;
       this.question = '';
       this.messages.push({role: 'user', text: q});
-      const ai = {role: 'ai', text: '', citations: [], usage: null, error: '', done: false};
-      this.messages.push(ai);
+      this.messages.push({role: 'ai', text: '', citations: [], usage: null, error: '', done: false});
+      // 必须经由响应式数组取回代理对象再修改——直接改原始对象会绕过 Alpine 响应式，模板不更新
+      const ai = this.messages[this.messages.length - 1];
       this.scrollBottom();
       try {
         const resp = await fetch('/api/chat', {
@@ -123,7 +124,7 @@ function chatPage(courseId) {
           ai.error = data.detail || this.httpErrorHint(resp.status);
           return;
         }
-        // SSE 流解析：按 \n\n 分帧，取 data: 行的 JSON
+        // SSE 流解析：sse-starlette 按规范以 CRLF 分行，先归一化再按 \n\n 分帧，取 data: 行的 JSON
         const reader = resp.body.getReader();
         const decoder = new TextDecoder();
         let buf = '';
@@ -131,6 +132,7 @@ function chatPage(courseId) {
           const {done, value} = await reader.read();
           if (done) break;
           buf += decoder.decode(value, {stream: true});
+          buf = buf.replace(/\r\n/g, '\n');
           let idx;
           while ((idx = buf.indexOf('\n\n')) >= 0) {
             const frame = buf.slice(0, idx);

@@ -289,7 +289,9 @@ function libraryPage() {
         if (!this.pending[courseId]) this.pending[courseId] = [];
         this.pending[courseId].push(doc);
         this.uploadFile = null; this.uploadChapterId = ''; this.uploadFormFor = null;
-        if (doc.status === 'parsing') this.pollStatus(doc);
+        // 经由响应式数组取回代理对象再轮询修改——直接改原始对象会绕过 Alpine 响应式
+        const docRef = this.pending[courseId][this.pending[courseId].length - 1];
+        if (docRef.status === 'parsing') this.pollStatus(docRef);
       } catch (e) { this.error = e.message; }
       finally { this.loading = false; }
     },
