@@ -306,6 +306,15 @@ def test_extract_citations_filters_and_dedupes():
     assert extract_citations("没有引用的回答", valid) == []
 
 
+def test_prompt_citation_example_matches_chunk_id_format():
+    """§11.1 问答提示词里的引用示例必须能被引用提取正则识别，否则会误导模型输出无效格式。"""
+    from app.core.llm.prompts import QA_SYSTEM_PROMPT
+    from app.core.pipeline import _CITATION_RE
+
+    assert _CITATION_RE.findall(QA_SYSTEM_PROMPT), \
+        "QA_SYSTEM_PROMPT 中的 [chunk_id] 示例与真实 chunk_id 格式不符"
+
+
 def test_build_chunk_meta_nullable_sentinels():
     doc = SimpleNamespace(id=5, course_id=12, owner_id=34, file_type="pdf_textbook")
     meta = build_chunk_meta(

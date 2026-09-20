@@ -181,10 +181,16 @@ def _build_tree(chapters: list[Chapter]) -> list[dict]:
 
 
 @router.get("/courses/{course_id}/chapters")
-async def get_chapters(course_id: int, db: Annotated[AsyncSession, Depends(get_db)]):
-    """章节知识树（结构化 RAG 骨架，§4.1）。"""
+async def get_chapters(
+    course_id: int,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    user: Annotated[User | None, Depends(get_current_user_optional)],
+):
+    """章节知识树（结构化 RAG 骨架，§4.1）。pending/disabled 仅管理员可见（§3.2）。"""
     course = await db.get(Course, course_id)
     if course is None or course.scope != "public":
+        raise HTTPException(status_code=404, detail="Not Found")
+    if course.status != "active" and (user is None or user.role != "admin"):
         raise HTTPException(status_code=404, detail="Not Found")
     chapters = (
         await db.execute(

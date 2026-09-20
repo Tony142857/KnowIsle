@@ -268,11 +268,11 @@ async def document_source(
     user: Annotated[User | None, Depends(get_current_user_optional)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
-    """原文溯源页：按 chunk 渲染解析文本，URL hash 定位高亮（仅本人文档）。"""
+    """原文溯源页：按 chunk 渲染解析文本，URL hash 定位高亮（仅本人/管理员）。"""
     if (resp := _login_redirect(user)) is not None:
         return resp
     doc = await db.get(Document, document_id)
-    if doc is None or doc.owner_id != user.id:
+    if doc is None or (doc.owner_id != user.id and user.role != "admin"):
         raise HTTPException(status_code=404)
     chunks = (
         await db.execute(

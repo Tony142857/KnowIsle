@@ -21,13 +21,14 @@ MAX_FILE_SIZE = 50 * 1024 * 1024  # 单文件 ≤ 50MB
 
 _EXT_TO_FILE_TYPE = {
     ".pdf": "pdf_textbook",
-    ".ppt": "ppt",
     ".pptx": "ppt",
-    ".doc": "word",
     ".docx": "word",
     ".md": "markdown",
     ".markdown": "markdown",
 }
+
+# 旧版 Office 二进制格式（OLE2）python-docx/pptx 无法解析，上传即明确拒绝
+_LEGACY_OFFICE_EXT = {".doc", ".ppt"}
 
 _arq_pool: ArqRedis | None = None
 
@@ -77,6 +78,11 @@ async def upload_document(
 
     original_name = file.filename or "unnamed"
     suffix = "." + original_name.rsplit(".", 1)[-1].lower() if "." in original_name else ""
+    if suffix in _LEGACY_OFFICE_EXT:
+        raise HTTPException(
+            status_code=422,
+            detail=f"旧版 Office 二进制格式（{suffix}）暂不支持，请另存为 .docx/.pptx 后上传",
+        )
     file_type = _EXT_TO_FILE_TYPE.get(suffix)
     if file_type is None:
         raise HTTPException(status_code=422, detail=f"不支持的文件类型: {suffix or '无扩展名'}")
@@ -94,6 +100,19 @@ async def upload_document(
         )
     ).scalars().first()
     if existing is not None:
+        if existing.status == "failed":
+            # 解析失败的文档允许重传重试：重置状态并重新入队（同一文件不重复占用存储）
+            existing.status = "parsing"
+            await db.commit()
+            pool = await _get_arq_pool()
+            await pool.enqueue_job("parse_document", existing.id)
+            return {
+                "document_id": existing.id,
+                "status": "parsing",
+                "status_url": f"/api/documents/{existing.id}/status",
+                "dedup": True,
+                "retry": True,
+            }
         return {"document_id": existing.id, "status": existing.status, "dedup": True}
 
     storage_key = f"personal/{user.id}/{md5}/{_safe_filename(original_name)}"
