@@ -1,7 +1,7 @@
 # 知屿 KnowIsle · 智能课程知识社区
 
 > 以学生社区为驱动、以结构化 RAG-AI 为学习引擎的大学课程知识平台。
-> 详细设计见《知屿-智能课程知识社区-项目文档.md》（v3.2.3）。
+> 详细设计见《知屿-智能课程知识社区-项目文档.md》（v3.2.4）。
 > 进度跟踪见 [docs/开发进度与目标.md](docs/开发进度与目标.md)（每迭代更新）。
 
 技术栈：FastAPI + Jinja2/HTMX/Tailwind · PostgreSQL 16 · Redis 7 · SeaweedFS（S3） · Chroma · ARQ · Docker Compose
@@ -9,6 +9,7 @@
 ## 当前状态
 
 **v0.3 已完成**（2026-09-19）：个人库 RAG 全链路端到端可用（M1 里程碑达成）——文档上传（异步解析）✅ · 四格式解析 + 语义切块 ✅ · 本地 bge-small-zh-v1.5 向量化（模型烘焙进镜像，运行时离线）✅ · Chroma 双 Collection + BM25/语义 RRF 融合检索 ✅ · SSE 流式问答 + 块级引用溯源 ✅ · AI 日额度与 qa_logs 落库 ✅ · 个人库页 / AI 对话页 / 原文溯源页 ✅
+**v0.3 回归验证通过**（2026-09-20）：容器内 ruff + pytest 46 例全绿，v0.1~v0.3 共 60+ 项 E2E 检查（真实 DeepSeek 模型）全过；修复章节树越权可见、.doc/.ppt 假支持、失败文档无法重传、提示词引用示例格式不符等 6 处问题（详见进度文档）。
 （此前 v0.2：邮箱降级认证 · Redis Session + JWT 双通道 · RBAC 四角色门控 · 专业名单导入 · 课程空间结构）
 进度详情见 [docs/开发进度与目标.md](docs/开发进度与目标.md)。
 
@@ -64,6 +65,7 @@ tests/          pytest（unit / integration / e2e）
 - Commit 规范：Conventional Commits（`feat:` / `fix:` / `refactor:` / `test:` / `docs:`）
 - 本地检查：`pip install -r requirements-dev.txt && ruff check app tests scripts && pytest -q`
 - 依赖分层：`requirements.txt` 为应用与 CI 共用；`requirements-ml.txt`（torch CPU + sentence-transformers）仅由 Dockerfile 装入镜像，应用代码对其一律惰性导入
+- 镜像版本全部钉死：自建镜像按版本号命名（`knowisle-app:0.3.0`，发版时手动递增，禁止 latest）；五个第三方镜像与 Dockerfile 基础镜像均以 `@sha256` digest 固定，团队构建逐字节一致
 - Embedding 模型 bge-small-zh-v1.5 在镜像构建时预下载（经 hf-mirror），运行时 `HF_HUB_OFFLINE=1` 离线加载
 - 数据库迁移：`alembic revision --autogenerate -m "..."`，迁移随 app 容器启动自动执行
 
