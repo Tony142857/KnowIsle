@@ -1,6 +1,7 @@
 # syntax=docker/dockerfile:1
 # 知屿应用镜像：app（Gunicorn+Uvicorn）与 worker（ARQ）共用同一镜像，仅启动命令不同（§15.2）
-FROM python:3.12-slim
+# 基础镜像按 digest 钉死（= 当前已验证的 linux/amd64 python:3.12-slim 内容），保证团队构建逐字节一致
+FROM python:3.12-slim@sha256:2f17fc044b579bab302c2e8054d3a686e2cb9a83de48e70534b94cd8ebbe06a9
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
