@@ -42,6 +42,24 @@ def test_library_pages_require_login():
         assert resp.headers["location"] == "/login"
 
 
+def test_review_pages_require_login():
+    # v0.4：协审工作台 / 管理后台·审核 / 资源详情页 需登录，未登录 303 重定向到 /login
+    for path in ("/review", "/admin/review", "/resources/1"):
+        resp = client.get(path, follow_redirects=False)
+        assert resp.status_code == 303, path
+        assert resp.headers["location"] == "/login"
+
+
+def test_moderation_apis_require_login():
+    # v0.4：协审任务 / 公共资源 / 投稿 API 未登录一律 401
+    resp = client.get("/api/review/tasks")
+    assert resp.status_code == 401
+    resp = client.get("/api/resources")
+    assert resp.status_code == 401
+    resp = client.post("/api/documents/1/submit", json={})
+    assert resp.status_code == 401
+
+
 def test_invalid_board_returns_404_html():
     resp = client.get("/boards/not-a-board")
     assert resp.status_code == 404
