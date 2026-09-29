@@ -65,8 +65,8 @@ async def check_course_access(
 
 async def retrieve(
     session: AsyncSession, query: str, user: User, course_id: int, scope: str
-) -> list[dict]:
-    """检索入口（§5.3）：返回 [{"chunk": Chunk 行, "score": 得分}]，按得分降序。
+) -> tuple[list[dict], list[int] | None]:
+    """检索入口（§5.3）：返回 (按得分降序的命中列表, 粗召回章节 ID 或 None)。
 
     coarse 返回 None（无章节摘要）时降级为全课程范围精排（§8.3）。
     """
@@ -75,10 +75,11 @@ async def retrieve(
 
     if scope in ("personal", "public"):
         chapter_ids = await coarse_recall(session, query_embedding, course_id, scope)
-        return await fine_search(
+        hits = await fine_search(
             session, query, query_embedding, scope, course_id,
             owner_id=user.id, chapter_ids=chapter_ids,
         )
+        return hits, chapter_ids
 
     # mixed：双库检索，个人库结果加权 1.2 后 RRF 融合（§5.3）。
     # 注：同一 AsyncSession 不支持并发操作，两路串行执行（单连接会话限制）。
@@ -96,11 +97,12 @@ async def retrieve(
         top_k=5,
     )
     by_id = {h["chunk"].chunk_id: h["chunk"] for h in personal_hits + public_hits}
-    return [
+    hits = [
         {"chunk": by_id[chunk_id], "score": score}
         for chunk_id, score in fused
         if chunk_id in by_id
     ]
+    return hits, None
 
 
 async def _build_citation_items(
@@ -151,7 +153,7 @@ async def answer_question(session: AsyncSession, user: User, body) -> AsyncItera
     """
     started = time.monotonic()
     try:
-        hits = await retrieve(session, body.question, user, body.course_id, body.scope)
+        hits, coarse_ids = await retrieve(session, body.question, user, body.course_id, body.scope)
     except HTTPException as exc:
         yield {"type": "error", "message": exc.detail}
         return
@@ -190,6 +192,7 @@ async def answer_question(session: AsyncSession, user: User, body) -> AsyncItera
                 question=body.question,
                 course_id=body.course_id,
                 search_scope=body.scope,
+                coarse_chapters={"chapter_ids": coarse_ids} if coarse_ids else None,
                 top_chunks=[h["chunk"].chunk_id for h in hits],
                 prompt=prompt,
                 answer=answer,

@@ -47,7 +47,7 @@ async def retrieval_trace(
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
     """检索链路详情（调试）：返回命中 chunk 列表与融合得分，不消耗额度、不调用 LLM。"""
-    hits = await pipeline.retrieve(db, body.question, user, body.course_id, body.scope)
+    hits, _ = await pipeline.retrieve(db, body.question, user, body.course_id, body.scope)
     return {
         "question": body.question,
         "course_id": body.course_id,
