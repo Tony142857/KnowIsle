@@ -1,14 +1,15 @@
 # 知屿 KnowIsle · 智能课程知识社区
 
 > 以学生社区为驱动、以结构化 RAG-AI 为学习引擎的大学课程知识平台。
-> 详细设计见《知屿-智能课程知识社区-项目文档.md》（v3.2.5）。
+> 详细设计见《知屿-智能课程知识社区-项目文档.md》（v3.2.6）。
 > 进度跟踪见 [docs/开发进度与目标.md](docs/开发进度与目标.md)（每迭代更新）。
 
 技术栈：FastAPI + Jinja2/HTMX/Tailwind · PostgreSQL 16 · Redis 7 · SeaweedFS（S3） · Chroma · ARQ · Docker Compose
 
 ## 当前状态
 
-**v0.4 已完成**（2026-09-29）：公共库投稿→三级审核→上架全流程 ✅ · 自动预检（格式/MD5 查重/敏感词/AI 初评）✅ · 资源检索/预览（Office→PDF）/下载（积分校验）/评分 ✅ · 章节摘要回填启用粗召回 ✅ · 协审工作台 / 终审页 / 资源详情页 / 课程空间资料库 Tab ✅ · 容器内 ruff + pytest 61 例全绿、53 项 E2E 断言（真实 DeepSeek）全过
+**v0.5 已完成**（2026-09-29）：问答贴 + AI 首答（异步生成、带引用溯源）✅ · 评论/点赞/采纳（自问自答不计分）✅ · 成长体系完整版（等级升级 + Redis 实时贡献榜 + 每日对账 + 下载积分 80% 上传者分成）✅ · AI 额度贡献分兑换 + 用户自定义 Key（Fernet 加密、qa_logs 双通道溯源）✅ · 协审 48h 超时自动重指派 + 管理员改派/直审 ✅ · 公共资源克隆进个人库 ✅ · 板块列表/帖子详情/发帖/个人中心四页面 + 课程空间贡献榜 Tab ✅ · 容器内 ruff + pytest 129 例全绿、约 70 项 E2E 断言（真实 DeepSeek）全过
+（此前 v0.4：公共库投稿→三级审核→上架全流程 · 自动预检（格式/MD5 查重/敏感词/AI 初评）· 资源预览/下载/评分 · 章节摘要回填启用粗召回）
 （此前 v0.3：个人库 RAG 全链路端到端可用（M1 里程碑）——四格式解析 + 语义切块 · 本地 bge 向量化（模型烘焙进镜像）· 双库 RRF 融合检索 · SSE 流式问答 + 引用溯源 · 个人库三页面 · AI 日额度）
 （此前 v0.2：邮箱降级认证 · Redis Session + JWT 双通道 · RBAC 四角色门控 · 专业名单导入 · 课程空间结构）
 进度详情见 [docs/开发进度与目标.md](docs/开发进度与目标.md)。
@@ -49,7 +50,11 @@ docker compose -f deploy/docker-compose.yml exec app python scripts/init_majors.
 #    docker compose -f deploy/docker-compose.yml exec postgres \
 #      psql -U knowisle knowisle -c "UPDATE users SET role='reviewer' WHERE student_no='20239011';"
 
-# 8. 停止 / 清理
+# 8. 社区体验（v0.5 起）：http://localhost:8080/boards/qa 发问答贴 → AI 首答自动生成
+#    （带引用溯源）→ 同学评论/点赞 → 帖主采纳；资源详情页可「克隆到个人库」；
+#    个人中心 http://localhost:8080/me ：成长看板 / AI 额度兑换 / 自定义 Key / 通知
+
+# 9. 停止 / 清理
 docker compose -f deploy/docker-compose.yml down          # 停止
 docker compose -f deploy/docker-compose.yml down -v       # 停止并删除数据卷（慎用）
 ```
@@ -72,7 +77,7 @@ tests/          pytest（unit / integration / e2e）
 - Commit 规范：Conventional Commits（`feat:` / `fix:` / `refactor:` / `test:` / `docs:`）
 - 本地检查：`pip install -r requirements-dev.txt && ruff check app tests scripts && pytest -q`
 - 依赖分层：`requirements.txt` 为应用与 CI 共用；`requirements-ml.txt`（torch CPU + sentence-transformers）仅由 Dockerfile 装入镜像，应用代码对其一律惰性导入
-- 镜像版本全部钉死：自建镜像按版本号命名（`knowisle-app:0.4.0`，发版时手动递增，禁止 latest）；五个第三方镜像与 Dockerfile 基础镜像均以 `@sha256` digest 固定，团队构建逐字节一致
+- 镜像版本全部钉死：自建镜像按版本号命名（`knowisle-app:0.5.0`，发版时手动递增，禁止 latest）；五个第三方镜像与 Dockerfile 基础镜像均以 `@sha256` digest 固定，团队构建逐字节一致
 - Embedding 模型 bge-small-zh-v1.5 在镜像构建时预下载（经 hf-mirror），运行时 `HF_HUB_OFFLINE=1` 离线加载
 - 数据库迁移：`alembic revision --autogenerate -m "..."`，迁移随 app 容器启动自动执行
 
