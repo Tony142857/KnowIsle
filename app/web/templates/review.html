@@ -1,0 +1,173 @@
+{% extends "base.html" %}
+{% from "_precheck.html" import precheck_panel %}
+{% block title %}协审工作台 · 知屿 KnowIsle{% endblock %}
+
+{% block content %}
+<div class="mb-6">
+  <h1 class="text-2xl font-bold text-slate-800">协审工作台</h1>
+  <p class="mt-1 text-sm text-slate-400">公共库投稿的协审任务：查看预检结果与在线预览后提交你的意见</p>
+</div>
+
+<div class="flex flex-col lg:flex-row gap-6">
+  {# 任务队列（服务端 query 参数 ?task= 选中） #}
+  <aside class="lg:w-72 shrink-0">
+    <div class="rounded-lg border border-slate-200 bg-white">
+      <h2 class="border-b border-slate-100 px-4 py-3 text-sm font-semibold text-slate-700">
+        待审任务 <span class="text-xs font-normal text-slate-400">{{ tasks|length }} 条</span>
+      </h2>
+      {% if tasks %}
+      <ul class="divide-y divide-slate-100">
+        {% for t in tasks %}
+        <li>
+          <a href="/review?task={{ t.task_id }}"
+             class="block px-4 py-3 transition-colors
+                    {{ 'bg-sky-50' if selected and selected.task_id == t.task_id else 'hover:bg-slate-50' }}">
+            <p class="truncate text-sm font-medium text-slate-700">{{ t.resource.title }}</p>
+            <p class="mt-0.5 flex items-center justify-between text-xs text-slate-400">
+              <span class="truncate">{{ t.resource.course_name }}</span>
+              <span class="shrink-0">{{ t.created_at.strftime('%m-%d %H:%M') }}</span>
+            </p>
+          </a>
+        </li>
+        {% endfor %}
+      </ul>
+      {% else %}
+      <p class="px-4 py-8 text-center text-xs text-slate-400">暂无待审任务</p>
+      {% endif %}
+    </div>
+  </aside>
+
+  {# 任务详情 #}
+  <section class="flex-1 min-w-0">
+    {% if not selected %}
+    <div class="rounded-lg border border-dashed border-slate-300 bg-white py-16 text-center">
+      <p class="text-4xl">📝</p>
+      {% if tasks %}
+      <p class="mt-4 text-slate-600">从左侧选择一条任务开始协审</p>
+      {% else %}
+      <p class="mt-4 text-slate-600">你的协审队列是空的</p>
+      <p class="mt-1 text-sm text-slate-400">有新的投稿指派给你时会出现在这里。</p>
+      {% endif %}
+    </div>
+    {% else %}
+    <div x-data="coVerdict({{ selected.task_id }})">
+      {# 资源信息 #}
+      <div class="rounded-lg border border-slate-200 bg-white p-4">
+        <div class="flex flex-wrap items-center gap-3">
+          <h2 class="text-lg font-semibold text-slate-800">{{ selected.resource.title }}</h2>
+          <span class="rounded bg-slate-100 px-2 py-0.5 text-xs text-slate-500">
+            {{ {'pdf_textbook': 'PDF 教材', 'ppt': 'PPT', 'word': 'Word', 'markdown': 'Markdown'}.get(selected.doc.file_type, selected.doc.file_type) }}
+          </span>
+        </div>
+        <p class="mt-1 text-sm text-slate-500">
+          投稿到 <a href="/courses/{{ selected.resource.course_id }}" class="text-sky-600 hover:underline">{{ selected.course_name }}</a>
+          {% if selected.chapter_title %} · {{ selected.chapter_title }}{% endif %}
+          · {{ selected.created_at.strftime('%Y-%m-%d %H:%M') }} 投稿
+        </p>
+        {% if selected.resource.description %}
+        <p class="mt-2 whitespace-pre-wrap text-sm text-slate-600">{{ selected.resource.description }}</p>
+        {% endif %}
+        <p class="mt-2 text-xs text-slate-400">源文件：{{ selected.doc.file_name }}</p>
+      </div>
+
+      {# 预检结果 #}
+      <div class="mt-4">{{ precheck_panel(selected.precheck) }}</div>
+
+      {# 已有协审意见 #}
+      {% if selected.records %}
+      <div class="mt-4 rounded-lg border border-slate-200 bg-white p-4">
+        <h3 class="text-sm font-semibold text-slate-700">已提交意见</h3>
+        <ul class="mt-2 space-y-2">
+          {% for r in selected.records %}
+          <li class="text-xs text-slate-600">
+            <span class="rounded px-1.5 py-0.5
+                         {{ 'bg-emerald-50 text-emerald-700' if r.verdict == 'approve' else 'bg-red-50 text-red-600' }}">
+              {{ '通过' if r.verdict == 'approve' else '驳回' }}
+            </span>
+            <span class="ml-1 text-slate-500">{{ r.reviewer }}</span>
+            {% if r.comment %}<span class="ml-1">：{{ r.comment }}</span>{% endif %}
+          </li>
+          {% endfor %}
+        </ul>
+      </div>
+      {% endif %}
+
+      {# 在线预览：word/ppt 转换未完成时后端返回 409 JSON，检测后显示「预览生成中」 #}
+      <div class="mt-4 rounded-lg border border-slate-200 bg-white p-4">
+        <h3 class="text-sm font-semibold text-slate-700">在线预览</h3>
+        <div x-show="previewFailed" x-cloak
+             class="mt-3 rounded border border-dashed border-slate-300 py-12 text-center text-sm text-slate-400">
+          预览生成中，请稍后刷新重试
+        </div>
+        <iframe x-show="!previewFailed" src="{{ selected.preview_url }}"
+                @load="checkPreview($event)"
+                class="mt-3 h-[36rem] w-full rounded border border-slate-200 bg-slate-50"
+                title="资源预览"></iframe>
+      </div>
+
+      {# 裁决表单 #}
+      <div class="mt-4 rounded-lg border border-slate-200 bg-white p-4">
+        <h3 class="text-sm font-semibold text-slate-700">我的协审意见</h3>
+        <p x-show="error" x-text="error" x-cloak
+           class="mt-2 rounded bg-red-50 px-3 py-2 text-sm text-red-600"></p>
+        <p x-show="result" x-cloak
+           class="mt-2 rounded bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
+          <span x-text="result"></span>（页面即将刷新）
+        </p>
+        <textarea x-model="comment" rows="3" placeholder="审核意见（驳回时必填理由）"
+                  class="mt-3 w-full rounded border border-slate-300 px-3 py-2 text-sm"></textarea>
+        <div class="mt-3 flex gap-2">
+          <button @click="submit('approve')" :disabled="loading"
+                  class="rounded bg-sky-600 px-4 py-2 text-sm text-white hover:bg-sky-700 disabled:opacity-50">
+            通过
+          </button>
+          <button @click="submit('reject')" :disabled="loading"
+                  class="rounded border border-red-300 px-4 py-2 text-sm text-red-600 hover:bg-red-50 disabled:opacity-50">
+            驳回
+          </button>
+        </div>
+      </div>
+    </div>
+    {% endif %}
+  </section>
+</div>
+
+<script>
+function coVerdict(taskId) {
+  return {
+    loading: false, error: '', result: '', comment: '', previewFailed: false,
+
+    // 同源 iframe：409 时后端返回 JSON 错误体，contentType 为 application/json
+    checkPreview(event) {
+      try {
+        const doc = event.target.contentDocument;
+        if (doc && doc.contentType === 'application/json') this.previewFailed = true;
+      } catch (e) { /* 跨域或尚未加载时忽略 */ }
+    },
+
+    async submit(verdict) {
+      if (verdict === 'reject' && !this.comment.trim()) {
+        this.error = '驳回必须填写理由'; return;
+      }
+      this.loading = true; this.error = ''; this.result = '';
+      try {
+        const resp = await fetch('/api/review/tasks/' + taskId + '/verdict', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({verdict: verdict, comment: this.comment.trim() || null}),
+        });
+        const data = await resp.json().catch(() => ({}));
+        if (!resp.ok) throw new Error(data.detail || ('提交失败 ' + resp.status));
+        this.result = {
+          recorded: '意见已记录，等待其他协审员',
+          advanced_final: '已通过协审，进入管理员终审',
+          rejected: '该投稿已被驳回',
+        }[data.status] || '已提交';
+        setTimeout(() => window.location.href = '/review', 1200);
+      } catch (e) { this.error = e.message; }
+      finally { this.loading = false; }
+    },
+  };
+}
+</script>
+{% endblock %}

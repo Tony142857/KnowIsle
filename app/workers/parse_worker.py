@@ -4,7 +4,7 @@
 失败任务自动重试 3 次后标记 failed 并通知上传者（arq max_tries=3，见 workers/settings.py）。
 chunk_id 与章节复用均幂等：重试/重解析先清旧切块再插入，不留半成品。
 
-TODO(v0.4): Office→PDF 预览转换（soffice --headless --convert-to pdf），回填 preview_key。
+Office→PDF 预览转换（soffice）与 preview_key 回填见 workers/preview_worker（v0.4）。
 """
 
 import logging

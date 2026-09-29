@@ -4,16 +4,17 @@ import hashlib
 import re
 from typing import Annotated
 
-from arq.connections import ArqRedis, RedisSettings, create_pool
 from fastapi import APIRouter, Depends, Form, HTTPException, UploadFile
+from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.config import get_settings
 from app.identity.rbac import get_current_user
+from app.moderation.workflow import create_submission
 from app.storage import object_store
 from app.storage.db import get_db
 from app.storage.models import Chapter, Chunk, Course, Document, User
+from app.workers.pool import get_arq_pool
 
 router = APIRouter(prefix="/documents", tags=["documents"])
 
@@ -29,18 +30,6 @@ _EXT_TO_FILE_TYPE = {
 
 # 旧版 Office 二进制格式（OLE2）python-docx/pptx 无法解析，上传即明确拒绝
 _LEGACY_OFFICE_EXT = {".doc", ".ppt"}
-
-_arq_pool: ArqRedis | None = None
-
-
-async def _get_arq_pool() -> ArqRedis:
-    """模块级缓存的 ARQ 连接池（解析任务入队用）。"""
-    global _arq_pool
-    if _arq_pool is None:
-        _arq_pool = await create_pool(
-            RedisSettings.from_dsn(get_settings().redis_url)
-        )
-    return _arq_pool
 
 
 def _safe_filename(name: str) -> str:
@@ -104,7 +93,7 @@ async def upload_document(
             # 解析失败的文档允许重传重试：重置状态并重新入队（同一文件不重复占用存储）
             existing.status = "parsing"
             await db.commit()
-            pool = await _get_arq_pool()
+            pool = await get_arq_pool()
             await pool.enqueue_job("parse_document", existing.id)
             return {
                 "document_id": existing.id,
@@ -132,7 +121,7 @@ async def upload_document(
     db.add(doc)
     await db.commit()
 
-    pool = await _get_arq_pool()
+    pool = await get_arq_pool()
     await pool.enqueue_job("parse_document", doc.id)
     return {
         "document_id": doc.id,
@@ -168,8 +157,12 @@ async def get_document_chunks(
     user: Annotated[User, Depends(get_current_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
-    """文档切块列表（溯源视图用）：仅本人/管理员可见。"""
-    doc = await _get_owned_document(db, document_id, user)
+    """文档切块列表（溯源视图用）：public 文档任何登录用户可见，个人文档仅本人/管理员。"""
+    doc = await db.get(Document, document_id)
+    if doc is None or (
+        doc.scope != "public" and doc.owner_id != user.id and user.role != "admin"
+    ):
+        raise HTTPException(status_code=404, detail="Not Found")
     rows = (
         await db.execute(
             select(Chunk, Chapter.title)
@@ -191,4 +184,56 @@ async def get_document_chunks(
             }
             for chunk, chapter_title in rows
         ],
+    }
+
+
+class SubmitRequest(BaseModel):
+    title: str = Field(min_length=1, max_length=128)
+    description: str | None = Field(default=None, max_length=512)
+    course_id: int
+    chapter_id: int | None = None
+
+
+@router.post("/{document_id}/submit", status_code=201)
+async def submit_to_public(
+    document_id: int,
+    payload: SubmitRequest,
+    user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    """投稿公共库（§12.1）：仅本人个人库已解析文档可投（admin 也不可代投），
+    建档后 ARQ 入队自动预检；已驳回的投稿重投复用原 resource（resubmit=True）。"""
+    doc = await db.get(Document, document_id)
+    if doc is None or doc.owner_id != user.id:
+        raise HTTPException(status_code=404, detail="Not Found")
+    if doc.scope != "personal":
+        raise HTTPException(status_code=422, detail="仅个人库资料可投稿")
+    if doc.status != "parsed":
+        raise HTTPException(status_code=422, detail="解析完成后才能投稿")
+    course = await db.get(Course, payload.course_id)
+    if course is None or course.scope != "public" or course.status != "active":
+        raise HTTPException(status_code=404, detail="Not Found")
+    chapter = None
+    if payload.chapter_id is not None:
+        chapter = await db.get(Chapter, payload.chapter_id)
+        if chapter is None or chapter.course_id != course.id:
+            raise HTTPException(status_code=422, detail="章节不存在或不属于目标课程")
+    try:
+        resource, task, is_resubmit = await create_submission(
+            db, user, doc, course, chapter, payload.title, payload.description
+        )
+    except ValueError as exc:
+        if str(exc) == "duplicate":
+            raise HTTPException(status_code=422, detail="该资料已在审核中") from exc
+        if str(exc) == "approved":
+            raise HTTPException(status_code=422, detail="该资料已上架") from exc
+        raise
+    await db.commit()
+    pool = await get_arq_pool()
+    await pool.enqueue_job("precheck_submission", task.id)
+    return {
+        "resource_id": resource.id,
+        "review_status": "pending",
+        "review_task_id": task.id,
+        "resubmit": is_resubmit,
     }

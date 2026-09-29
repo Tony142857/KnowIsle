@@ -36,6 +36,23 @@
           {{ label }}
         </a>
         {% endfor %}
+        {# 审核入口：reviewer/admin 显示协审工作台，admin 另显示终审页 #}
+        {% if user and user.role in ('reviewer', 'admin') %}
+        <a href="/review"
+           class="px-3 py-1.5 rounded-md transition-colors
+                  {{ 'bg-sky-50 text-sky-700 font-medium' if active == 'review'
+                     else 'text-slate-600 hover:text-sky-700 hover:bg-slate-100' }}">
+          协审
+        </a>
+        {% endif %}
+        {% if user and user.role == 'admin' %}
+        <a href="/admin/review"
+           class="px-3 py-1.5 rounded-md transition-colors
+                  {{ 'bg-sky-50 text-sky-700 font-medium' if active == 'admin_review'
+                     else 'text-slate-600 hover:text-sky-700 hover:bg-slate-100' }}">
+          终审
+        </a>
+        {% endif %}
       </div>
 
       <div class="ml-auto flex items-center gap-4">

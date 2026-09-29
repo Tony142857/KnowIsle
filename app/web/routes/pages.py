@@ -2,6 +2,7 @@
 
 v0.3 落地：登录页 / 专业列表页 / 课程空间页（含章节树侧边栏）/
 个人知识库（库树管理 + 上传轮询）/ AI 对话页 / 原文溯源页；
+v0.4 落地：公共库投稿入口（library 内）/ 资源详情页 / 协审工作台 / 管理员终审页；
 社区板块（v0.5+）、个人中心（v0.6）仍为占位页。
 """
 
@@ -19,7 +20,19 @@ from app.identity.rbac import get_current_user_optional
 from app.identity.session import destroy_session
 from app.storage.cache import get_redis
 from app.storage.db import get_db
-from app.storage.models import Chapter, Chunk, Course, Document, Major, Semester, User
+from app.storage.models import (
+    Chapter,
+    Chunk,
+    Course,
+    Document,
+    Major,
+    Resource,
+    ResourceRating,
+    ReviewRecord,
+    ReviewTask,
+    Semester,
+    User,
+)
 
 router = APIRouter(include_in_schema=False)
 templates = Jinja2Templates(directory=Path(__file__).resolve().parents[1] / "templates")
@@ -233,10 +246,28 @@ async def library(
         for s in semesters
     ]
     uncategorized = [course_item(c) for c in courses if c.semester_id is None]
+
+    # 本人文档的最新投稿记录（每个 document 取最新一条），用于渲染投稿状态徽章
+    doc_ids = [d.id for docs in doc_map.values() for d in docs]
+    resource_map: dict[int, dict] = {}
+    if doc_ids:
+        submissions = (
+            await db.execute(
+                select(Resource)
+                .where(Resource.document_id.in_(doc_ids))
+                .order_by(Resource.created_at.desc(), Resource.id.desc())
+            )
+        ).scalars().all()
+        for r in submissions:
+            resource_map.setdefault(
+                r.document_id,
+                {"review_status": r.review_status, "resource_id": r.id},
+            )
     return templates.TemplateResponse(
         request, "library.html",
         _ctx(user, active="library", semester_groups=semester_groups,
-             uncategorized=uncategorized, semesters=semesters),
+             uncategorized=uncategorized, semesters=semesters,
+             resource_map=resource_map),
     )
 
 
@@ -268,11 +299,14 @@ async def document_source(
     user: Annotated[User | None, Depends(get_current_user_optional)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
-    """原文溯源页：按 chunk 渲染解析文本，URL hash 定位高亮（仅本人/管理员）。"""
+    """原文溯源页：按 chunk 渲染解析文本，URL hash 定位高亮
+    （public 文档任何登录用户可见，个人文档仅本人/管理员）。"""
     if (resp := _login_redirect(user)) is not None:
         return resp
     doc = await db.get(Document, document_id)
-    if doc is None or (doc.owner_id != user.id and user.role != "admin"):
+    if doc is None or (
+        doc.scope != "public" and doc.owner_id != user.id and user.role != "admin"
+    ):
         raise HTTPException(status_code=404)
     chunks = (
         await db.execute(
@@ -283,6 +317,213 @@ async def document_source(
     return templates.TemplateResponse(
         request, "document_source.html",
         _ctx(user, active="library", doc=doc, course=course, chunks=chunks),
+    )
+
+
+# ---------------------------------------------------------------------------
+# 公共库板块（v0.4）：资源详情页 / 协审工作台 / 管理员终审页
+# 注意：均为固定段或多段路径，先于文件末尾 /{page} 通配占位注册。
+# ---------------------------------------------------------------------------
+
+
+async def _public_copy_of(db: AsyncSession, doc: Document) -> Document | None:
+    """终审通过时复制派生的 public 副本（storage_key 复用原件，凭此定位）。"""
+    return (
+        await db.execute(
+            select(Document).where(
+                Document.scope == "public", Document.storage_key == doc.storage_key
+            )
+        )
+    ).scalars().first()
+
+
+@router.get("/resources/{resource_id}")
+async def resource_detail(
+    resource_id: int,
+    request: Request,
+    user: Annotated[User | None, Depends(get_current_user_optional)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    """资源详情页：评分 / 下载 / 在线预览 / 原文溯源入口。
+
+    可见性与 API 一致（§3.2）：approved 任何登录用户 / 本人投稿 / admin，其余 404。
+    """
+    if (resp := _login_redirect(user)) is not None:
+        return resp
+    resource = await db.get(Resource, resource_id)
+    if resource is None or (
+        resource.review_status != "approved"
+        and resource.uploader_id != user.id
+        and user.role != "admin"
+    ):
+        raise HTTPException(status_code=404)
+    doc = await db.get(Document, resource.document_id)
+    uploader = await db.get(User, resource.uploader_id)
+    course = await db.get(Course, resource.course_id)
+    chapter = await db.get(Chapter, resource.chapter_id) if resource.chapter_id else None
+    my_rating = (
+        await db.execute(
+            select(ResourceRating.stars).where(
+                ResourceRating.resource_id == resource.id,
+                ResourceRating.user_id == user.id,
+            )
+        )
+    ).scalar_one_or_none()
+    preview_available = doc.file_type in ("pdf_textbook", "markdown")
+    if not preview_available:
+        public_doc = await _public_copy_of(db, doc)
+        preview_available = public_doc is not None and public_doc.preview_key is not None
+    return templates.TemplateResponse(
+        request, "resource_detail.html",
+        _ctx(user, active="majors", resource=resource, doc=doc, uploader=uploader,
+             course=course, chapter=chapter, my_rating=my_rating,
+             preview_available=preview_available),
+    )
+
+
+async def _records_with_names(db: AsyncSession, task_id: int) -> list[dict]:
+    """某任务的协审/终审意见（含协审员昵称，按提交顺序）。"""
+    records = (
+        await db.execute(
+            select(ReviewRecord).where(ReviewRecord.task_id == task_id)
+            .order_by(ReviewRecord.id)
+        )
+    ).scalars().all()
+    names = {
+        u.id: u.nickname
+        for u in (
+            await db.execute(
+                select(User).where(User.id.in_({r.reviewer_id for r in records}))
+            )
+        ).scalars()
+    } if records else {}
+    return [
+        {
+            "reviewer": names.get(r.reviewer_id, "协审员"),
+            "stage": r.stage,
+            "verdict": r.verdict,
+            "comment": r.comment,
+            "created_at": r.created_at,
+        }
+        for r in records
+    ]
+
+
+@router.get("/review")
+async def review_workbench(
+    request: Request,
+    user: Annotated[User | None, Depends(get_current_user_optional)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    task: int | None = None,
+):
+    """协审工作台（reviewer/admin）：本人被指派的 co_review 任务队列 + 裁决。"""
+    if (resp := _login_redirect(user)) is not None:
+        return resp
+    if user.role not in ("reviewer", "admin"):
+        raise HTTPException(status_code=404)
+    rows = (
+        await db.execute(
+            select(ReviewTask, Resource, Course.name)
+            .join(Resource, Resource.id == ReviewTask.resource_id)
+            .join(Course, Course.id == Resource.course_id)
+            .where(
+                ReviewTask.stage == "co_review",
+                ReviewTask.assignee_ids.any(user.id),
+            )
+            .order_by(ReviewTask.created_at)
+        )
+    ).all()
+    tasks = [
+        {
+            "task_id": t.id,
+            "created_at": t.created_at,
+            "resource": {
+                "id": r.id, "title": r.title,
+                "course_id": r.course_id, "course_name": course_name,
+            },
+        }
+        for t, r, course_name in rows
+    ]
+
+    selected = None
+    if task is not None:
+        hit = next((row for row in rows if row[0].id == task), None)
+        if hit is None:
+            raise HTTPException(status_code=404)
+        t, r, course_name = hit
+        doc = await db.get(Document, r.document_id)
+        chapter = await db.get(Chapter, r.chapter_id) if r.chapter_id else None
+        selected = {
+            "task_id": t.id,
+            "precheck": t.precheck_result,
+            "created_at": t.created_at,
+            "resource": r,
+            "course_name": course_name,
+            "chapter_title": chapter.title if chapter else None,
+            "doc": doc,
+            "records": await _records_with_names(db, t.id),
+            "preview_url": f"/api/resources/{r.id}/preview",
+        }
+    return templates.TemplateResponse(
+        request, "review.html",
+        _ctx(user, active="review", tasks=tasks, selected=selected),
+    )
+
+
+@router.get("/admin/review")
+async def admin_review(
+    request: Request,
+    user: Annotated[User | None, Depends(get_current_user_optional)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    """管理员终审页（admin）：final 任务队列（含协审意见聚合与预览）+
+    等待协审的 co_review 任务（只读）+ 最近完成的 done 任务。"""
+    if (resp := _login_redirect(user)) is not None:
+        return resp
+    if user.role != "admin":
+        raise HTTPException(status_code=404)
+
+    async def _query(stages: list[str], limit: int | None = None):
+        stmt = (
+            select(ReviewTask, Resource, Course.name, User.nickname)
+            .join(Resource, Resource.id == ReviewTask.resource_id)
+            .join(Course, Course.id == Resource.course_id)
+            .join(User, User.id == Resource.uploader_id)
+            .where(ReviewTask.stage.in_(stages))
+            .order_by(ReviewTask.created_at.desc())
+        )
+        if limit is not None:
+            stmt = stmt.limit(limit)
+        return (await db.execute(stmt)).all()
+
+    final_tasks = []
+    for t, r, course_name, nickname in await _query(["final"]):
+        final_tasks.append({
+            "task_id": t.id,
+            "precheck": t.precheck_result,
+            "created_at": t.created_at,
+            "resource": r,
+            "course_name": course_name,
+            "uploader_nickname": nickname,
+            "records": await _records_with_names(db, t.id),
+            "preview_url": f"/api/resources/{r.id}/preview",
+        })
+    co_tasks = [
+        {"task_id": t.id, "created_at": t.created_at,
+         "resource": r, "course_name": course_name,
+         "uploader_nickname": nickname,
+         "assignee_count": len(t.assignee_ids or [])}
+        for t, r, course_name, nickname in await _query(["co_review"])
+    ]
+    done_tasks = [
+        {"task_id": t.id, "finished_at": t.finished_at,
+         "resource": r, "course_name": course_name}
+        for t, r, course_name, nickname in await _query(["done"], 20)
+    ]
+    return templates.TemplateResponse(
+        request, "admin_review.html",
+        _ctx(user, active="admin_review", final_tasks=final_tasks,
+             co_tasks=co_tasks, done_tasks=done_tasks),
     )
 
 
