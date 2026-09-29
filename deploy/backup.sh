@@ -9,6 +9,10 @@ KEEP_DAYS=14
 DATE="$(date +%Y%m%d)"
 
 mkdir -p "$BACKUP_DIR"
+BACKUP_DIR="$(cd "$BACKUP_DIR" && pwd)"   # docker -v 挂载源必须是绝对路径
+
+# 复用已钉死且本地必有的 postgres 镜像执行打包（GNU tar），避免引入浮动的 alpine:latest
+TAR_IMAGE="postgres:16-alpine@sha256:cf78e76683b9ca8c5733cbbdce6c9262b45b6767934dd0a95e671f9a0fc20685"
 
 # PostgreSQL 逻辑备份
 docker compose -f "$COMPOSE_FILE" exec -T postgres \
@@ -19,7 +23,7 @@ docker compose -f "$COMPOSE_FILE" exec -T postgres \
 docker run --rm \
     -v knowisle_seaweeddata:/data:ro \
     -v "$BACKUP_DIR:/backup" \
-    alpine tar czf "/backup/seaweedfs_${DATE}.tar.gz" -C /data .
+    "$TAR_IMAGE" tar czf "/backup/seaweedfs_${DATE}.tar.gz" -C /data .
 
 # 清理过期备份
 find "$BACKUP_DIR" -maxdepth 1 -mtime "+$KEEP_DAYS" -exec rm -rf {} +

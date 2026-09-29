@@ -1,0 +1,5 @@
+# 本地 Embedding 依赖（模块 A2，文档 §7.3/§10.3）
+# 仅由 Dockerfile 在容器镜像内安装；CI 与本地检查（requirements-dev.txt）不引入。
+# torch 由 Dockerfile 以 CPU 版单独安装（--index-url https://download.pytorch.org/whl/cpu），避免拉取 CUDA 依赖撑大镜像。
+# 应用代码对 sentence_transformers 必须惰性导入（函数内 import），保证无此依赖时其余功能可用。
+sentence-transformers>=3.0

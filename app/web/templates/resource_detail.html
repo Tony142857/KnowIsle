@@ -1,0 +1,141 @@
+{% extends "base.html" %}
+{% block title %}{{ resource.title }} · 知屿 KnowIsle{% endblock %}
+
+{% block content %}
+<div class="mb-6">
+  {% if course %}
+  <a href="/courses/{{ course.id }}" class="text-sm text-sky-600 hover:underline">← {{ course.name }}</a>
+  {% endif %}
+  <div class="mt-2 flex flex-wrap items-center gap-3">
+    <h1 class="text-2xl font-bold text-slate-800">{{ resource.title }}</h1>
+    <span class="rounded bg-slate-100 px-2 py-0.5 text-xs text-slate-500">
+      {{ {'pdf_textbook': 'PDF 教材', 'ppt': 'PPT', 'word': 'Word', 'markdown': 'Markdown'}.get(doc.file_type, doc.file_type) }}
+    </span>
+    {# 非上架状态仅本人/管理员可见，给出状态徽章 #}
+    {% if resource.review_status != 'approved' %}
+    <span class="rounded bg-amber-100 px-2 py-0.5 text-xs text-amber-700">
+      {{ {'pending': '预检中', 'co_reviewing': '审核中', 'rejected': '已驳回'}.get(resource.review_status, resource.review_status) }}
+    </span>
+    {% endif %}
+  </div>
+  <p class="mt-1 text-sm text-slate-500">
+    {{ uploader.nickname }} 上传
+    {% if course %} · {{ course.name }}{% endif %}
+    {% if chapter %} · {{ chapter.title }}{% endif %}
+    · {{ resource.created_at.strftime('%Y-%m-%d') }}
+  </p>
+</div>
+
+<div class="grid gap-6 lg:grid-cols-3">
+  {# 主栏：描述 + 预览 #}
+  <div class="space-y-6 lg:col-span-2">
+    <div class="rounded-lg border border-slate-200 bg-white p-4">
+      <h2 class="text-sm font-semibold text-slate-700">资料简介</h2>
+      <p class="mt-2 whitespace-pre-wrap text-sm text-slate-600">{{ resource.description or '暂无简介' }}</p>
+      <p class="mt-3 text-xs text-slate-400">
+        源文件：{{ doc.file_name }}
+        <a href="/documents/{{ doc.id }}/source" class="ml-2 text-sky-600 hover:underline">原文溯源</a>
+      </p>
+    </div>
+
+    <div class="rounded-lg border border-slate-200 bg-white p-4">
+      <h2 class="text-sm font-semibold text-slate-700">在线预览</h2>
+      {% if preview_available %}
+      <iframe src="/api/resources/{{ resource.id }}/preview"
+              class="mt-3 h-[36rem] w-full rounded border border-slate-200 bg-slate-50"
+              title="资源预览"></iframe>
+      {% else %}
+      <div class="mt-3 rounded border border-dashed border-slate-300 py-16 text-center text-sm text-slate-400">
+        预览不可用 / 生成中，请下载后查看
+      </div>
+      {% endif %}
+    </div>
+  </div>
+
+  {# 侧栏：下载 + 评分 #}
+  <aside class="space-y-4">
+    <div class="rounded-lg border border-slate-200 bg-white p-4">
+      <dl class="space-y-2 text-sm">
+        <div class="flex justify-between">
+          <dt class="text-slate-500">综合评分</dt>
+          <dd id="avg-line" class="text-amber-600 font-medium">
+            {% if resource.rating is not none %}★ {{ '%.1f'|format(resource.rating) }}{% else %}暂无评分{% endif %}
+            <span class="text-xs font-normal text-slate-400">（{{ resource.rating_count }} 人）</span>
+          </dd>
+        </div>
+        <div class="flex justify-between">
+          <dt class="text-slate-500">下载量</dt>
+          <dd class="text-slate-700">{{ resource.download_count }}</dd>
+        </div>
+        <div class="flex justify-between">
+          <dt class="text-slate-500">收藏</dt>
+          <dd class="text-slate-700">{{ resource.fav_count }}</dd>
+        </div>
+      </dl>
+      {% if resource.review_status == 'approved' %}
+      <a href="/api/resources/{{ resource.id }}/download"
+         class="mt-4 block rounded bg-sky-600 py-2 text-center text-sm text-white hover:bg-sky-700">
+        下载原件{% if resource.download_cost > 0 %}（{{ resource.download_cost }} 贡献分）{% endif %}
+      </a>
+      {% endif %}
+    </div>
+
+    {# 评分组件：五颗星点击提交，重复评分覆盖 #}
+    {% if resource.review_status == 'approved' %}
+    <div class="rounded-lg border border-slate-200 bg-white p-4"
+         x-data="ratingBox({{ resource.id }}, {{ my_rating or 0 }})">
+      <h3 class="text-sm font-semibold text-slate-700">我的评分</h3>
+      <div class="mt-2 flex items-center gap-1">
+        <template x-for="star in 5" :key="star">
+          <button @click="rate(star)" @mouseenter="hover = star" @mouseleave="hover = 0"
+                  :disabled="loading" class="text-2xl leading-none transition-colors disabled:opacity-50"
+                  :class="star <= (hover || myRating) ? 'text-amber-400' : 'text-slate-300'"
+                  :title="star + ' 星'">★</button>
+        </template>
+        <span x-show="myRating" x-cloak class="ml-1 text-xs text-slate-400">
+          已评 <span x-text="myRating"></span> 星
+        </span>
+      </div>
+      <p x-show="error" x-text="error" x-cloak
+         class="mt-2 rounded bg-red-50 px-2 py-1.5 text-xs text-red-600"></p>
+      <p x-show="count > 0" x-cloak class="mt-2 text-xs text-slate-500">
+        当前均分 <span x-text="avg" class="text-amber-600"></span>
+        · <span x-text="count"></span> 人评分
+      </p>
+    </div>
+    {% endif %}
+  </aside>
+</div>
+
+<script>
+function ratingBox(resourceId, initial) {
+  return {
+    myRating: initial, hover: 0, loading: false, error: '',
+    avg: '{{ '%.2f'|format(resource.rating) if resource.rating is not none else '—' }}',
+    count: {{ resource.rating_count }},
+
+    async rate(stars) {
+      this.loading = true; this.error = '';
+      try {
+        const resp = await fetch('/api/resources/' + resourceId + '/rating', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({stars: stars}),
+        });
+        const data = await resp.json().catch(() => ({}));
+        if (!resp.ok) throw new Error(data.detail || ('评分失败 ' + resp.status));
+        this.myRating = data.my_rating;
+        this.avg = data.rating.toFixed(2);
+        this.count = data.rating_count;
+        // 同步刷新侧栏服务端渲染的「综合评分」行
+        const line = document.getElementById('avg-line');
+        if (line) line.innerHTML = '★ ' + data.rating.toFixed(1)
+          + ' <span class="text-xs font-normal text-slate-400">（'
+          + data.rating_count + ' 人）</span>';
+      } catch (e) { this.error = e.message; }
+      finally { this.loading = false; }
+    },
+  };
+}
+</script>
+{% endblock %}

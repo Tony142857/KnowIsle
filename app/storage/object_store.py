@@ -4,6 +4,8 @@ SDK 使用 aioboto3（异步 S3 客户端，符合全异步生态），
 endpoint 指向 compose 中的 seaweedfs 服务。
 """
 
+import inspect
+
 import aioboto3
 
 from app.config import get_settings
@@ -28,4 +30,43 @@ async def ensure_bucket() -> None:
         if settings.s3_bucket not in names:
             await s3.create_bucket(Bucket=settings.s3_bucket)
 
-    # TODO(v0.3): put_object / presigned_url（预览与下载）/ delete_object 等封装
+
+async def put_object(data: bytes, key: str, content_type: str = "application/octet-stream") -> None:
+    """上传对象（原始文件 / 预览 PDF 产物）。"""
+    settings = get_settings()
+    session = get_s3_session()
+    async with session.client("s3", endpoint_url=settings.s3_endpoint_url) as s3:
+        await s3.put_object(Bucket=settings.s3_bucket, Key=key, Body=data, ContentType=content_type)
+
+
+async def get_object(key: str) -> bytes:
+    """下载对象内容（解析流水线取原始文件用）。"""
+    settings = get_settings()
+    session = get_s3_session()
+    async with session.client("s3", endpoint_url=settings.s3_endpoint_url) as s3:
+        resp = await s3.get_object(Bucket=settings.s3_bucket, Key=key)
+        return await resp["Body"].read()
+
+
+async def presigned_url(key: str, expires: int = 3600) -> str:
+    """GET 预签名下载地址（在线预览 / 下载）。"""
+    settings = get_settings()
+    session = get_s3_session()
+    async with session.client("s3", endpoint_url=settings.s3_endpoint_url) as s3:
+        result = s3.generate_presigned_url(
+            "get_object",
+            Params={"Bucket": settings.s3_bucket, "Key": key},
+            ExpiresIn=expires,
+        )
+        # aioboto3 新版返回 coroutine，旧版（botocore 同步实现）直接返回 str
+        if inspect.isawaitable(result):
+            result = await result
+        return result
+
+
+async def delete_object(key: str) -> None:
+    """删除对象（资料下架 / 重解析清理用）。"""
+    settings = get_settings()
+    session = get_s3_session()
+    async with session.client("s3", endpoint_url=settings.s3_endpoint_url) as s3:
+        await s3.delete_object(Bucket=settings.s3_bucket, Key=key)

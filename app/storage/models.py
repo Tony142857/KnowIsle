@@ -247,6 +247,24 @@ class Resource(Base):
     created_at: Mapped[datetime] = _created_at()
 
 
+class ResourceRating(Base):
+    """资源评分（1-5 星，一人一评，upsert 覆盖；§8.4 v3.2.5 补充）。"""
+
+    __tablename__ = "resource_ratings"
+    __table_args__ = (
+        CheckConstraint("stars BETWEEN 1 AND 5", name="ck_resource_ratings_stars"),
+        UniqueConstraint("user_id", "resource_id"),
+    )
+
+    id: Mapped[int] = _id()
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
+    resource_id: Mapped[int] = mapped_column(
+        ForeignKey("resources.id", ondelete="CASCADE"), nullable=False
+    )
+    stars: Mapped[int] = mapped_column(SmallInteger, nullable=False)
+    created_at: Mapped[datetime] = _created_at()
+
+
 # ---------------------------------------------------------------------------
 # 8.5 审核类
 # ---------------------------------------------------------------------------

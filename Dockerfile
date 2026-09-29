@@ -1,6 +1,7 @@
 # syntax=docker/dockerfile:1
 # 知屿应用镜像：app（Gunicorn+Uvicorn）与 worker（ARQ）共用同一镜像，仅启动命令不同（§15.2）
-FROM python:3.12-slim
+# 基础镜像按 digest 钉死（= 当前已验证的 linux/amd64 python:3.12-slim 内容），保证团队构建逐字节一致
+FROM python:3.12-slim@sha256:2f17fc044b579bab302c2e8054d3a686e2cb9a83de48e70534b94cd8ebbe06a9
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
@@ -24,8 +25,15 @@ RUN apt-get update \
 # pip 使用清华镜像加速（仅改下载源，不改变依赖内容）
 ENV PIP_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple
 
-COPY requirements.txt ./
-RUN pip install -r requirements.txt
+COPY requirements.txt requirements-ml.txt ./
+RUN pip install -r requirements.txt \
+ && pip install --index-url https://download.pytorch.org/whl/cpu "torch>=2.2" \
+ && pip install -r requirements-ml.txt
+
+# 预下载本地 Embedding 模型 bge-small-zh-v1.5（构建期经 hf-mirror 镜像站拉取，
+# 烘焙进镜像后运行时可完全离线加载，见 compose 中 HF_HUB_OFFLINE=1）
+RUN HF_ENDPOINT=https://hf-mirror.com python -c \
+    "from sentence_transformers import SentenceTransformer; SentenceTransformer('BAAI/bge-small-zh-v1.5')"
 
 COPY . .
 

@@ -7,8 +7,10 @@ services:
     build:
       context: ..
       dockerfile: Dockerfile
-    image: knowisle-app:latest
+    image: knowisle-app:0.4.0         # 自建镜像按版本号命名，禁止 latest（发版时手动递增）
     env_file: ../.env
+    environment:
+      HF_HUB_OFFLINE: "1"               # Embedding 模型已烘焙进镜像，运行时离线加载
     command: >
       sh -c "alembic upgrade head &&
              gunicorn app.main:app -k uvicorn.workers.UvicornWorker -w 4 -b 0.0.0.0:8000"
@@ -29,8 +31,10 @@ services:
     build:
       context: ..
       dockerfile: Dockerfile
-    image: knowisle-app:latest
+    image: knowisle-app:0.4.0         # 同上：worker 与 app 共用同一版本化镜像
     env_file: ../.env
+    environment:
+      HF_HUB_OFFLINE: "1"               # 同上：worker 加载本地 Embedding 模型不联网
     command: arq app.workers.settings.WorkerSettings
     depends_on:
       postgres:
@@ -44,7 +48,7 @@ services:
     restart: unless-stopped
 
   postgres:                           # 业务数据 + 元数据（§7.2）
-    image: postgres:16-alpine
+    image: postgres:16-alpine@sha256:cf78e76683b9ca8c5733cbbdce6c9262b45b6767934dd0a95e671f9a0fc20685
     env_file: ../.env                 # 读取 POSTGRES_USER / POSTGRES_PASSWORD / POSTGRES_DB
     volumes:
       - pgdata:/var/lib/postgresql/data
@@ -56,7 +60,7 @@ services:
     restart: unless-stopped
 
   redis:                              # 会话 / 缓存 / ARQ 队列 / 贡献榜 / 限流
-    image: redis:7-alpine
+    image: redis:7-alpine@sha256:ff02b58f971e7d7d156a1267e283fcbbeee91773b6aa36c49dac28ecfe28eadf
     command: redis-server --appendonly yes
     volumes:
       - redisdata:/data
@@ -68,7 +72,7 @@ services:
     restart: unless-stopped
 
   seaweedfs:                          # 对象存储：原始文件 + 预览产物（S3 兼容，Apache-2.0）
-    image: chrislusf/seaweedfs:4.47
+    image: chrislusf/seaweedfs:4.47@sha256:ce9e796f1fe6f06968f4c04bdaf8f678dad9c8acdfef3d244133d71bfa6bf882
     command: >-
       server -dir=/data
       -master.port=9333 -volume.port=8080
@@ -89,7 +93,7 @@ services:
     restart: unless-stopped
 
   chroma:                             # 向量库（双 Collection：chunks_public / chunks_personal）
-    image: chromadb/chroma:1.0.15
+    image: chromadb/chroma:1.0.15@sha256:663aa18087cd698aacc3c16c1ea0c1585be9a6392e2fd80c3086c371e2f89363
     environment:
       IS_PERSISTENT: "TRUE"
       ANONYMIZED_TELEMETRY: "FALSE"
@@ -98,7 +102,7 @@ services:
     restart: unless-stopped
 
   nginx:                              # 反向代理 / TLS（云端可选）/ 静态资源 / 限流
-    image: nginx:1.27-alpine
+    image: nginx:1.27-alpine@sha256:65645c7bb6a0661892a8b03b89d0743208a18dd2f3f17a54ef4b76fb8e2f2a10
     volumes:
       - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
     ports:

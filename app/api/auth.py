@@ -23,8 +23,6 @@ from app.storage.models import AuthIdentity, Major, User
 logger = logging.getLogger("knowisle.auth")
 router = APIRouter(prefix="/auth", tags=["auth"])
 
-PROVIDER = "email_fallback"
-
 
 class EmailCodeRequest(BaseModel):
     student_no: str = Field(min_length=1, max_length=32)
@@ -79,7 +77,7 @@ async def _issue_session(response: Response, user_id: int) -> None:
 
 @router.get("/cas/login")
 async def cas_login():
-    if cas.current_provider() == PROVIDER:
+    if cas.current_provider() == "email_fallback":
         raise HTTPException(
             status_code=501,
             detail="当前为邮箱降级通道（AUTH_PROVIDER=email_fallback），请使用 /login 页面登录",
@@ -131,11 +129,12 @@ async def verify_email_code(
         await db.execute(select(User).where(User.student_no == payload.student_no))
     ).scalar_one_or_none()
 
+    provider = cas.current_provider()
     if user is not None:
         identity = (
             await db.execute(
                 select(AuthIdentity).where(
-                    AuthIdentity.provider == PROVIDER,
+                    AuthIdentity.provider == provider,
                     AuthIdentity.external_id == payload.student_no,
                 )
             )
@@ -171,12 +170,12 @@ async def verify_email_code(
     db.add(
         AuthIdentity(
             user_id=user.id,
-            provider=PROVIDER,
+            provider=provider,
             external_id=payload.student_no,
             raw_profile={
                 "email": payload.email,
                 "grade": payload.grade,
-                "registered_via": PROVIDER,
+                "registered_via": provider,
             },
         )
     )

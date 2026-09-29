@@ -6,12 +6,22 @@
 from arq.connections import RedisSettings
 
 from app.config import get_settings
-from app.workers import notify_worker, parse_worker, settle_worker
+from app.workers import (
+    notify_worker,
+    parse_worker,
+    preview_worker,
+    review_worker,
+    settle_worker,
+    summary_worker,
+)
 
 
 class WorkerSettings:
     functions = [
         parse_worker.parse_document,
+        review_worker.precheck_submission,
+        preview_worker.convert_preview,
+        summary_worker.backfill_chapter_summaries,
         notify_worker.send_notification,
         settle_worker.settle_scores,
     ]

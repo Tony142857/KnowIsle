@@ -12,13 +12,13 @@ import asyncio
 
 from sqlalchemy import select
 
+from app.config import get_settings
 from app.storage.db import SessionLocal
 from app.storage.models import AuthIdentity, User
 
-PROVIDER = "email_fallback"
-
 
 async def create_admin(student_no: str, nickname: str, real_name: str, email: str) -> str:
+    provider = get_settings().auth_provider
     async with SessionLocal() as db:
         user = (
             await db.execute(select(User).where(User.student_no == student_no))
@@ -40,12 +40,12 @@ async def create_admin(student_no: str, nickname: str, real_name: str, email: st
 
         identity = (
             await db.execute(
-                select(AuthIdentity).where(AuthIdentity.provider == PROVIDER,
+                select(AuthIdentity).where(AuthIdentity.provider == provider,
                                            AuthIdentity.external_id == student_no)
             )
         ).scalar_one_or_none()
         if identity is None:
-            db.add(AuthIdentity(user_id=user.id, provider=PROVIDER,
+            db.add(AuthIdentity(user_id=user.id, provider=provider,
                                 external_id=student_no,
                                 raw_profile={"email": email, "registered_via": "create_admin"}))
         else:

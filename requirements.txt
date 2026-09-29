@@ -35,5 +35,6 @@ itsdangerous>=2.2
 cryptography>=42            # Fernet：用户自定义 Key 加密
 PyJWT>=2.8                  # API 通道 JWT
 
-# TODO(v0.3, Embedding): sentence-transformers + torch(CPU)，本地 bge-small-zh-v1.5
-# 体积较大（约 2GB 级镜像增量），随 core/embeddings 模块落地时引入，容器内安装
+# 本地 Embedding（bge-small-zh-v1.5，模块 A2）依赖见 requirements-ml.txt：
+# 体积大（torch + sentence-transformers），仅容器镜像安装，CI/本地检查不引入；
+# 应用代码对 sentence_transformers 一律惰性导入，import app 模块不要求其存在。

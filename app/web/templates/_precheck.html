@@ -1,0 +1,75 @@
+{# 预检结果侧栏宏（review.html / admin_review.html 共用）：
+   precheck_result JSONB 形如 {format_ok, duplicate, sensitive_hits:[],
+   ai_review:{relevance,completeness,quality,issues:[],suggested_chapter}|{error},
+   hard_fail, reason}；为 None 时表示预检仍在进行。 #}
+{% macro precheck_panel(p) %}
+<div class="rounded-lg border border-slate-200 bg-white p-4">
+  <h3 class="text-sm font-semibold text-slate-700">自动预检结果</h3>
+  {% if not p %}
+  <p class="mt-2 text-xs text-slate-400">预检进行中，稍后刷新查看。</p>
+  {% else %}
+  <ul class="mt-2 space-y-1.5 text-xs">
+    <li class="flex items-center gap-2">
+      {% if p.format_ok %}
+      <span class="rounded bg-emerald-50 px-1.5 py-0.5 text-emerald-700">通过</span>
+      {% else %}
+      <span class="rounded bg-red-50 px-1.5 py-0.5 text-red-600">未通过</span>
+      {% endif %}
+      <span class="text-slate-600">格式检查</span>
+    </li>
+    <li class="flex items-center gap-2">
+      {% if p.duplicate %}
+      <span class="rounded bg-amber-50 px-1.5 py-0.5 text-amber-700">疑似重复</span>
+      {% else %}
+      <span class="rounded bg-emerald-50 px-1.5 py-0.5 text-emerald-700">未发现重复</span>
+      {% endif %}
+      <span class="text-slate-600">内容查重</span>
+    </li>
+    <li class="flex items-start gap-2">
+      {% if p.sensitive_hits %}
+      <span class="rounded bg-red-50 px-1.5 py-0.5 text-red-600">
+        命中 {{ p.sensitive_hits|length }} 处
+      </span>
+      {% else %}
+      <span class="rounded bg-emerald-50 px-1.5 py-0.5 text-emerald-700">未命中</span>
+      {% endif %}
+      <span class="text-slate-600">
+        敏感词检测
+        {% if p.sensitive_hits %}
+        <span class="mt-1 block text-red-500">{{ p.sensitive_hits|join('、') }}</span>
+        {% endif %}
+      </span>
+    </li>
+  </ul>
+
+  {% if p.ai_review %}
+  <div class="mt-3 border-t border-slate-100 pt-3">
+    <p class="text-xs font-medium text-slate-500">AI 初评</p>
+    {% if p.ai_review.error %}
+    <p class="mt-1 text-xs text-slate-400">AI 初评暂不可用：{{ p.ai_review.error }}</p>
+    {% else %}
+    <dl class="mt-1.5 space-y-1 text-xs text-slate-600">
+      <div class="flex justify-between"><dt>与课程相关性</dt><dd>{{ p.ai_review.relevance }}</dd></div>
+      <div class="flex justify-between"><dt>内容完整性</dt><dd>{{ p.ai_review.completeness }}</dd></div>
+      <div class="flex justify-between"><dt>资料质量</dt><dd>{{ p.ai_review.quality }}</dd></div>
+    </dl>
+    {% if p.ai_review.issues %}
+    <ul class="mt-2 list-disc pl-4 text-xs text-amber-700">
+      {% for issue in p.ai_review.issues %}<li>{{ issue }}</li>{% endfor %}
+    </ul>
+    {% endif %}
+    {% if p.ai_review.suggested_chapter %}
+    <p class="mt-2 text-xs text-slate-400">建议挂载章节：{{ p.ai_review.suggested_chapter }}</p>
+    {% endif %}
+    {% endif %}
+  </div>
+  {% endif %}
+
+  {% if p.hard_fail %}
+  <p class="mt-3 rounded bg-red-50 px-2 py-1.5 text-xs text-red-600">
+    预检硬性不通过：{{ p.reason or '未给出原因' }}
+  </p>
+  {% endif %}
+  {% endif %}
+</div>
+{% endmacro %}

@@ -1,2 +1,7 @@
 /* 知屿自定义样式（Tailwind 原子类之外的少量补充）。
    TODO(v0.9 前端): 改用 Tailwind CLI 本地构建产物，替换 CDN。 */
+
+/* Alpine.js x-cloak：初始化完成前隐藏，避免闪烁 */
+[x-cloak] {
+  display: none !important;
+}

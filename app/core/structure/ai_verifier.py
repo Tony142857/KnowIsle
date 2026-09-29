@@ -1,3 +1,5 @@
-"""AI 校验（模块 A1）：对自动提取的章节树做误判修正，结论供人工修正参考。"""
+"""AI 校验（模块 A1）：对自动提取的章节树做误判修正，结论供人工修正参考。
 
-# TODO(v0.3): async def verify_tree(tree, model_tier=ModelTier.SHORT) -> ChapterTree
+TODO(v0.4+)：用 LLM（ModelTier.SHORT）校验 tree_builder 产出的章节树，
+修正 PDF 字体规则的误判（误报标题 / 层级错乱），本迭代保持规则提取结果直接使用。
+"""
