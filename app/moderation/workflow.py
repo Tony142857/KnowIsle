@@ -305,10 +305,36 @@ async def _approve(session: AsyncSession, task: ReviewTask) -> int:
 
     await grant_score(
         session, resource.uploader_id, SCORE_UPLOAD_APPROVED,
-        "upload_approved", "resource", resource.id,
+        "upload_approved", "resource", resource.id, course_id=resource.course_id,
     )
     _notify(
         session, resource.uploader_id, "review_result",
         f"投稿已上架：{resource.title}", link=f"/resources/{resource.id}",
     )
     return new_doc.id
+
+
+def check_direct_stage(stage: str) -> None:
+    """管理员直审的阶段校验（纯函数）：co_review / final 放行；
+    precheck → ValueError("precheck")；done → ValueError("done")。"""
+    if stage == "precheck":
+        raise ValueError("precheck")
+    if stage == "done":
+        raise ValueError("done")
+
+
+async def direct_verdict(
+    session: AsyncSession,
+    admin: User,
+    task: ReviewTask,
+    verdict: str,
+    comment: str | None,
+) -> tuple[int, int | None]:
+    """管理员直审（v0.5）：协审中/待终审任务由管理员直接裁决，行为与终审完全一致。
+
+    非 final 阶段先推进到 final 再复用 final_verdict（终审记录由 final_verdict 写入，
+    不重复插）。ValueError 约定：precheck / done 见 check_direct_stage，其余同 final_verdict。
+    """
+    check_direct_stage(task.stage)
+    task.stage = "final"
+    return await final_verdict(session, admin, task, verdict, comment)

@@ -1,7 +1,368 @@
 """社区帖子接口（§12.1）：帖子列表/发帖、详情（含 AI 首答）、评论、采纳。"""
 
-from fastapi import APIRouter
+from typing import Annotated
+
+from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel, Field
+from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.community.comments import decide_accept_score, validate_accept
+from app.community.posts import (
+    ai_answer_key,
+    build_ai_citations,
+    derive_ai_answer_status,
+    make_excerpt,
+    validate_board,
+    validate_tags,
+)
+from app.identity.growth import grant_score
+from app.identity.rbac import get_current_user, get_current_user_optional
+from app.storage.cache import get_redis
+from app.storage.db import get_db
+from app.storage.models import Chapter, Comment, Course, Notification, Post, User, Vote
+from app.workers.pool import get_arq_pool
 
 router = APIRouter(prefix="/posts", tags=["posts"])
 
-# TODO(v0.5): GET/POST /、GET /{id}、GET/POST /{id}/comments、POST /comments/{id}/accept
+LIST_DEFAULT_SIZE = 20
+LIST_MAX_SIZE = 100
+
+def _author_brief(user: User) -> dict:
+    return {"id": user.id, "nickname": user.nickname, "avatar_url": user.avatar_url}
+
+
+# ---------------------------------------------------------------------------
+# 发帖 / 列表 / 详情
+# ---------------------------------------------------------------------------
+
+
+class CreatePostRequest(BaseModel):
+    board: str
+    title: str = Field(min_length=1, max_length=128)
+    content: str = Field(min_length=1)
+    course_id: int | None = None
+    chapter_id: int | None = None
+    tags: list[str] | None = None
+
+
+@router.post("", status_code=201, include_in_schema=False)
+@router.post("/", status_code=201)
+async def create_post(
+    payload: CreatePostRequest,
+    user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    """发帖：qa 帖需指定公共课程，commit 后入队 AI 首答异步生成；discuss 帖不入队。"""
+    try:
+        validate_board(payload.board)
+        tags = validate_tags(payload.tags)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    course = None
+    if payload.board == "qa" and payload.course_id is None:
+        raise HTTPException(status_code=422, detail="问答贴必须指定课程")
+    if payload.course_id is not None:
+        course = await db.get(Course, payload.course_id)
+        if course is None or course.scope != "public" or course.status != "active":
+            raise HTTPException(status_code=422, detail="课程不存在或未开放")
+    if payload.chapter_id is not None:
+        if course is None:
+            raise HTTPException(status_code=422, detail="指定章节须同时指定课程")
+        chapter = await db.get(Chapter, payload.chapter_id)
+        if chapter is None or chapter.course_id != course.id:
+            raise HTTPException(status_code=422, detail="章节不存在或不属于该课程")
+
+    post = Post(
+        author_id=user.id,
+        board=payload.board,
+        major_id=course.major_id if course else None,
+        course_id=course.id if course else None,
+        chapter_id=payload.chapter_id,
+        title=payload.title,
+        content=payload.content,
+        tags=tags or None,
+    )
+    db.add(post)
+    await db.commit()
+
+    ai_pending = False
+    if post.board == "qa":
+        await get_redis().set(ai_answer_key(post.id), "pending", ex=24 * 3600)
+        pool = await get_arq_pool()
+        await pool.enqueue_job("generate_ai_first_answer", post.id)
+        ai_pending = True
+    return {"post_id": post.id, "ai_first_answer_pending": ai_pending}
+
+
+@router.get("")
+@router.get("/")
+async def list_posts(
+    db: Annotated[AsyncSession, Depends(get_db)],
+    board: str | None = None,
+    course_id: int | None = None,
+    tag: str | None = None,
+    page: int = Query(default=1, ge=1),
+    size: int = Query(default=LIST_DEFAULT_SIZE, ge=1, le=LIST_MAX_SIZE),
+):
+    """帖子列表：仅 normal/featured，按发帖时间倒序；board 为空列全部。"""
+    comment_counts = (
+        select(Comment.post_id, func.count().label("n"))
+        .group_by(Comment.post_id)
+        .subquery()
+    )
+    vote_scores = (
+        select(Vote.target_id, func.sum(Vote.value).label("s"))
+        .where(Vote.target_type == "post")
+        .group_by(Vote.target_id)
+        .subquery()
+    )
+    filters = [Post.status.in_(["normal", "featured"])]
+    if board:
+        filters.append(Post.board == board)
+    if course_id is not None:
+        filters.append(Post.course_id == course_id)
+    if tag:
+        filters.append(Post.tags.contains([tag]))
+
+    total = (
+        await db.execute(select(func.count()).select_from(Post).where(*filters))
+    ).scalar_one()
+    rows = (
+        await db.execute(
+            select(Post, User, comment_counts.c.n, vote_scores.c.s)
+            .join(User, User.id == Post.author_id)
+            .outerjoin(comment_counts, comment_counts.c.post_id == Post.id)
+            .outerjoin(vote_scores, vote_scores.c.target_id == Post.id)
+            .where(*filters)
+            .order_by(Post.created_at.desc())
+            .offset((page - 1) * size)
+            .limit(size)
+        )
+    ).all()
+    items = [
+        {
+            "id": post.id,
+            "board": post.board,
+            "title": post.title,
+            "author": _author_brief(author),
+            "course_id": post.course_id,
+            "tags": post.tags or [],
+            "view_count": post.view_count,
+            "comment_count": comment_count or 0,
+            "vote_score": vote_score or 0,
+            "has_ai_answer": post.ai_first_answer is not None,
+            "has_accepted": post.accepted_comment_id is not None,
+            "created_at": post.created_at.isoformat() if post.created_at else None,
+            "excerpt": make_excerpt(post.content),
+        }
+        for post, author, comment_count, vote_score in rows
+    ]
+    return {"total": total, "items": items}
+
+
+@router.get("/{post_id}")
+async def get_post(
+    post_id: int,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    user: Annotated[User | None, Depends(get_current_user_optional)],
+):
+    """帖子详情：每次访问 view_count+1；含 AI 首答、状态推导与引用溯源。"""
+    post = await db.get(Post, post_id)
+    if post is None:
+        raise HTTPException(status_code=404, detail="Not Found")
+    post.view_count += 1
+    await db.commit()
+
+    author = await db.get(User, post.author_id)
+    vote_score = (
+        await db.execute(
+            select(func.coalesce(func.sum(Vote.value), 0)).where(
+                Vote.target_type == "post", Vote.target_id == post.id
+            )
+        )
+    ).scalar_one()
+    my_vote = 0
+    if user is not None:
+        vote = (
+            await db.execute(
+                select(Vote.value).where(
+                    Vote.user_id == user.id,
+                    Vote.target_type == "post",
+                    Vote.target_id == post.id,
+                )
+            )
+        ).scalar_one_or_none()
+        my_vote = vote or 0
+
+    redis_state = None
+    if post.board == "qa" and not post.ai_first_answer:
+        redis_state = await get_redis().get(ai_answer_key(post.id))
+    ai_citations = (
+        await build_ai_citations(db, post.ai_first_answer) if post.ai_first_answer else []
+    )
+    return {
+        "id": post.id,
+        "board": post.board,
+        "title": post.title,
+        "content": post.content,
+        "author": _author_brief(author),
+        "course_id": post.course_id,
+        "chapter_id": post.chapter_id,
+        "tags": post.tags or [],
+        "view_count": post.view_count,
+        "vote_score": vote_score,
+        "my_vote": my_vote,
+        "ai_first_answer": post.ai_first_answer,
+        "ai_answer_status": derive_ai_answer_status(
+            post.board, post.ai_first_answer, redis_state
+        ),
+        "ai_citations": ai_citations,
+        "accepted_comment_id": post.accepted_comment_id,
+        "created_at": post.created_at.isoformat() if post.created_at else None,
+    }
+
+
+# ---------------------------------------------------------------------------
+# 评论 / 采纳
+# ---------------------------------------------------------------------------
+
+
+@router.get("/{post_id}/comments")
+async def list_comments(
+    post_id: int,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    user: Annotated[User | None, Depends(get_current_user_optional)],
+):
+    """评论平铺列表（按时间升序，前端组树），含点赞总分与我的投票。"""
+    post = await db.get(Post, post_id)
+    if post is None:
+        raise HTTPException(status_code=404, detail="Not Found")
+    rows = (
+        await db.execute(
+            select(Comment, User)
+            .join(User, User.id == Comment.author_id)
+            .where(Comment.post_id == post.id)
+            .order_by(Comment.created_at)
+        )
+    ).all()
+    comment_ids = [c.id for c, _ in rows]
+    scores: dict[int, int] = {}
+    my_votes: dict[int, int] = {}
+    if comment_ids:
+        score_rows = (
+            await db.execute(
+                select(Vote.target_id, func.sum(Vote.value))
+                .where(Vote.target_type == "comment", Vote.target_id.in_(comment_ids))
+                .group_by(Vote.target_id)
+            )
+        ).all()
+        scores = dict(score_rows)
+        if user is not None:
+            mine = (
+                await db.execute(
+                    select(Vote.target_id, Vote.value).where(
+                        Vote.user_id == user.id,
+                        Vote.target_type == "comment",
+                        Vote.target_id.in_(comment_ids),
+                    )
+                )
+            ).all()
+            my_votes = dict(mine)
+    return {
+        "items": [
+            {
+                "id": c.id,
+                "parent_id": c.parent_id,
+                "author": _author_brief(author),
+                "content": c.content,
+                "is_accepted": c.is_accepted,
+                "vote_score": scores.get(c.id, 0),
+                "my_vote": my_votes.get(c.id, 0),
+                "created_at": c.created_at.isoformat() if c.created_at else None,
+            }
+            for c, author in rows
+        ]
+    }
+
+
+class CreateCommentRequest(BaseModel):
+    content: str = Field(min_length=1)
+    parent_id: int | None = None
+
+
+@router.post("/{post_id}/comments", status_code=201)
+async def create_comment(
+    post_id: int,
+    payload: CreateCommentRequest,
+    user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    """发表评论：支持楼中楼（parent_id 须属同一帖子）；closed 帖禁止评论。"""
+    post = await db.get(Post, post_id)
+    if post is None:
+        raise HTTPException(status_code=404, detail="Not Found")
+    if post.status == "closed":
+        raise HTTPException(status_code=422, detail="帖子已关闭")
+    if payload.parent_id is not None:
+        parent = await db.get(Comment, payload.parent_id)
+        if parent is None or parent.post_id != post.id:
+            raise HTTPException(status_code=422, detail="父评论不存在或不属于该帖子")
+    comment = Comment(
+        post_id=post.id, author_id=user.id, parent_id=payload.parent_id, content=payload.content
+    )
+    db.add(comment)
+    await db.commit()
+    return {"comment_id": comment.id}
+
+
+@router.post("/comments/{comment_id}/accept")
+async def accept_comment(
+    comment_id: int,
+    user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    """采纳最佳答案：仅帖主、仅 qa 帖；首次采纳计分并通知，改采不再变动积分。"""
+    comment = await db.get(Comment, comment_id)
+    if comment is None:
+        raise HTTPException(status_code=404, detail="Not Found")
+    post = await db.get(Post, comment.post_id)
+    error = validate_accept(post.board, post.author_id, user.id, comment.post_id, post.id)
+    if error == "not_owner":
+        raise HTTPException(status_code=404, detail="Not Found")
+    if error is not None:
+        detail = "仅问答贴可采纳" if error == "not_qa" else "评论不属于该帖子"
+        raise HTTPException(status_code=422, detail=detail)
+
+    if post.accepted_comment_id == comment.id and comment.is_accepted:
+        return {"accepted": True, "score_granted": 0}  # 重复采纳同一条：幂等
+
+    score_granted = 0
+    if post.accepted_comment_id is None:
+        # 首次采纳
+        comment.is_accepted = True
+        post.accepted_comment_id = comment.id
+        score_granted = decide_accept_score(post.author_id, comment.author_id)
+        if score_granted:
+            await grant_score(
+                db, comment.author_id, score_granted, "answer_accepted", "comment", comment.id,
+                course_id=post.course_id,
+            )
+            db.add(
+                Notification(
+                    user_id=comment.author_id,
+                    type="accepted",
+                    title="你的回答被采纳",
+                    link=f"/posts/{post.id}",
+                )
+            )
+    else:
+        # 改采另一条评论：旧评论取消标记，积分不再变动
+        old = await db.get(Comment, post.accepted_comment_id)
+        if old is not None:
+            old.is_accepted = False
+        comment.is_accepted = True
+        post.accepted_comment_id = comment.id
+    await db.commit()
+    return {"accepted": True, "score_granted": score_granted}

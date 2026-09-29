@@ -19,6 +19,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.embeddings import get_embedding
+from app.core.llm.client import LLMClient
 from app.core.llm.prompts import QA_SYSTEM_PROMPT
 from app.core.llm.router import ModelTier, get_official_client
 from app.core.retrieval.coarse import coarse_recall
@@ -146,10 +147,17 @@ async def _build_citation_items(
     return items
 
 
-async def answer_question(session: AsyncSession, user: User, body) -> AsyncIterator[dict]:
+async def answer_question(
+    session: AsyncSession,
+    user: User,
+    body,
+    client: LLMClient | None = None,
+    provider: str = "official",
+) -> AsyncIterator[dict]:
     """问答主流程：检索 → 组装 Prompt → 流式生成 → 引用映射 → qa_logs 落库 → 扣减额度。
 
     body 需有 question / course_id / scope 属性。LLM/检索异常时 yield error 事件而不是抛出。
+    client 为 None 时使用官方 SHORT 档模型；provider="user_custom" 时不占官方额度。
     """
     started = time.monotonic()
     try:
@@ -166,7 +174,8 @@ async def answer_question(session: AsyncSession, user: User, body) -> AsyncItera
         f"[{h['chunk'].chunk_id}]\n{h['chunk'].content}" for h in hits
     )
     prompt = QA_SYSTEM_PROMPT.format(context=context or "（未检索到相关资料）", question=body.question)
-    client = get_official_client(ModelTier.SHORT)
+    if client is None:
+        client = get_official_client(ModelTier.SHORT)
 
     answer_parts: list[str] = []
     try:
@@ -196,12 +205,13 @@ async def answer_question(session: AsyncSession, user: User, body) -> AsyncItera
                 top_chunks=[h["chunk"].chunk_id for h in hits],
                 prompt=prompt,
                 answer=answer,
-                model_provider="official",
+                model_provider=provider,
                 token_usage=token_usage,
                 latency_ms=latency_ms,
             )
         )
-        await consume_quota(session, user)
+        if provider != "user_custom":  # 自定义 Key 不占官方额度
+            await consume_quota(session, user)
         await session.commit()
     except Exception:
         await session.rollback()

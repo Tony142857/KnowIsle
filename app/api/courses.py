@@ -4,8 +4,10 @@
 - 课程空间：管理员创建直接开通；学生申请为 pending，管理员审批后开通。
 - 章节树：builder/admin 人工维护（§3.2）；随资料入库的半自动构建在 v0.3 落地。
 - 数据级权限：pending 课程仅管理员可见，其余用户访问返回 404（§3.2）。
+- 贡献榜（v0.5）：Redis Sorted Set 实时排名，键缺失/异常时退化 SQL 现算并回写自愈。
 """
 
+import logging
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -13,14 +15,47 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.identity.growth import compute_course_scores
 from app.identity.rbac import get_current_user, get_current_user_optional, require_builder
+from app.storage.cache import get_redis
 from app.storage.db import get_db
 from app.storage.models import Chapter, Course, Major, User
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["courses"])
 
 LIST_DEFAULT_SIZE = 20
 LIST_MAX_SIZE = 100
+
+
+async def _leaderboard_items(
+    db: AsyncSession, entries: list[tuple[int, float]]
+) -> list[dict]:
+    """榜单条目补全昵称/头像（批量查 users），rank 从 1 起。"""
+    if not entries:
+        return []
+    users = {
+        u.id: u
+        for u in (
+            await db.execute(
+                select(User).where(User.id.in_([uid for uid, _ in entries]))
+            )
+        ).scalars()
+    }
+    items = []
+    for i, (uid, score) in enumerate(entries):
+        user = users.get(uid)
+        items.append(
+            {
+                "rank": i + 1,
+                "user_id": uid,
+                "nickname": user.nickname if user else None,
+                "avatar_url": user.avatar_url if user else None,
+                "score": int(score),
+            }
+        )
+    return items
 
 
 # ---------------------------------------------------------------------------
@@ -49,6 +84,41 @@ async def list_majors(db: Annotated[AsyncSession, Depends(get_db)]):
         for m, n in rows
     ]
     return {"total": len(items), "items": items}
+
+
+@router.get("/majors/{major_id}/leaderboard")
+async def major_leaderboard(
+    major_id: int,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    limit: int = Query(default=20, ge=1, le=100),
+):
+    """专业贡献榜：优先读 Redis Sorted Set（rank:major:{id}，grant_score 实时 ZADD 总分）；
+    键为空或 Redis 异常时退化到 users 表现算（score>0 按分倒序），并回写 Redis 自愈。"""
+    major = await db.get(Major, major_id)
+    if major is None:
+        raise HTTPException(status_code=404, detail="Not Found")
+    key = f"rank:major:{major_id}"
+    entries: list[tuple[int, float]] = []
+    try:
+        raw = await get_redis().zrevrange(key, 0, limit - 1, withscores=True)
+        entries = [(int(uid), score) for uid, score in raw]
+    except Exception:
+        logger.warning("专业榜读取失败，退化 SQL 现算 major_id=%s", major_id, exc_info=True)
+    if not entries:
+        rows = (
+            await db.execute(
+                select(User.id, User.score)
+                .where(User.major_id == major_id, User.score > 0)
+                .order_by(User.score.desc(), User.id)
+            )
+        ).all()
+        try:
+            if rows:
+                await get_redis().zadd(key, {str(uid): score for uid, score in rows})
+        except Exception:
+            logger.warning("专业榜回写失败 major_id=%s", major_id, exc_info=True)
+        entries = [(uid, float(score)) for uid, score in rows[:limit]]
+    return {"items": await _leaderboard_items(db, entries)}
 
 
 # ---------------------------------------------------------------------------
@@ -158,6 +228,36 @@ async def get_course(
     ).scalar_one()
     return {**_course_brief(course, major.name if major else None),
             "chapter_count": chapter_count}
+
+
+@router.get("/courses/{course_id}/leaderboard")
+async def course_leaderboard(
+    course_id: int,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    limit: int = Query(default=20, ge=1, le=100),
+):
+    """课程贡献榜：优先读 Redis Sorted Set（rank:course:{id}，grant_score 实时 ZINCRBY 增量）；
+    键为空或 Redis 异常时退化到 score_logs 现算（compute_course_scores），并回写 Redis 自愈。"""
+    course = await db.get(Course, course_id)
+    if course is None or course.scope != "public":
+        raise HTTPException(status_code=404, detail="Not Found")
+    key = f"rank:course:{course_id}"
+    entries: list[tuple[int, float]] = []
+    try:
+        raw = await get_redis().zrevrange(key, 0, limit - 1, withscores=True)
+        entries = [(int(uid), score) for uid, score in raw]
+    except Exception:
+        logger.warning("课程榜读取失败，退化 SQL 现算 course_id=%s", course_id, exc_info=True)
+    if not entries:
+        scores = (await compute_course_scores(db, course_id)).get(course_id, {})
+        try:
+            if scores:
+                await get_redis().zadd(key, {str(uid): s for uid, s in scores.items()})
+        except Exception:
+            logger.warning("课程榜回写失败 course_id=%s", course_id, exc_info=True)
+        ranked = sorted(scores.items(), key=lambda kv: (-kv[1], kv[0]))[:limit]
+        entries = [(uid, float(total)) for uid, total in ranked]
+    return {"items": await _leaderboard_items(db, entries)}
 
 
 # ---------------------------------------------------------------------------

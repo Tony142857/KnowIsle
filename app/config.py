@@ -44,6 +44,9 @@ class Settings(BaseSettings):
     ai_daily_free_quota: int = 30
     ai_quota_exchange_rate: int = 10  # 10 贡献分兑换 1 次额外问答
 
+    # ---------- 审核 ----------
+    review_co_timeout_hours: int = 48  # 协审超时自动重指派时限
+
     # ---------- 安全 ----------
     secret_key: str = "change-me"  # 会话签名 + 自定义 Key 加密（Fernet）
 
