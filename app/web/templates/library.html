@@ -102,7 +102,7 @@
          class="shrink-0 text-xs text-sky-600 hover:underline">原文溯源</a>
       {# 已解析且未在审/未上架（或已驳回允许重投）的文档可投稿 #}
       {% if d.status == 'parsed' and (not res or res.review_status == 'rejected') %}
-      <button @click="openSubmit({{ d.id }}, {{ d.file_name|tojson }})"
+      <button @click="openSubmit({{ d.id }}, {{ d.file_name|tojson|forceescape }})"
               class="shrink-0 text-xs text-sky-600 hover:underline">
         {{ '重新投稿' if res else '投稿到公共库' }}
       </button>
