@@ -64,6 +64,13 @@ def test_review_pages_require_login():
         assert resp.headers["location"] == "/login"
 
 
+def test_admin_page_requires_login():
+    # v0.6：管理后台主页需登录，未登录 303 重定向到 /login（非 admin 登录用户 404）
+    resp = client.get("/admin", follow_redirects=False)
+    assert resp.status_code == 303
+    assert resp.headers["location"] == "/login"
+
+
 def test_moderation_apis_require_login():
     # v0.4：协审任务 / 公共资源 / 投稿 API 未登录一律 401
     resp = client.get("/api/review/tasks")
