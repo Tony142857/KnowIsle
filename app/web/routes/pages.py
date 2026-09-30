@@ -5,6 +5,8 @@ v0.3 落地：登录页 / 专业列表页 / 课程空间页（含章节树侧边
 v0.4 落地：公共库投稿入口（library 内）/ 资源详情页 / 协审工作台 / 管理员终审页；
 v0.5 落地：社区板块（问答/讨论列表、发帖、帖子详情含 AI 首答与评论树）、
 个人中心（成长看板 / AI 额度与 Key / 通知）。
+v0.6 落地：管理后台主页（/admin：空间管理 / 用户治理 / 平台配置）、
+课程关注与资源/帖子收藏按钮的状态注入。
 """
 
 import logging
@@ -36,6 +38,8 @@ from app.storage.models import (
     Comment,
     Course,
     Document,
+    Favorite,
+    Follow,
     Major,
     Post,
     Resource,
@@ -191,10 +195,29 @@ async def course_detail(
             roots.append(nodes[c.id])
 
     can_moderate = user is not None and user.role in ("builder", "admin")
+    follower_count = (
+        await db.execute(
+            select(func.count()).select_from(Follow).where(
+                Follow.target_type == "course", Follow.target_id == course_id
+            )
+        )
+    ).scalar_one()
+    is_following = False
+    if user is not None:
+        is_following = (
+            await db.execute(
+                select(Follow.id).where(
+                    Follow.user_id == user.id,
+                    Follow.target_type == "course",
+                    Follow.target_id == course_id,
+                )
+            )
+        ).scalar_one_or_none() is not None
     return templates.TemplateResponse(
         request, "course_detail.html",
         _ctx(user, active="majors", course=course, major=major,
-             chapter_tree=roots, can_moderate=can_moderate),
+             chapter_tree=roots, can_moderate=can_moderate,
+             is_following=is_following, follower_count=follower_count),
     )
 
 
@@ -391,11 +414,20 @@ async def resource_detail(
     if not preview_available:
         public_doc = await _public_copy_of(db, doc)
         preview_available = public_doc is not None and public_doc.preview_key is not None
+    is_favorited = (
+        await db.execute(
+            select(Favorite.id).where(
+                Favorite.user_id == user.id,
+                Favorite.target_type == "resource",
+                Favorite.target_id == resource.id,
+            )
+        )
+    ).scalar_one_or_none() is not None
     return templates.TemplateResponse(
         request, "resource_detail.html",
         _ctx(user, active="majors", resource=resource, doc=doc, uploader=uploader,
              course=course, chapter=chapter, my_rating=my_rating,
-             preview_available=preview_available),
+             preview_available=preview_available, is_favorited=is_favorited),
     )
 
 
@@ -486,6 +518,20 @@ async def review_workbench(
         request, "review.html",
         _ctx(user, active="review", tasks=tasks, selected=selected),
     )
+
+
+@router.get("/admin")
+async def admin_home(
+    request: Request,
+    user: Annotated[User | None, Depends(get_current_user_optional)],
+):
+    """管理后台主页（admin，v0.6）：审核终审入口 / 空间管理 / 用户治理 / 平台配置。
+    数据均由前端 fetch 管理 API 渲染，本路由仅做门控与骨架渲染。"""
+    if (resp := _login_redirect(user)) is not None:
+        return resp
+    if user.role != "admin":
+        raise HTTPException(status_code=404)
+    return templates.TemplateResponse(request, "admin.html", _ctx(user, active="admin"))
 
 
 @router.get("/admin/review")
@@ -776,12 +822,24 @@ async def post_detail(
             ai_segments = _ai_segments(post.ai_first_answer, ai_citations)
 
     await db.commit()
+    is_favorited = False
+    if user is not None:
+        is_favorited = (
+            await db.execute(
+                select(Favorite.id).where(
+                    Favorite.user_id == user.id,
+                    Favorite.target_type == "post",
+                    Favorite.target_id == post.id,
+                )
+            )
+        ).scalar_one_or_none() is not None
     return templates.TemplateResponse(
         request, "post_detail.html",
         _ctx(user, active=post.board, post=post, author=author, course=course,
              chapter=chapter, vote_score=vote_score, my_vote=my_post_vote,
              comment_tree=roots, comment_count=len(rows),
              is_author=user is not None and user.id == post.author_id,
+             is_favorited=is_favorited,
              ai_status=ai_status, ai_citations=ai_citations,
              ai_segments=ai_segments),
     )

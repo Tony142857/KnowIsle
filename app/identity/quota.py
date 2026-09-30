@@ -12,7 +12,7 @@ from fastapi import HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.config import get_settings
+from app.core.platform_config import get_config
 from app.storage.models import AiQuota, User
 
 
@@ -29,7 +29,8 @@ def apply_consume(used: int, daily_limit: int, bonus_balance: int) -> tuple[int,
 
 
 async def ensure_quota(session: AsyncSession, user: User) -> AiQuota:
-    """查/建当日额度行（daily_limit 取配置覆盖默认值）；只 flush，提交由调用方负责。"""
+    """查/建当日额度行（daily_limit 取平台配置 ai_daily_limit，缺省回落 .env
+    默认值）；只 flush，提交由调用方负责。"""
     today = date.today()
     row = (
         await session.execute(
@@ -41,7 +42,7 @@ async def ensure_quota(session: AsyncSession, user: User) -> AiQuota:
             user_id=user.id,
             date=today,
             used=0,
-            daily_limit=get_settings().ai_daily_free_quota,
+            daily_limit=await get_config(session, "ai_daily_limit"),
         )
         session.add(row)
         await session.flush()

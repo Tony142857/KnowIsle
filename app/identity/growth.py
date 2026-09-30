@@ -2,10 +2,12 @@
 
 贡献分事件驱动结算：统一写 score_logs 明细 + users.score 事务更新 +
 等级阈值检查 + Redis 贡献榜（rank:major:{id} / rank:course:{id}）Sorted Set 实时排名。
-信用分：管理员裁决扣分（credit_logs 留痕），阈值触发限流/禁言/冻结阶梯处罚。
+信用分：管理员裁决扣分（credit_logs 留痕 + 通知本人，v0.6）；
+阶梯处罚（限流/禁言/冻结自动执行）留 v0.8 与举报一起做。
 
 v0.5 落地：grant_score 升级判定与站内通知、Redis 实时榜、下载分成纯函数、
 课程贡献 SQL 现算（榜单退化与 settle_worker 每日对账共用）。
+v0.6 落地：apply_credit_change 信用裁决（CreditLog 留痕 + 限幅 0~100 + 通知）。
 """
 
 import logging
@@ -14,7 +16,15 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.storage.cache import get_redis
-from app.storage.models import Comment, Notification, Post, Resource, ScoreLog, User
+from app.storage.models import (
+    Comment,
+    CreditLog,
+    Notification,
+    Post,
+    Resource,
+    ScoreLog,
+    User,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -131,4 +141,64 @@ async def compute_course_scores(
     return scores
 
 
-# TODO(v0.8): apply_credit_penalty（信用分阶梯处罚：限流/禁言/冻结）
+# ---------------------------------------------------------------------------
+# 信用分（§3.3.3，v0.6）：管理员裁决扣分 / 恢复
+# ---------------------------------------------------------------------------
+
+CREDIT_MIN = 0
+CREDIT_MAX = 100  # 信用分上下限（初始 100）
+
+
+def clamp_credit(value: int) -> int:
+    """信用分限幅（纯函数）：裁决后分值钳制在 [CREDIT_MIN, CREDIT_MAX]。"""
+    return max(CREDIT_MIN, min(CREDIT_MAX, value))
+
+
+async def apply_credit_change(
+    session: AsyncSession,
+    user: User,
+    admin_id: int,
+    delta: int,
+    reason: str,
+    ref_type: str | None = None,
+    ref_id: int | None = None,
+) -> int:
+    """信用裁决：写 credit_logs（注明裁决人与理由）+ 限幅更新 users.credit +
+    通知本人（扣分 penalty / 恢复 credit_restore）。调用方负责 commit 与审计。
+    返回裁决后信用分。阶梯处罚自动执行留 v0.8。
+    """
+    session.add(
+        CreditLog(
+            user_id=user.id,
+            admin_id=admin_id,
+            delta=delta,
+            reason=reason,
+            ref_type=ref_type,
+            ref_id=ref_id,
+        )
+    )
+    user.credit = clamp_credit(user.credit + delta)
+    if delta < 0:
+        session.add(
+            Notification(
+                user_id=user.id,
+                type="penalty",
+                title=f"信用处罚：{delta} 分",
+                body=reason,
+                link="/me",
+            )
+        )
+    else:
+        session.add(
+            Notification(
+                user_id=user.id,
+                type="credit_restore",
+                title=f"信用恢复：+{delta} 分",
+                body=reason,
+                link="/me",
+            )
+        )
+    return user.credit
+
+
+# TODO(v0.8): 信用分阶梯处罚自动执行（<80 限流 / <60 禁言 7 天 / <40 冻结）

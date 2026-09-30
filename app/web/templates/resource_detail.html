@@ -69,7 +69,7 @@
         </div>
         <div class="flex justify-between">
           <dt class="text-slate-500">收藏</dt>
-          <dd class="text-slate-700">{{ resource.fav_count }}</dd>
+          <dd id="fav-count" class="text-slate-700">{{ resource.fav_count }}</dd>
         </div>
       </dl>
       {% if resource.review_status == 'approved' %}
@@ -81,6 +81,18 @@
               class="mt-2 block w-full rounded border border-sky-600 py-2 text-center text-sm text-sky-700 hover:bg-sky-50">
         克隆到个人库
       </button>
+      {# 收藏开关（v0.6）：POST/DELETE /api/favorites，同步刷新收藏数 #}
+      <div x-data="favBox({{ resource.id }}, {{ 'true' if is_favorited else 'false' }})">
+        <button @click="toggle()" :disabled="loading"
+                :class="favorited
+                  ? 'border-amber-400 bg-amber-50 text-amber-700'
+                  : 'border-slate-300 text-slate-500 hover:border-amber-400 hover:text-amber-700'"
+                class="mt-2 block w-full rounded border py-2 text-center text-sm transition-colors disabled:opacity-50">
+          <span x-text="favorited ? '★ 已收藏' : '☆ 收藏'"></span>
+        </button>
+        <p x-show="error" x-text="error" x-cloak
+           class="mt-2 rounded bg-red-50 px-2 py-1.5 text-xs text-red-600"></p>
+      </div>
       {% endif %}
     </div>
 
@@ -153,6 +165,31 @@
 </div>
 
 <script>
+// 收藏开关（v0.6）：POST/DELETE /api/favorites（target_type=resource），同步刷新侧栏收藏数
+function favBox(resourceId, favorited) {
+  return {
+    favorited: favorited, loading: false, error: '',
+    async toggle() {
+      this.loading = true; this.error = '';
+      try {
+        const resp = await fetch('/api/favorites', {
+          method: this.favorited ? 'DELETE' : 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({target_type: 'resource', target_id: resourceId}),
+        });
+        if (resp.status !== 204) {
+          const data = await resp.json().catch(() => ({}));
+          if (!resp.ok) throw new Error(data.detail || ('操作失败 ' + resp.status));
+        }
+        this.favorited = !this.favorited;
+        const el = document.getElementById('fav-count');
+        if (el) el.textContent = Math.max(0, parseInt(el.textContent, 10) + (this.favorited ? 1 : -1));
+      } catch (e) { this.error = e.message; }
+      finally { this.loading = false; }
+    },
+  };
+}
+
 // 克隆到个人库：modal 打开时懒加载本人个人课程列表
 function cloneBox(resourceId) {
   return {

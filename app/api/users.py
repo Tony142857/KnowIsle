@@ -11,7 +11,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.config import get_settings
+from app.core.platform_config import get_config
 from app.identity.growth import grant_score
 from app.identity.llm_keys import delete_user_key, get_user_key, upsert_user_key
 from app.identity.quota import ensure_quota
@@ -111,7 +111,7 @@ async def get_my_quota(
         "daily_limit": quota.daily_limit,
         "remaining_free": max(quota.daily_limit - quota.used, 0),
         "bonus_balance": quota.bonus_balance,
-        "exchange_rate": get_settings().ai_quota_exchange_rate,
+        "exchange_rate": await get_config(db, "ai_quota_exchange_rate"),
         "custom_key": custom_key,
     }
 
@@ -126,8 +126,8 @@ async def exchange_quota(
     user: Annotated[User, Depends(get_current_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
-    """贡献分兑换 AI 额度：exchange_rate 分 = 1 次，扣分明细与额度入账同一事务。"""
-    cost = get_settings().ai_quota_exchange_rate * payload.count
+    """贡献分兑换 AI 额度：exchange_rate 分 = 1 次（平台配置可调），扣分明细与额度入账同一事务。"""
+    cost = await get_config(db, "ai_quota_exchange_rate") * payload.count
     if user.score < cost:
         raise HTTPException(status_code=422, detail="贡献分不足")
     quota = await ensure_quota(db, user)

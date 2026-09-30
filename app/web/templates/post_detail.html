@@ -118,6 +118,18 @@
             class="rounded-md border px-3 py-1.5 transition-colors disabled:opacity-50">
       ▼ 点踩
     </button>
+    {# 收藏帖子（v0.6）：POST/DELETE /api/favorites（target_type=post），未登录跳 /login #}
+    <span x-data="postFav({{ post.id }}, {{ 'true' if is_favorited else 'false' }},
+                          {{ 'true' if user else 'false' }})">
+      <button @click="toggle()" :disabled="loading"
+              :class="favorited
+                ? 'border-amber-400 bg-amber-50 text-amber-700'
+                : 'border-slate-300 text-slate-500 hover:border-amber-400 hover:text-amber-700'"
+              class="rounded-md border px-3 py-1.5 transition-colors disabled:opacity-50">
+        <span x-text="favorited ? '★ 已收藏' : '☆ 收藏'"></span>
+      </button>
+      <span x-show="favError" x-text="favError" x-cloak class="ml-2 text-xs text-red-600"></span>
+    </span>
     <span x-show="error" x-text="error" x-cloak class="text-xs text-red-600"></span>
   </div>
 </div>
@@ -238,6 +250,30 @@
 </section>
 
 <script>
+// 收藏帖子开关（v0.6）：POST/DELETE /api/favorites（target_type=post），未登录跳 /login
+function postFav(postId, favorited, loggedIn) {
+  return {
+    favorited: favorited, loading: false, favError: '',
+    async toggle() {
+      if (!loggedIn) { window.location.href = '/login'; return; }
+      this.loading = true; this.favError = '';
+      try {
+        const resp = await fetch('/api/favorites', {
+          method: this.favorited ? 'DELETE' : 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({target_type: 'post', target_id: postId}),
+        });
+        if (resp.status !== 204) {
+          const data = await resp.json().catch(() => ({}));
+          if (!resp.ok) throw new Error(data.detail || ('操作失败 ' + resp.status));
+        }
+        this.favorited = !this.favorited;
+      } catch (e) { this.favError = e.message; }
+      finally { this.loading = false; }
+    },
+  };
+}
+
 // 帖子点赞 / 点踩（开关语义：同值取消，异值改值）
 function voteBox(targetType, targetId, score, myVote, loggedIn) {
   return {

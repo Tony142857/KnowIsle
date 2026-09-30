@@ -47,6 +47,12 @@
         </a>
         {% endif %}
         {% if user and user.role == 'admin' %}
+        <a href="/admin"
+           class="px-3 py-1.5 rounded-md transition-colors
+                  {{ 'bg-sky-50 text-sky-700 font-medium' if active == 'admin'
+                     else 'text-slate-600 hover:text-sky-700 hover:bg-slate-100' }}">
+          管理后台
+        </a>
         <a href="/admin/review"
            class="px-3 py-1.5 rounded-md transition-colors
                   {{ 'bg-sky-50 text-sky-700 font-medium' if active == 'admin_review'

@@ -1,7 +1,8 @@
 """协审超时自动重指派（模块 B2，v0.5）：协审超时的任务重指派 / 直送终审。
 
 由 ARQ cron 定时扫描（见 workers/settings.py）：stage='co_review' 且进入协审
-超过 settings.review_co_timeout_hours 的任务，未提交意见的旧指派视为超时，
+超过平台配置 review_co_timeout_hours（缺省回落 .env 默认值）的任务，
+未提交意见的旧指派视为超时，
 重新指派补足到 2 人（已提交意见者保留）；找不到新协审员且无已提交意见时，
 按 v0.4 既定兜底策略直送管理员终审（与 workflow.apply_precheck_result 一致）。
 """
@@ -11,7 +12,7 @@ from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import select
 
-from app.config import get_settings
+from app.core.platform_config import get_config
 from app.moderation.assign import assign_reviewers
 from app.storage.db import SessionLocal
 from app.storage.models import Notification, Resource, ReviewRecord, ReviewTask, User
@@ -103,10 +104,11 @@ async def review_timeout_scan(ctx: dict) -> dict:
     全部处理完一次 commit。返回 {"rescanned", "reassigned", "escalated"}。
     """
     now = datetime.now(UTC)
-    deadline = co_review_deadline(now, get_settings().review_co_timeout_hours)
     reassigned = 0
     escalated = 0
     async with SessionLocal() as session:
+        timeout_hours = await get_config(session, "review_co_timeout_hours")
+        deadline = co_review_deadline(now, timeout_hours)
         tasks = (
             await session.execute(
                 select(ReviewTask).where(

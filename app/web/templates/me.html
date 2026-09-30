@@ -213,6 +213,105 @@
           </li>
         </template>
       </ul>
+    {# ===== 我的收藏卡（v0.6）：资源 / 帖子分组，可取消收藏 ===== #}
+    <div class="rounded-lg border border-slate-200 bg-white p-6 lg:col-span-2">
+      <h2 class="text-sm font-semibold text-slate-700">我的收藏</h2>
+      <p x-show="favsLoading" x-cloak class="mt-3 text-sm text-slate-400">加载中…</p>
+      <p x-show="favsError" x-text="favsError" x-cloak
+         class="mt-3 rounded bg-red-50 px-3 py-2 text-sm text-red-600"></p>
+      <p x-show="favsLoaded && !favs.length" x-cloak class="mt-3 text-sm text-slate-400">
+        暂无收藏。在资源详情页 / 帖子详情页点击「收藏」即可加入。
+      </p>
+      <div x-show="favResources.length" x-cloak class="mt-3">
+        <h3 class="text-xs font-medium text-slate-500">资料</h3>
+        <ul class="mt-1 divide-y divide-slate-100 text-sm">
+          <template x-for="f in favResources" :key="'r' + f.target_id">
+            <li class="flex items-center gap-3 py-2">
+              <a :href="'/resources/' + f.target_id"
+                 class="min-w-0 flex-1 truncate text-sky-700 hover:underline"
+                 x-text="f.target ? f.target.title : '资源 #' + f.target_id"></a>
+              <span class="shrink-0 text-xs text-slate-400"
+                    x-text="f.target ? (f.target.course_name || '') + ' · 下载 ' + f.target.download_count : ''"></span>
+              <span class="shrink-0 text-xs text-slate-400"
+                    x-text="(f.created_at || '').slice(0, 10)"></span>
+              <button @click="unfavorite(f)" :disabled="loading"
+                      class="shrink-0 rounded border border-slate-300 px-2 py-0.5 text-xs text-slate-500 hover:bg-slate-100 disabled:opacity-50">
+                取消收藏
+              </button>
+            </li>
+          </template>
+        </ul>
+      </div>
+      <div x-show="favPosts.length" x-cloak class="mt-3">
+        <h3 class="text-xs font-medium text-slate-500">帖子</h3>
+        <ul class="mt-1 divide-y divide-slate-100 text-sm">
+          <template x-for="f in favPosts" :key="'p' + f.target_id">
+            <li class="flex items-center gap-3 py-2">
+              <a :href="'/posts/' + f.target_id"
+                 class="min-w-0 flex-1 truncate text-sky-700 hover:underline"
+                 x-text="f.target ? f.target.title : '帖子 #' + f.target_id"></a>
+              <span class="shrink-0 text-xs text-slate-400"
+                    x-text="f.target ? boardLabel(f.target.board) + ' · 浏览 ' + f.target.view_count : ''"></span>
+              <span class="shrink-0 text-xs text-slate-400"
+                    x-text="(f.created_at || '').slice(0, 10)"></span>
+              <button @click="unfavorite(f)" :disabled="loading"
+                      class="shrink-0 rounded border border-slate-300 px-2 py-0.5 text-xs text-slate-500 hover:bg-slate-100 disabled:opacity-50">
+                取消收藏
+              </button>
+            </li>
+          </template>
+        </ul>
+      </div>
+    </div>
+
+    {# ===== 我的关注卡（v0.6）：课程 / 用户分组，可取消关注 ===== #}
+    <div class="rounded-lg border border-slate-200 bg-white p-6 lg:col-span-2">
+      <h2 class="text-sm font-semibold text-slate-700">我的关注</h2>
+      <p x-show="followsLoading" x-cloak class="mt-3 text-sm text-slate-400">加载中…</p>
+      <p x-show="followsError" x-text="followsError" x-cloak
+         class="mt-3 rounded bg-red-50 px-3 py-2 text-sm text-red-600"></p>
+      <p x-show="followsLoaded && !follows.length" x-cloak class="mt-3 text-sm text-slate-400">
+        暂无关注。在课程空间页点击「关注课程」即可订阅动态。
+      </p>
+      <div x-show="followCourses.length" x-cloak class="mt-3">
+        <h3 class="text-xs font-medium text-slate-500">课程</h3>
+        <ul class="mt-1 divide-y divide-slate-100 text-sm">
+          <template x-for="f in followCourses" :key="'c' + f.target_id">
+            <li class="flex items-center gap-3 py-2">
+              <a :href="'/courses/' + f.target_id"
+                 class="min-w-0 flex-1 truncate text-sky-700 hover:underline"
+                 x-text="f.target ? f.target.name : '课程 #' + f.target_id"></a>
+              <span class="shrink-0 text-xs text-slate-400"
+                    x-text="f.target ? (f.target.major_name || '') : ''"></span>
+              <span class="shrink-0 text-xs text-slate-400"
+                    x-text="(f.created_at || '').slice(0, 10)"></span>
+              <button @click="unfollow(f)" :disabled="loading"
+                      class="shrink-0 rounded border border-slate-300 px-2 py-0.5 text-xs text-slate-500 hover:bg-slate-100 disabled:opacity-50">
+                取消关注
+              </button>
+            </li>
+          </template>
+        </ul>
+      </div>
+      <div x-show="followUsers.length" x-cloak class="mt-3">
+        <h3 class="text-xs font-medium text-slate-500">用户</h3>
+        <ul class="mt-1 divide-y divide-slate-100 text-sm">
+          <template x-for="f in followUsers" :key="'u' + f.target_id">
+            <li class="flex items-center gap-3 py-2">
+              <span class="min-w-0 flex-1 truncate text-slate-700"
+                    x-text="f.target ? f.target.nickname : '用户 #' + f.target_id"></span>
+              <span class="shrink-0 text-xs text-slate-400"
+                    x-text="f.target ? 'Lv' + f.target.level + ' · 贡献 ' + f.target.score : ''"></span>
+              <span class="shrink-0 text-xs text-slate-400"
+                    x-text="(f.created_at || '').slice(0, 10)"></span>
+              <button @click="unfollow(f)" :disabled="loading"
+                      class="shrink-0 rounded border border-slate-300 px-2 py-0.5 text-xs text-slate-500 hover:bg-slate-100 disabled:opacity-50">
+                取消关注
+              </button>
+            </li>
+          </template>
+        </ul>
+      </div>
     </div>
   </div>
 </div>
@@ -230,6 +329,10 @@ function mePage() {
     keyForm: {base_url: '', api_key: '', model_short: '', model_medium: '', model_long: ''},
     // 通知
     notifs: [], notifsLoading: false, notifsLoaded: false, notifsError: '',
+    // 我的收藏（v0.6）
+    favs: [], favsLoading: false, favsLoaded: false, favsError: '',
+    // 我的关注（v0.6）
+    follows: [], followsLoading: false, followsLoaded: false, followsError: '',
 
     REASON_LABELS: {
       upload_approved: '资料过审',
@@ -240,9 +343,15 @@ function mePage() {
       quota_exchange: '额度兑换',
     },
     reasonLabel(r) { return this.REASON_LABELS[r] || r; },
+    boardLabel(b) { return {qa: '知屿问答', discuss: '讨论区'}[b] || b; },
+    get favResources() { return this.favs.filter(f => f.target_type === 'resource'); },
+    get favPosts() { return this.favs.filter(f => f.target_type === 'post'); },
+    get followCourses() { return this.follows.filter(f => f.target_type === 'course'); },
+    get followUsers() { return this.follows.filter(f => f.target_type === 'user'); },
 
     loadAll() {
       this.loadLogs(); this.loadQuota(); this.loadKey(); this.loadNotifs();
+      this.loadFavs(); this.loadFollows();
     },
 
     async api(url, options) {
@@ -368,6 +477,50 @@ function mePage() {
         } catch (e) { /* 已读标记失败不阻塞跳转 */ }
       }
       if (n.link) window.location.href = n.link;
+    },
+
+    async loadFavs() {
+      this.favsLoading = true; this.favsError = '';
+      try {
+        const data = await this.api('/api/favorites?page=1&size=50');
+        this.favs = data.items || [];
+        this.favsLoaded = true;
+      } catch (e) { this.favsError = e.message; }
+      finally { this.favsLoading = false; }
+    },
+
+    async unfavorite(f) {
+      this.loading = true; this.favsError = '';
+      try {
+        await this.api('/api/favorites', {
+          method: 'DELETE', headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({target_type: f.target_type, target_id: f.target_id}),
+        });
+        this.favs = this.favs.filter(x => x !== f);
+      } catch (e) { this.favsError = e.message; }
+      finally { this.loading = false; }
+    },
+
+    async loadFollows() {
+      this.followsLoading = true; this.followsError = '';
+      try {
+        const data = await this.api('/api/follows?page=1&size=50');
+        this.follows = data.items || [];
+        this.followsLoaded = true;
+      } catch (e) { this.followsError = e.message; }
+      finally { this.followsLoading = false; }
+    },
+
+    async unfollow(f) {
+      this.loading = true; this.followsError = '';
+      try {
+        await this.api('/api/follows', {
+          method: 'DELETE', headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({target_type: f.target_type, target_id: f.target_id}),
+        });
+        this.follows = this.follows.filter(x => x !== f);
+      } catch (e) { this.followsError = e.message; }
+      finally { this.loading = false; }
     },
   };
 }

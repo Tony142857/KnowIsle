@@ -19,7 +19,9 @@ from app.identity.growth import SCORE_UPLOAD_APPROVED, grant_score
 from app.moderation.assign import assign_reviewers
 from app.storage.models import (
     Chunk,
+    Course,
     Document,
+    Follow,
     Notification,
     Resource,
     ReviewRecord,
@@ -311,7 +313,32 @@ async def _approve(session: AsyncSession, task: ReviewTask) -> int:
         session, resource.uploader_id, "review_result",
         f"投稿已上架：{resource.title}", link=f"/resources/{resource.id}",
     )
+    await _notify_course_followers(session, resource)
     return new_doc.id
+
+
+async def _notify_course_followers(session: AsyncSession, resource: Resource) -> None:
+    """订阅类通知（模块 B5，v0.6）：终审上架时通知该课程全部关注者（投稿人除外）。"""
+    follower_ids = (
+        await session.execute(
+            select(Follow.user_id).where(
+                Follow.target_type == "course",
+                Follow.target_id == resource.course_id,
+                Follow.user_id != resource.uploader_id,
+            )
+        )
+    ).scalars().all()
+    if not follower_ids:
+        return
+    course = await session.get(Course, resource.course_id)
+    course_name = course.name if course is not None else ""
+    for user_id in follower_ids:
+        _notify(
+            session, user_id, "new_resource",
+            f"关注课程上新：{resource.title}",
+            body=f"你关注的课程「{course_name}」上架了新资料",
+            link=f"/resources/{resource.id}",
+        )
 
 
 def check_direct_stage(stage: str) -> None:

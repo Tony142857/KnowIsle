@@ -1,4 +1,4 @@
-"""ORM 模型（文档 §8 完整 DDL：6 组 24 张表）。
+"""ORM 模型（文档 §8 完整 DDL：6 组 24 张表 + resource_ratings / platform_config 共 26 张）。
 
 PostgreSQL 16，Alembic 管理迁移。主键统一 BIGINT GENERATED ALWAYS AS IDENTITY。
 """
@@ -547,3 +547,21 @@ class AuditLog(Base):
     action: Mapped[str] = mapped_column(Text, nullable=False)  # final_verdict / ...
     detail: Mapped[dict | None] = mapped_column(JSONB)
     created_at: Mapped[datetime] = _created_at()
+
+
+class PlatformConfig(Base):
+    """平台配置（模块 B6，v0.6 第 26 表）：DB 覆盖 .env 默认值，修改写审计。
+
+    仅 app.core.platform_config.CONFIG_SPECS 注册的键可写入；value 以 JSONB
+    存储（当前全部为整数），生效规则与类型校验见该模块。
+    """
+
+    __tablename__ = "platform_config"
+
+    id: Mapped[int] = _id()
+    key: Mapped[str] = mapped_column(Text, unique=True, nullable=False)
+    value: Mapped[int] = mapped_column(JSONB, nullable=False)
+    updated_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )

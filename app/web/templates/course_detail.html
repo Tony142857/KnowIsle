@@ -27,6 +27,24 @@
       {{ '待审批' if course.status == 'pending' else '已停用' }}
     </span>
     {% endif %}
+    {# 关注课程（v0.6）：仅公共 active 课程展示；未登录点击跳 /login #}
+    {% if course.status == 'active' %}
+    <span class="ml-auto flex items-center gap-2"
+          x-data="courseFollow({{ course.id }},
+                               {{ 'true' if is_following else 'false' }},
+                               {{ follower_count }},
+                               {{ 'true' if user else 'false' }})">
+      <span class="text-xs text-slate-400"><span x-text="count"></span> 人关注</span>
+      <button @click="toggle()" :disabled="loading"
+              :class="following
+                ? 'border-sky-600 bg-sky-50 text-sky-700'
+                : 'border-slate-300 text-slate-500 hover:border-sky-400 hover:text-sky-700'"
+              class="rounded-md border px-3 py-1.5 text-sm transition-colors disabled:opacity-50">
+        <span x-text="following ? '已关注' : '+ 关注课程'"></span>
+      </button>
+      <span x-show="error" x-text="error" x-cloak class="text-xs text-red-600"></span>
+    </span>
+    {% endif %}
   </div>
   <p class="mt-1 text-sm text-slate-500">{{ course.description or '暂无简介' }}</p>
 </div>
@@ -155,6 +173,31 @@
 </div>
 
 <script>
+// 关注课程开关（v0.6）：POST/DELETE /api/follows（target_type=course），未登录跳 /login
+function courseFollow(courseId, following, count, loggedIn) {
+  return {
+    following: following, count: count, loading: false, error: '',
+    async toggle() {
+      if (!loggedIn) { window.location.href = '/login'; return; }
+      this.loading = true; this.error = '';
+      try {
+        const resp = await fetch('/api/follows', {
+          method: this.following ? 'DELETE' : 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({target_type: 'course', target_id: courseId}),
+        });
+        if (resp.status !== 204) {
+          const data = await resp.json().catch(() => ({}));
+          if (!resp.ok) throw new Error(data.detail || ('操作失败 ' + resp.status));
+        }
+        this.following = !this.following;
+        this.count += this.following ? 1 : -1;
+      } catch (e) { this.error = e.message; }
+      finally { this.loading = false; }
+    },
+  };
+}
+
 function courseTabs(courseId) {
   return {
     tab: 'resources',
