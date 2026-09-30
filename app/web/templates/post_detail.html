@@ -1,0 +1,365 @@
+{% extends "base.html" %}
+{% block title %}{{ post.title }} · 知屿 KnowIsle{% endblock %}
+
+{# 评论树递归渲染（楼中楼，仿 course_detail.html 章节树） #}
+{% macro comment_node(node, post, is_author, logged_in) %}
+{% set c = node.comment %}
+<div class="rounded-lg border bg-white p-4
+            {{ 'border-emerald-300 ring-1 ring-emerald-200' if c.is_accepted else 'border-slate-200' }}"
+     x-data="commentBox({{ c.id }}, {{ node.score }}, {{ node.my_vote }},
+                        {{ 'true' if logged_in else 'false' }},
+                        {{ 'true' if (is_author and post.board == 'qa' and not c.is_accepted) else 'false' }})">
+  <div class="flex items-center gap-2 text-xs text-slate-400">
+    {% if node.author.avatar_url %}
+    <img src="{{ node.author.avatar_url }}" alt="" class="w-5 h-5 rounded-full object-cover">
+    {% else %}
+    <span class="w-5 h-5 rounded-full bg-sky-100 text-sky-700 flex items-center justify-center text-[10px] font-medium">
+      {{ node.author.nickname[:1] }}
+    </span>
+    {% endif %}
+    <span class="text-slate-600">{{ node.author.nickname }}</span>
+    {% if c.author_id == post.author_id %}
+    <span class="rounded bg-slate-100 px-1 py-0.5 text-[10px] text-slate-500">帖主</span>
+    {% endif %}
+    {% if c.is_accepted %}
+    <span class="rounded bg-emerald-50 px-1.5 py-0.5 text-emerald-700">✓ 已采纳</span>
+    {% endif %}
+    <span>{{ c.created_at.strftime('%Y-%m-%d %H:%M') if c.created_at }}</span>
+  </div>
+  <p class="mt-2 whitespace-pre-wrap text-sm leading-6 text-slate-700">{{ c.content }}</p>
+
+  <div class="mt-2 flex items-center gap-3 text-xs">
+    {# 点赞 / 点踩（未登录点击跳 /login） #}
+    <button @click="vote(1)" :disabled="loading"
+            :class="myVote === 1 ? 'text-sky-700 font-medium' : 'text-slate-400 hover:text-sky-700'"
+            class="disabled:opacity-50">▲ <span x-text="score"></span></button>
+    <button @click="vote(-1)" :disabled="loading"
+            :class="myVote === -1 ? 'text-red-600 font-medium' : 'text-slate-400 hover:text-red-600'"
+            class="disabled:opacity-50">▼</button>
+    {% if logged_in %}
+    <button @click="replyOpen = !replyOpen; replyError = ''"
+            class="text-slate-400 hover:text-sky-700">回复</button>
+    {% endif %}
+    <button x-show="canAccept" x-cloak @click="accept()" :disabled="loading"
+            class="rounded bg-emerald-600 px-2 py-0.5 text-white hover:bg-emerald-700 disabled:opacity-50">
+      采纳
+    </button>
+    <span x-show="error" x-text="error" x-cloak class="text-red-600"></span>
+  </div>
+
+  {# 楼内回复框（parent_id = 本评论） #}
+  <div x-show="replyOpen" x-cloak class="mt-3 rounded border border-slate-100 bg-slate-50 p-3">
+    <textarea x-model="replyContent" rows="2" placeholder="写下你的回复…"
+              class="w-full rounded border border-slate-300 px-3 py-2 text-sm"></textarea>
+    <div class="mt-2 flex items-center gap-2">
+      <button @click="reply()" :disabled="loading"
+              class="rounded bg-sky-600 px-3 py-1.5 text-sm text-white hover:bg-sky-700 disabled:opacity-50">
+        发表回复
+      </button>
+      <span x-show="replyError" x-text="replyError" x-cloak class="text-xs text-red-600"></span>
+    </div>
+  </div>
+
+  {% if node.children %}
+  <div class="mt-3 ml-4 space-y-3 border-l-2 border-slate-100 pl-4">
+    {% for child in node.children %}{{ comment_node(child, post, is_author, logged_in) }}{% endfor %}
+  </div>
+  {% endif %}
+</div>
+{% endmacro %}
+
+{% block content %}
+<div class="mb-6">
+  <a href="/boards/{{ post.board }}" class="text-sm text-sky-600 hover:underline">
+    ← {{ '知屿问答' if post.board == 'qa' else '讨论区' }}
+  </a>
+  <div class="mt-2 flex flex-wrap items-center gap-2">
+    <h1 class="text-2xl font-bold text-slate-800">{{ post.title }}</h1>
+    {% if post.accepted_comment_id %}
+    <span class="rounded bg-emerald-50 px-2 py-0.5 text-xs text-emerald-700">已采纳</span>
+    {% endif %}
+    {% if post.status == 'closed' %}
+    <span class="rounded bg-slate-100 px-2 py-0.5 text-xs text-slate-500">已关闭</span>
+    {% endif %}
+  </div>
+  <div class="mt-2 flex flex-wrap items-center gap-3 text-xs text-slate-400">
+    <span class="flex items-center gap-1 text-slate-500">
+      {% if author.avatar_url %}
+      <img src="{{ author.avatar_url }}" alt="" class="w-4 h-4 rounded-full object-cover">
+      {% endif %}
+      {{ author.nickname }}
+    </span>
+    <span>{{ post.created_at.strftime('%Y-%m-%d %H:%M') if post.created_at }}</span>
+    <span>浏览 {{ post.view_count }}</span>
+    {% if course %}
+    <a href="/courses/{{ course.id }}" class="text-sky-600 hover:underline">{{ course.name }}</a>
+    {% endif %}
+    {% if chapter %}<span>{{ chapter.title }}</span>{% endif %}
+    {% for t in post.tags or [] %}
+    <a href="/boards/{{ post.board }}?tag={{ t|urlencode }}"
+       class="rounded bg-slate-100 px-1.5 py-0.5 text-slate-500 hover:bg-sky-50 hover:text-sky-700">#{{ t }}</a>
+    {% endfor %}
+  </div>
+</div>
+
+{# 帖子正文 + 点赞组件（Markdown 按纯文本换行渲染） #}
+<div class="rounded-lg border border-slate-200 bg-white p-6"
+     x-data="voteBox('post', {{ post.id }}, {{ vote_score }}, {{ my_vote }},
+                     {{ 'true' if user else 'false' }})">
+  <p class="whitespace-pre-wrap text-sm leading-7 text-slate-700">{{ post.content }}</p>
+  <div class="mt-4 flex items-center gap-3 border-t border-slate-100 pt-4 text-sm">
+    <button @click="vote(1)" :disabled="loading"
+            :class="myVote === 1 ? 'border-sky-600 bg-sky-50 text-sky-700' : 'border-slate-300 text-slate-500 hover:border-sky-400 hover:text-sky-700'"
+            class="rounded-md border px-3 py-1.5 transition-colors disabled:opacity-50">
+      ▲ 点赞 <span x-text="score"></span>
+    </button>
+    <button @click="vote(-1)" :disabled="loading"
+            :class="myVote === -1 ? 'border-red-500 bg-red-50 text-red-600' : 'border-slate-300 text-slate-500 hover:border-red-400 hover:text-red-600'"
+            class="rounded-md border px-3 py-1.5 transition-colors disabled:opacity-50">
+      ▼ 点踩
+    </button>
+    {# 收藏帖子（v0.6）：POST/DELETE /api/favorites（target_type=post），未登录跳 /login #}
+    <span x-data="postFav({{ post.id }}, {{ 'true' if is_favorited else 'false' }},
+                          {{ 'true' if user else 'false' }})">
+      <button @click="toggle()" :disabled="loading"
+              :class="favorited
+                ? 'border-amber-400 bg-amber-50 text-amber-700'
+                : 'border-slate-300 text-slate-500 hover:border-amber-400 hover:text-amber-700'"
+              class="rounded-md border px-3 py-1.5 transition-colors disabled:opacity-50">
+        <span x-text="favorited ? '★ 已收藏' : '☆ 收藏'"></span>
+      </button>
+      <span x-show="favError" x-text="favError" x-cloak class="ml-2 text-xs text-red-600"></span>
+    </span>
+    <span x-show="error" x-text="error" x-cloak class="text-xs text-red-600"></span>
+  </div>
+</div>
+
+{# AI 首答卡（仅 qa 帖）：pending 轮询 / done 渲染引用 / failed 友好提示 #}
+{% if post.board == 'qa' %}
+{% if ai_status == 'done' %}
+<div class="mt-6 rounded-lg border border-sky-200 bg-sky-50/50 p-6">
+  <div class="flex items-center gap-2">
+    <h2 class="text-sm font-semibold text-sky-800">AI 助教首答</h2>
+    <span class="rounded bg-amber-100 px-2 py-0.5 text-xs text-amber-700">AI 生成，仅供参考</span>
+  </div>
+  <div class="mt-3 whitespace-pre-wrap text-sm leading-7 text-slate-700">
+    {%- for seg in ai_segments -%}
+      {%- if seg.text is defined -%}{{ seg.text }}{%- else -%}
+      <a href="/documents/{{ seg.document_id }}/source#{{ seg.cite }}"
+         class="font-mono text-xs text-sky-700 underline decoration-dotted hover:text-sky-900"
+         title="查看原文溯源">[{{ seg.cite }}]</a>
+      {%- endif -%}
+    {%- endfor -%}
+  </div>
+  {% if ai_citations %}
+  <div class="mt-4 border-t border-sky-100 pt-3">
+    <p class="text-xs font-medium text-slate-500">引用来源</p>
+    <div class="mt-2 grid gap-2 sm:grid-cols-2">
+      {% for c in ai_citations %}
+      <a href="/documents/{{ c.document_id }}/source#{{ c.chunk_id }}"
+         class="block rounded border border-slate-200 bg-white p-3 text-xs transition-shadow hover:shadow-sm">
+        <span class="font-mono text-slate-400">{{ c.chunk_id }}</span>
+        <p class="mt-1 text-slate-600">
+          {% if c.chapter %}{{ c.chapter }}{% endif %}
+          {% if c.section %} · {{ c.section }}{% endif %}
+          {% if c.page_num is not none %} · 第 {{ c.page_num }} 页{% endif %}
+        </p>
+        <p class="mt-0.5 text-slate-400">资料由 {{ c.uploader }} 上传</p>
+      </a>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+</div>
+{% elif ai_status == 'pending' %}
+<div class="mt-6 rounded-lg border border-sky-200 bg-sky-50/50 p-6"
+     x-data="aiPoll({{ post.id }})" x-init="start()">
+  <div class="flex items-center gap-2">
+    <h2 class="text-sm font-semibold text-sky-800">AI 助教首答</h2>
+    <span class="rounded bg-amber-100 px-2 py-0.5 text-xs text-amber-700">AI 生成，仅供参考</span>
+  </div>
+  <p class="mt-3 flex items-center gap-2 text-sm text-slate-500">
+    <span class="inline-block h-4 w-4 animate-spin rounded-full border-2 border-sky-300 border-t-sky-600"></span>
+    AI 助教正在思考，回答生成后页面会自动刷新…
+  </p>
+</div>
+{% elif ai_status == 'failed' %}
+<div class="mt-6 rounded-lg border border-slate-200 bg-white p-6">
+  <h2 class="text-sm font-semibold text-slate-700">AI 助教首答</h2>
+  <p class="mt-3 text-sm text-slate-500">AI 首答生成失败，等待同学回答。你也可以稍后在「AI 问答」中检索本课程资料。</p>
+</div>
+{% endif %}
+{% endif %}
+
+{# 评论区 #}
+<section class="mt-8">
+  <h2 class="text-lg font-semibold text-slate-700">
+    评论 <span class="text-sm font-normal text-slate-400">{{ comment_count }}</span>
+  </h2>
+
+  {% if user %}
+  {% if post.status != 'closed' %}
+  <div class="mt-4 rounded-lg border border-slate-200 bg-white p-4"
+       x-data="{ content: '', loading: false, error: '',
+         async submit() {
+           if (!this.content.trim()) { this.error = '评论内容不能为空'; return; }
+           this.loading = true; this.error = '';
+           try {
+             const resp = await fetch('/api/posts/{{ post.id }}/comments', {
+               method: 'POST', headers: {'Content-Type': 'application/json'},
+               body: JSON.stringify({content: this.content.trim()}),
+             });
+             const data = await resp.json().catch(() => ({}));
+             if (!resp.ok) throw new Error(data.detail || ('发表失败 ' + resp.status));
+             window.location.reload();
+           } catch (e) { this.error = e.message; }
+           finally { this.loading = false; }
+         } }">
+    <textarea x-model="content" rows="3" placeholder="写下你的回答 / 看法…"
+              class="w-full rounded border border-slate-300 px-3 py-2 text-sm"></textarea>
+    <div class="mt-2 flex items-center gap-2">
+      <button @click="submit()" :disabled="loading"
+              class="rounded bg-sky-600 px-4 py-2 text-sm text-white hover:bg-sky-700 disabled:opacity-50">
+        发表评论
+      </button>
+      <span x-show="error" x-text="error" x-cloak class="text-xs text-red-600"></span>
+    </div>
+  </div>
+  {% else %}
+  <p class="mt-4 rounded-lg border border-slate-200 bg-white p-4 text-sm text-slate-400">
+    帖子已关闭，无法发表评论。
+  </p>
+  {% endif %}
+  {% else %}
+  <p class="mt-4 rounded-lg border border-slate-200 bg-white p-4 text-sm text-slate-500">
+    <a href="/login" class="text-sky-600 hover:underline">登录</a> 后参与评论与点赞。
+  </p>
+  {% endif %}
+
+  {% if comment_tree %}
+  <div class="mt-4 space-y-3">
+    {% for node in comment_tree %}
+    {{ comment_node(node, post, is_author, user is not none) }}
+    {% endfor %}
+  </div>
+  {% else %}
+  <p class="mt-4 rounded-lg border border-dashed border-slate-300 bg-white py-10 text-center text-sm text-slate-400">
+    暂无评论。
+  </p>
+  {% endif %}
+</section>
+
+<script>
+// 收藏帖子开关（v0.6）：POST/DELETE /api/favorites（target_type=post），未登录跳 /login
+function postFav(postId, favorited, loggedIn) {
+  return {
+    favorited: favorited, loading: false, favError: '',
+    async toggle() {
+      if (!loggedIn) { window.location.href = '/login'; return; }
+      this.loading = true; this.favError = '';
+      try {
+        const resp = await fetch('/api/favorites', {
+          method: this.favorited ? 'DELETE' : 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({target_type: 'post', target_id: postId}),
+        });
+        if (resp.status !== 204) {
+          const data = await resp.json().catch(() => ({}));
+          if (!resp.ok) throw new Error(data.detail || ('操作失败 ' + resp.status));
+        }
+        this.favorited = !this.favorited;
+      } catch (e) { this.favError = e.message; }
+      finally { this.loading = false; }
+    },
+  };
+}
+
+// 帖子点赞 / 点踩（开关语义：同值取消，异值改值）
+function voteBox(targetType, targetId, score, myVote, loggedIn) {
+  return {
+    score: score, myVote: myVote, loading: false, error: '',
+    async vote(value) {
+      if (!loggedIn) { window.location.href = '/login'; return; }
+      this.loading = true; this.error = '';
+      try {
+        const resp = await fetch('/api/votes', {
+          method: 'POST', headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({target_type: targetType, target_id: targetId, value: value}),
+        });
+        const data = await resp.json().catch(() => ({}));
+        if (!resp.ok) throw new Error(data.detail || ('操作失败 ' + resp.status));
+        this.score = data.score; this.myVote = data.my_vote;
+      } catch (e) { this.error = e.message; }
+      finally { this.loading = false; }
+    },
+  };
+}
+
+// 单条评论：点赞 + 楼内回复 + 采纳
+function commentBox(commentId, score, myVote, loggedIn, canAccept) {
+  return {
+    score: score, myVote: myVote, loading: false, error: '',
+    canAccept: canAccept,
+    replyOpen: false, replyContent: '', replyError: '',
+    async vote(value) {
+      if (!loggedIn) { window.location.href = '/login'; return; }
+      this.loading = true; this.error = '';
+      try {
+        const resp = await fetch('/api/votes', {
+          method: 'POST', headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({target_type: 'comment', target_id: commentId, value: value}),
+        });
+        const data = await resp.json().catch(() => ({}));
+        if (!resp.ok) throw new Error(data.detail || ('操作失败 ' + resp.status));
+        this.score = data.score; this.myVote = data.my_vote;
+      } catch (e) { this.error = e.message; }
+      finally { this.loading = false; }
+    },
+    async reply() {
+      if (!this.replyContent.trim()) { this.replyError = '回复内容不能为空'; return; }
+      this.loading = true; this.replyError = '';
+      try {
+        const resp = await fetch(window.location.pathname.replace('/posts/', '/api/posts/') + '/comments', {
+          method: 'POST', headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({content: this.replyContent.trim(), parent_id: commentId}),
+        });
+        const data = await resp.json().catch(() => ({}));
+        if (!resp.ok) throw new Error(data.detail || ('回复失败 ' + resp.status));
+        window.location.reload();
+      } catch (e) { this.replyError = e.message; }
+      finally { this.loading = false; }
+    },
+    async accept() {
+      this.loading = true; this.error = '';
+      try {
+        const resp = await fetch('/api/posts/comments/' + commentId + '/accept', {method: 'POST'});
+        const data = await resp.json().catch(() => ({}));
+        if (!resp.ok) throw new Error(data.detail || ('采纳失败 ' + resp.status));
+        window.location.reload();
+      } catch (e) { this.error = e.message; }
+      finally { this.loading = false; }
+    },
+  };
+}
+
+// AI 首答 pending：每 3s 轮询帖子状态，done/failed 后停轮询并刷新页面
+function aiPoll(postId) {
+  return {
+    timer: null,
+    start() {
+      this.timer = setInterval(async () => {
+        try {
+          const resp = await fetch('/api/posts/' + postId);
+          if (!resp.ok) return;
+          const data = await resp.json();
+          if (data.ai_answer_status !== 'pending') {
+            clearInterval(this.timer);
+            window.location.reload();
+          }
+        } catch (e) { /* 网络抖动时下轮重试 */ }
+      }, 3000);
+    },
+  };
+}
+</script>
+{% endblock %}

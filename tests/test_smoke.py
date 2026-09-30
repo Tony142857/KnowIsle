@@ -26,12 +26,26 @@ def test_login_page():
     assert "学号" in resp.text
 
 
-def test_placeholder_pages():
-    # /majors、/library 已交付为真实页面（需数据库，不在冒烟范围内）
-    for path in ("/me", "/boards/qa", "/boards/experience"):
+def test_board_pages_render_without_db():
+    # v0.5：qa/discuss 板块页已交付（SSR 骨架 + 列表降级客户端加载），匿名可读
+    for path, name in (("/boards/qa", "知屿问答"), ("/boards/discuss", "讨论区")):
+        resp = client.get(path)
+        assert resp.status_code == 200, path
+        assert name in resp.text
+
+    # experience/bounty 仍为占位页
+    for path in ("/boards/experience", "/boards/bounty"):
         resp = client.get(path)
         assert resp.status_code == 200, path
         assert "建设中" in resp.text
+
+
+def test_me_and_post_new_require_login():
+    # v0.5：个人中心 / 发帖页需登录，未登录 303 重定向到 /login
+    for path in ("/me", "/posts/new"):
+        resp = client.get(path, follow_redirects=False)
+        assert resp.status_code == 303, path
+        assert resp.headers["location"] == "/login"
 
 
 def test_library_pages_require_login():
@@ -48,6 +62,13 @@ def test_review_pages_require_login():
         resp = client.get(path, follow_redirects=False)
         assert resp.status_code == 303, path
         assert resp.headers["location"] == "/login"
+
+
+def test_admin_page_requires_login():
+    # v0.6：管理后台主页需登录，未登录 303 重定向到 /login（非 admin 登录用户 404）
+    resp = client.get("/admin", follow_redirects=False)
+    assert resp.status_code == 303
+    assert resp.headers["location"] == "/login"
 
 
 def test_moderation_apis_require_login():
@@ -72,7 +93,8 @@ def test_api_404_returns_json():
     assert resp.json() == {"detail": "Not Found"}
 
 
-def test_unread_count_stub():
+def test_unread_count_anonymous():
+    # v0.5：未读角标接入登录态，匿名访问返回 0
     resp = client.get("/api/notifications/unread-count")
     assert resp.status_code == 200
     assert resp.json() == {"unread": 0}

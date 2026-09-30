@@ -8,6 +8,8 @@ from app.api import (
     chat,
     courses,
     documents,
+    favorites,
+    follows,
     library,
     notifications,
     posts,
@@ -30,6 +32,8 @@ api_router.include_router(chat.router)
 api_router.include_router(review.router)
 api_router.include_router(posts.router)
 api_router.include_router(votes.router)
+api_router.include_router(favorites.router)
+api_router.include_router(follows.router)
 api_router.include_router(reports.router)
 api_router.include_router(notifications.router)
 api_router.include_router(review_tasks.router)

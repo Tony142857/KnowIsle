@@ -24,6 +24,7 @@
         ('majors',     '/majors',            '课程空间'),
         ('library',    '/library',           '个人知识库'),
         ('qa',         '/boards/qa',         '知屿问答'),
+        ('discuss',    '/boards/discuss',    '讨论区'),
         ('experience', '/boards/experience', '经验长廊'),
         ('bounty',     '/boards/bounty',     '资料求援'),
       ] %}
@@ -46,6 +47,12 @@
         </a>
         {% endif %}
         {% if user and user.role == 'admin' %}
+        <a href="/admin"
+           class="px-3 py-1.5 rounded-md transition-colors
+                  {{ 'bg-sky-50 text-sky-700 font-medium' if active == 'admin'
+                     else 'text-slate-600 hover:text-sky-700 hover:bg-slate-100' }}">
+          管理后台
+        </a>
         <a href="/admin/review"
            class="px-3 py-1.5 rounded-md transition-colors
                   {{ 'bg-sky-50 text-sky-700 font-medium' if active == 'admin_review'

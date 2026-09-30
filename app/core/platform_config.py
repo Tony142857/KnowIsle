@@ -1,0 +1,105 @@
+"""平台配置（模块 B6，v0.6）：少量运营参数支持管理后台在线调整。
+
+生效规则：platform_config 表（第 26 表）有记录则用记录值，否则回落
+.env / Settings 默认值；每次修改由 admin 接口写 audit_logs（config_change）。
+仅 CONFIG_SPECS 注册的键可调整，类型与取值范围由 spec 校验，未知键拒绝。
+
+当前可调键（全部整数）：
+- ai_daily_limit            每用户每日 AI 问答免费额度（默认 settings.ai_daily_free_quota）
+- ai_quota_exchange_rate    贡献分兑换 1 次额外额度的分值（默认 settings.ai_quota_exchange_rate）
+- review_co_timeout_hours   协审超时自动重指派时限（默认 settings.review_co_timeout_hours）
+"""
+
+from dataclasses import dataclass
+
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.config import get_settings
+from app.storage.models import PlatformConfig
+
+
+@dataclass(frozen=True)
+class ConfigSpec:
+    key: str
+    default: int
+    description: str
+    min_value: int
+    max_value: int
+
+
+def config_specs() -> dict[str, ConfigSpec]:
+    """可调配置注册表（default 取自当前 Settings，.env 为兜底默认）。"""
+    s = get_settings()
+    return {
+        "ai_daily_limit": ConfigSpec(
+            key="ai_daily_limit",
+            default=s.ai_daily_free_quota,
+            description="每用户每日 AI 问答免费额度",
+            min_value=0,
+            max_value=10000,
+        ),
+        "ai_quota_exchange_rate": ConfigSpec(
+            key="ai_quota_exchange_rate",
+            default=s.ai_quota_exchange_rate,
+            description="贡献分兑换 1 次 AI 额度的分值",
+            min_value=1,
+            max_value=1000,
+        ),
+        "review_co_timeout_hours": ConfigSpec(
+            key="review_co_timeout_hours",
+            default=s.review_co_timeout_hours,
+            description="协审超时自动重指派时限（小时）",
+            min_value=1,
+            max_value=720,
+        ),
+    }
+
+
+def validate_value(key: str, raw: object) -> int:
+    """校验并规整配置值（纯函数）。
+
+    ValueError 约定：unknown_key（未注册键）→ 404；bad_type（非整数）/
+    out_of_range（越界）→ 422。注意 bool 是 int 子类，须显式拒绝。
+    """
+    spec = config_specs().get(key)
+    if spec is None:
+        raise ValueError("unknown_key")
+    if isinstance(raw, bool) or not isinstance(raw, int):
+        raise ValueError("bad_type")
+    if not spec.min_value <= raw <= spec.max_value:
+        raise ValueError("out_of_range")
+    return raw
+
+
+async def get_config(session: AsyncSession, key: str) -> int:
+    """读生效配置：DB 覆盖优先，无记录回落 .env 默认值。未知键抛 KeyError（编程错误）。"""
+    spec = config_specs()[key]
+    row = (
+        await session.execute(
+            select(PlatformConfig.value).where(PlatformConfig.key == key)
+        )
+    ).scalar_one_or_none()
+    return spec.default if row is None else int(row)
+
+
+async def set_config(
+    session: AsyncSession, key: str, raw: object, admin_id: int
+) -> tuple[int | None, int]:
+    """写配置覆盖（upsert），返回 (旧值或 None, 新值)；调用方负责 commit 与审计。
+
+    校验失败抛 ValueError（约定同 validate_value）。
+    """
+    new_value = validate_value(key, raw)
+    row = (
+        await session.execute(
+            select(PlatformConfig).where(PlatformConfig.key == key)
+        )
+    ).scalar_one_or_none()
+    old_value = None if row is None else int(row.value)
+    if row is None:
+        session.add(PlatformConfig(key=key, value=new_value, updated_by=admin_id))
+    else:
+        row.value = new_value
+        row.updated_by = admin_id
+    return old_value, new_value

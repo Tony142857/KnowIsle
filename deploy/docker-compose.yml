@@ -7,7 +7,7 @@ services:
     build:
       context: ..
       dockerfile: Dockerfile
-    image: knowisle-app:0.4.0         # 自建镜像按版本号命名，禁止 latest（发版时手动递增）
+    image: knowisle-app:0.6.0         # 自建镜像按版本号命名，禁止 latest（发版时手动递增）
     env_file: ../.env
     environment:
       HF_HUB_OFFLINE: "1"               # Embedding 模型已烘焙进镜像，运行时离线加载
@@ -31,7 +31,7 @@ services:
     build:
       context: ..
       dockerfile: Dockerfile
-    image: knowisle-app:0.4.0         # 同上：worker 与 app 共用同一版本化镜像
+    image: knowisle-app:0.6.0         # 同上：worker 与 app 共用同一版本化镜像
     env_file: ../.env
     environment:
       HF_HUB_OFFLINE: "1"               # 同上：worker 加载本地 Embedding 模型不联网

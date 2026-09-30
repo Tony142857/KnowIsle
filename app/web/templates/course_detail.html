@@ -27,6 +27,24 @@
       {{ '待审批' if course.status == 'pending' else '已停用' }}
     </span>
     {% endif %}
+    {# 关注课程（v0.6）：仅公共 active 课程展示；未登录点击跳 /login #}
+    {% if course.status == 'active' %}
+    <span class="ml-auto flex items-center gap-2"
+          x-data="courseFollow({{ course.id }},
+                               {{ 'true' if is_following else 'false' }},
+                               {{ follower_count }},
+                               {{ 'true' if user else 'false' }})">
+      <span class="text-xs text-slate-400"><span x-text="count"></span> 人关注</span>
+      <button @click="toggle()" :disabled="loading"
+              :class="following
+                ? 'border-sky-600 bg-sky-50 text-sky-700'
+                : 'border-slate-300 text-slate-500 hover:border-sky-400 hover:text-sky-700'"
+              class="rounded-md border px-3 py-1.5 text-sm transition-colors disabled:opacity-50">
+        <span x-text="following ? '已关注' : '+ 关注课程'"></span>
+      </button>
+      <span x-show="error" x-text="error" x-cloak class="text-xs text-red-600"></span>
+    </span>
+    {% endif %}
   </div>
   <p class="mt-1 text-sm text-slate-500">{{ course.description or '暂无简介' }}</p>
 </div>
@@ -117,25 +135,80 @@
           </template>
         </div>
       </div>
-      <div x-show="tab !== 'resources'" class="p-4 text-center text-sm text-slate-400">
+      <div x-show="tab === 'rank'" x-cloak>
+        <p x-show="rankLoading" class="py-8 text-center text-sm text-slate-400">加载中…</p>
+        <p x-show="rankError" x-text="rankError" x-cloak
+           class="rounded bg-red-50 px-3 py-2 text-sm text-red-600"></p>
+        <p x-show="rankLoaded && !rankItems.length" x-cloak
+           class="py-8 text-center text-sm text-slate-400">
+          暂无贡献记录。投稿资料过审、回答被采纳即可上榜。
+        </p>
+        <ol x-show="rankItems.length" class="divide-y divide-slate-100">
+          <template x-for="item in rankItems" :key="item.user_id">
+            <li class="flex items-center gap-3 py-2.5">
+              <span class="w-8 shrink-0 text-center text-sm"
+                    :class="item.rank <= 3 ? '' : 'text-slate-400'"
+                    x-text="['🥇','🥈','🥉'][item.rank - 1] || item.rank"></span>
+              <template x-if="item.avatar_url">
+                <img :src="item.avatar_url" alt="" class="w-7 h-7 rounded-full object-cover">
+              </template>
+              <template x-if="!item.avatar_url">
+                <span class="w-7 h-7 rounded-full bg-sky-100 text-sky-700 flex items-center justify-center text-xs font-medium"
+                      x-text="(item.nickname || '?').slice(0, 1)"></span>
+              </template>
+              <span class="min-w-0 flex-1 truncate text-sm text-slate-700"
+                    x-text="item.nickname || '匿名用户'"></span>
+              <span class="shrink-0 text-sm font-medium text-sky-700"
+                    x-text="item.score + ' 分'"></span>
+            </li>
+          </template>
+        </ol>
+      </div>
+      <div x-show="tab !== 'resources' && tab !== 'rank'" class="p-4 text-center text-sm text-slate-400">
         <p x-show="tab === 'chat'">AI 问答（v0.3）：默认检索本课程公共库，SSE 流式回答 + 引用溯源</p>
         <p x-show="tab === 'discuss'">讨论区（v0.5）：课程相关帖子流</p>
-        <p x-show="tab === 'rank'">贡献榜（v0.5+）：本课程贡献分排名</p>
       </div>
     </div>
   </section>
 </div>
 
 <script>
+// 关注课程开关（v0.6）：POST/DELETE /api/follows（target_type=course），未登录跳 /login
+function courseFollow(courseId, following, count, loggedIn) {
+  return {
+    following: following, count: count, loading: false, error: '',
+    async toggle() {
+      if (!loggedIn) { window.location.href = '/login'; return; }
+      this.loading = true; this.error = '';
+      try {
+        const resp = await fetch('/api/follows', {
+          method: this.following ? 'DELETE' : 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({target_type: 'course', target_id: courseId}),
+        });
+        if (resp.status !== 204) {
+          const data = await resp.json().catch(() => ({}));
+          if (!resp.ok) throw new Error(data.detail || ('操作失败 ' + resp.status));
+        }
+        this.following = !this.following;
+        this.count += this.following ? 1 : -1;
+      } catch (e) { this.error = e.message; }
+      finally { this.loading = false; }
+    },
+  };
+}
+
 function courseTabs(courseId) {
   return {
     tab: 'resources',
     resources: [], loading: false, loaded: false, error: '',
+    rankItems: [], rankLoading: false, rankLoaded: false, rankError: '',
 
     init() {
       // Tab 首次激活时懒加载（resources 为默认 Tab，首屏即触发）
       this.$watch('tab', (value) => {
         if (value === 'resources' && !this.loaded) this.loadResources();
+        if (value === 'rank' && !this.rankLoaded) this.loadRank();
       });
       this.loadResources();
     },
@@ -151,6 +224,18 @@ function courseTabs(courseId) {
         this.loaded = true;
       } catch (e) { this.error = e.message; }
       finally { this.loading = false; }
+    },
+
+    async loadRank() {
+      this.rankLoading = true; this.rankError = '';
+      try {
+        const resp = await fetch('/api/courses/' + courseId + '/leaderboard?limit=20');
+        const data = await resp.json().catch(() => ({}));
+        if (!resp.ok) throw new Error(data.detail || ('加载失败 ' + resp.status));
+        this.rankItems = data.items || [];
+        this.rankLoaded = true;
+      } catch (e) { this.rankError = e.message; }
+      finally { this.rankLoading = false; }
     },
   };
 }

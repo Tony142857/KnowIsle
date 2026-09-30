@@ -99,7 +99,7 @@
   {% endif %}
 </section>
 
-{# 等待协审（只读） #}
+{# 等待协审（可改派 / 直审） #}
 {% if co_tasks %}
 <section class="mt-10">
   <h2 class="mb-3 text-lg font-semibold text-slate-700">
@@ -108,11 +108,25 @@
   <div class="rounded-lg border border-slate-200 bg-white">
     <ul class="divide-y divide-slate-100">
       {% for t in co_tasks %}
-      <li class="flex flex-wrap items-center gap-3 px-4 py-3 text-sm">
+      <li class="flex flex-wrap items-center gap-3 px-4 py-3 text-sm" x-data="coTaskOps({{ t.task_id }})">
         <span class="min-w-0 flex-1 truncate text-slate-700">{{ t.resource.title }}</span>
         <span class="text-xs text-slate-400">{{ t.course_name }} · {{ t.uploader_nickname }}</span>
         <span class="text-xs text-slate-400">{{ t.created_at.strftime('%m-%d %H:%M') }}</span>
         <span class="rounded bg-violet-50 px-2 py-0.5 text-xs text-violet-700">等待协审</span>
+        <p x-show="error" x-text="error" x-cloak
+           class="w-full rounded bg-red-50 px-3 py-1.5 text-xs text-red-600"></p>
+        <button @click="reassign()" :disabled="loading"
+                class="rounded border border-slate-300 px-2 py-1 text-xs text-slate-600 hover:bg-slate-50 disabled:opacity-50">
+          改派
+        </button>
+        <button @click="direct('approve')" :disabled="loading"
+                class="rounded bg-sky-600 px-2 py-1 text-xs text-white hover:bg-sky-700 disabled:opacity-50">
+          直审通过
+        </button>
+        <button @click="direct('reject')" :disabled="loading"
+                class="rounded border border-red-300 px-2 py-1 text-xs text-red-600 hover:bg-red-50 disabled:opacity-50">
+          直审驳回
+        </button>
       </li>
       {% endfor %}
     </ul>
@@ -176,6 +190,49 @@ function finalVerdict(taskId) {
         setTimeout(() => window.location.reload(), 1200);
       } catch (e) { this.error = e.message; }
       finally { this.loading = false; }
+    },
+  };
+}
+function coTaskOps(taskId) {
+  return {
+    loading: false, error: '',
+
+    async post(url, body) {
+      this.loading = true; this.error = '';
+      try {
+        const resp = await fetch(url, {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify(body),
+        });
+        const data = await resp.json().catch(() => ({}));
+        if (!resp.ok) throw new Error(data.detail || ('操作失败 ' + resp.status));
+        setTimeout(() => window.location.reload(), 1200);
+      } catch (e) { this.error = e.message; }
+      finally { this.loading = false; }
+    },
+
+    reassign() {
+      const input = prompt('输入新协审员用户 ID（逗号分隔），留空则自动重指派：', '');
+      if (input === null) return;
+      const ids = input.split(',').map(s => parseInt(s.trim(), 10)).filter(n => !isNaN(n));
+      const body = {task_id: taskId};
+      if (ids.length) body.reviewer_ids = ids;
+      this.post('/api/admin/review/reassign', body);
+    },
+
+    direct(verdict) {
+      let comment = null;
+      if (verdict === 'reject') {
+        comment = prompt('请输入驳回理由（必填）：', '');
+        if (comment === null) return;
+        if (!comment.trim()) { this.error = '驳回必须填写理由'; return; }
+        comment = comment.trim();
+      } else if (!confirm('确认直审通过该投稿？将直接上架并结算贡献分。')) {
+        return;
+      }
+      this.post('/api/admin/review/direct',
+                {task_id: taskId, verdict: verdict, comment: comment});
     },
   };
 }

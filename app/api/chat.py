@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sse_starlette.sse import EventSourceResponse
 
 from app.core import pipeline
+from app.core.llm.router import ModelTier, resolve_client
 from app.identity.quota import check_quota
 from app.identity.rbac import get_current_user
 from app.storage.db import get_db
@@ -30,11 +31,13 @@ async def chat(
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
     """流式问答（SSE）：额度超限在进入事件流前直接返回 429 JSON，越权课程 404。"""
-    await check_quota(db, user)
+    client, provider = await resolve_client(db, user, ModelTier.SHORT)
+    if provider == "official":  # 自定义 Key 不占官方额度
+        await check_quota(db, user)
     await pipeline.check_course_access(db, user, body.course_id, body.scope)
 
     async def events():
-        async for event in pipeline.answer_question(db, user, body):
+        async for event in pipeline.answer_question(db, user, body, client=client, provider=provider):
             yield {"data": json.dumps(event, ensure_ascii=False)}
 
     return EventSourceResponse(events())

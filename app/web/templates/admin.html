@@ -1,0 +1,542 @@
+{% extends "base.html" %}
+{% block title %}管理后台 · 知屿 KnowIsle{% endblock %}
+
+{% block content %}
+<div x-data="{ tab: 'review' }">
+  <div class="mb-6">
+    <h1 class="text-2xl font-bold text-slate-800">管理后台</h1>
+    <p class="mt-1 text-sm text-slate-400">审核终审 / 空间管理 / 用户治理 / 平台配置（v0.6）</p>
+  </div>
+
+  {# Tab 切换（风格仿 course_detail.html） #}
+  <div class="flex gap-1 overflow-x-auto border-b border-slate-200 text-sm">
+    {% for key, label in [('review', '审核终审'), ('space', '空间管理'),
+                          ('users', '用户治理'), ('config', '平台配置')] %}
+    <button @click="tab = '{{ key }}'"
+            :class="tab === '{{ key }}' ? 'border-sky-600 text-sky-700 font-medium' : 'border-transparent text-slate-500 hover:text-sky-700'"
+            class="shrink-0 border-b-2 px-4 py-2 -mb-px transition-colors">{{ label }}</button>
+    {% endfor %}
+  </div>
+
+  <div class="mt-6">
+    {# ===== 审核终审：入口卡片 ===== #}
+    <div x-show="tab === 'review'">
+      <div class="grid gap-4 sm:grid-cols-2">
+        <a href="/admin/review"
+           class="block rounded-lg border border-slate-200 bg-white p-5 transition-shadow hover:shadow-sm">
+          <h2 class="text-base font-semibold text-slate-800">管理员终审 →</h2>
+          <p class="mt-1 text-sm text-slate-500">终审队列裁决（通过上架 / 驳回）、等待协审任务改派与直审、最近完成记录。</p>
+        </a>
+        <a href="/review"
+           class="block rounded-lg border border-slate-200 bg-white p-5 transition-shadow hover:shadow-sm">
+          <h2 class="text-base font-semibold text-slate-800">协审工作台 →</h2>
+          <p class="mt-1 text-sm text-slate-500">以协审员视角处理本人被指派的协审任务。</p>
+        </a>
+      </div>
+    </div>
+
+    {# ===== 空间管理：专业导入 / 课程审批 / 创建课程 ===== #}
+    <div x-show="tab === 'space'" x-cloak class="space-y-6">
+      {# 专业批量导入 #}
+      <div class="rounded-lg border border-slate-200 bg-white p-4" x-data="majorImport()">
+        <h2 class="text-sm font-semibold text-slate-700">专业批量导入</h2>
+        <p class="mt-1 text-xs text-slate-400">
+          粘贴 JSON（如 [{"name":"计算机科学与技术","code":"080901"}]）或逐行「名称,代码」（代码可省略）。按名称幂等去重。
+        </p>
+        <textarea x-model="text" rows="4" placeholder='[{"name":"计算机科学与技术","code":"080901"}]'
+                  class="mt-2 w-full rounded border border-slate-300 px-3 py-2 font-mono text-sm"></textarea>
+        <div class="mt-2 flex items-center gap-2">
+          <button @click="submit()" :disabled="loading"
+                  class="rounded bg-sky-600 px-4 py-1.5 text-sm text-white hover:bg-sky-700 disabled:opacity-50">
+            导入
+          </button>
+          <span x-show="result" x-text="result" x-cloak class="text-sm text-emerald-700"></span>
+        </div>
+        <p x-show="error" x-text="error" x-cloak
+           class="mt-2 rounded bg-red-50 px-3 py-2 text-sm text-red-600"></p>
+      </div>
+
+      {# 公共课程列表（状态过滤 + 审批/停用） #}
+      <div class="rounded-lg border border-slate-200 bg-white p-4" x-data="adminCourses()" x-init="load()">
+        <div class="flex flex-wrap items-center gap-2">
+          <h2 class="text-sm font-semibold text-slate-700">公共课程空间</h2>
+          <span class="text-xs text-slate-400" x-show="loaded" x-text="'共 ' + total + ' 门'"></span>
+          <select x-model="status" @change="load()"
+                  class="ml-auto rounded border border-slate-300 px-2 py-1.5 text-sm">
+            <option value="">全部状态</option>
+            <option value="active">已开通</option>
+            <option value="pending">待审批</option>
+            <option value="disabled">已停用</option>
+          </select>
+        </div>
+        <p x-show="loading" x-cloak class="mt-3 text-sm text-slate-400">加载中…</p>
+        <p x-show="error" x-text="error" x-cloak
+           class="mt-3 rounded bg-red-50 px-3 py-2 text-sm text-red-600"></p>
+        <p x-show="loaded && !loading && !items.length" x-cloak class="mt-3 text-sm text-slate-400">暂无课程。</p>
+        <div x-show="items.length" x-cloak class="mt-3 overflow-x-auto">
+          <table class="w-full text-sm">
+            <thead>
+              <tr class="border-b border-slate-200 text-left text-xs text-slate-400">
+                <th class="py-2 pr-3 font-medium">ID</th>
+                <th class="py-2 pr-3 font-medium">课程名</th>
+                <th class="py-2 pr-3 font-medium">所属专业</th>
+                <th class="py-2 pr-3 font-medium">状态</th>
+                <th class="py-2 pr-3 font-medium">创建时间</th>
+                <th class="py-2 font-medium">操作</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-100">
+              <template x-for="c in items" :key="c.id">
+                <tr>
+                  <td class="py-2 pr-3 text-slate-400" x-text="c.id"></td>
+                  <td class="py-2 pr-3">
+                    <a :href="'/courses/' + c.id" class="text-sky-600 hover:underline" x-text="c.name"></a>
+                  </td>
+                  <td class="py-2 pr-3 text-slate-500" x-text="c.major_name || '—'"></td>
+                  <td class="py-2 pr-3">
+                    <span class="rounded px-2 py-0.5 text-xs"
+                          :class="{'bg-emerald-50 text-emerald-700': c.status === 'active',
+                                   'bg-amber-100 text-amber-700': c.status === 'pending',
+                                   'bg-slate-100 text-slate-500': c.status === 'disabled'}"
+                          x-text="statusLabel(c.status)"></span>
+                  </td>
+                  <td class="py-2 pr-3 text-xs text-slate-400"
+                      x-text="(c.created_at || '').slice(0, 10)"></td>
+                  <td class="py-2">
+                    <div class="flex gap-2">
+                      <button x-show="c.status !== 'active'" @click="setStatus(c, 'active')" :disabled="loading"
+                              class="rounded bg-sky-600 px-2 py-1 text-xs text-white hover:bg-sky-700 disabled:opacity-50">
+                        审批通过
+                      </button>
+                      <button x-show="c.status !== 'disabled'" @click="setStatus(c, 'disabled')" :disabled="loading"
+                              class="rounded border border-red-300 px-2 py-1 text-xs text-red-600 hover:bg-red-50 disabled:opacity-50">
+                        停用
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              </template>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {# 创建课程（管理员创建直接 active） #}
+      <div class="rounded-lg border border-slate-200 bg-white p-4" x-data="createCourse()" x-init="loadMajors()">
+        <h2 class="text-sm font-semibold text-slate-700">创建课程</h2>
+        <p class="mt-1 text-xs text-slate-400">管理员创建的课程直接开通（active），无需审批。</p>
+        <div class="mt-3 grid gap-2 sm:grid-cols-2">
+          <input type="text" x-model="form.name" placeholder="课程名（必填）"
+                 class="rounded border border-slate-300 px-3 py-2 text-sm">
+          <select x-model="form.major_id" class="rounded border border-slate-300 px-3 py-2 text-sm">
+            <option value="">选择所属专业（必填）</option>
+            <template x-for="m in majors" :key="m.id">
+              <option :value="m.id" x-text="m.name"></option>
+            </template>
+          </select>
+        </div>
+        <textarea x-model="form.description" rows="2" placeholder="课程简介（选填）"
+                  class="mt-2 w-full rounded border border-slate-300 px-3 py-2 text-sm"></textarea>
+        <div class="mt-2 flex items-center gap-2">
+          <button @click="submit()" :disabled="loading"
+                  class="rounded bg-sky-600 px-4 py-1.5 text-sm text-white hover:bg-sky-700 disabled:opacity-50">
+            创建
+          </button>
+          <span x-show="result" x-text="result" x-cloak class="text-sm text-emerald-700"></span>
+        </div>
+        <p x-show="error" x-text="error" x-cloak
+           class="mt-2 rounded bg-red-50 px-3 py-2 text-sm text-red-600"></p>
+      </div>
+    </div>
+
+    {# ===== 用户治理：搜索 + 角色任命 / 信用裁决 / 信用明细 ===== #}
+    <div x-show="tab === 'users'" x-cloak>
+      <div class="rounded-lg border border-slate-200 bg-white p-4" x-data="adminUsers()" x-init="load()">
+        <div class="flex flex-wrap items-center gap-2">
+          <h2 class="text-sm font-semibold text-slate-700">用户治理</h2>
+          <span class="text-xs text-slate-400" x-show="loaded" x-text="'共 ' + total + ' 人'"></span>
+          <div class="ml-auto flex gap-2">
+            <input type="text" x-model="q" @keydown.enter="load()" placeholder="学号 / 昵称"
+                   class="rounded border border-slate-300 px-3 py-1.5 text-sm">
+            <button @click="load()" :disabled="loading"
+                    class="rounded bg-sky-600 px-3 py-1.5 text-sm text-white hover:bg-sky-700 disabled:opacity-50">
+              搜索
+            </button>
+          </div>
+        </div>
+        <p x-show="loading" x-cloak class="mt-3 text-sm text-slate-400">加载中…</p>
+        <p x-show="error" x-text="error" x-cloak
+           class="mt-3 rounded bg-red-50 px-3 py-2 text-sm text-red-600"></p>
+        <p x-show="loaded && !loading && !items.length" x-cloak class="mt-3 text-sm text-slate-400">无匹配用户。</p>
+        <div x-show="items.length" x-cloak class="mt-3 overflow-x-auto">
+          <table class="w-full text-sm">
+            <thead>
+              <tr class="border-b border-slate-200 text-left text-xs text-slate-400">
+                <th class="py-2 pr-3 font-medium">学号</th>
+                <th class="py-2 pr-3 font-medium">昵称</th>
+                <th class="py-2 pr-3 font-medium">角色</th>
+                <th class="py-2 pr-3 font-medium">等级</th>
+                <th class="py-2 pr-3 font-medium">贡献分</th>
+                <th class="py-2 pr-3 font-medium">信用分</th>
+                <th class="py-2 pr-3 font-medium">状态</th>
+                <th class="py-2 font-medium">操作</th>
+              </tr>
+            </thead>
+            <template x-for="u in items" :key="u.id">
+              <tbody class="divide-y divide-slate-100" x-data="userRow(u)">
+                <tr>
+                  <td class="py-2 pr-3 text-slate-500" x-text="u.student_no"></td>
+                  <td class="py-2 pr-3 text-slate-700" x-text="u.nickname"></td>
+                  <td class="py-2 pr-3">
+                    <span class="rounded px-2 py-0.5 text-xs"
+                          :class="u.role === 'admin' ? 'bg-amber-100 text-amber-700' : 'bg-slate-100 text-slate-500'"
+                          x-text="roleLabel(u.role)"></span>
+                  </td>
+                  <td class="py-2 pr-3 text-slate-500" x-text="'Lv' + u.level"></td>
+                  <td class="py-2 pr-3 text-slate-500" x-text="u.score"></td>
+                  <td class="py-2 pr-3 font-medium"
+                      :class="u.credit >= 60 ? 'text-slate-700' : 'text-red-600'"
+                      x-text="u.credit"></td>
+                  <td class="py-2 pr-3 text-slate-500" x-text="u.status"></td>
+                  <td class="py-2">
+                    <button @click="open = !open"
+                            class="rounded border border-slate-300 px-2 py-1 text-xs text-slate-600 hover:bg-slate-50">
+                      <span x-text="open ? '收起' : '管理'"></span>
+                    </button>
+                  </td>
+                </tr>
+                {# 展开行：角色任命 / 信用裁决 / 信用明细 #}
+                <tr x-show="open" x-cloak>
+                  <td colspan="8" class="bg-slate-50 px-3 py-3">
+                    <p x-show="error" x-text="error" x-cloak
+                       class="mb-2 rounded bg-red-50 px-3 py-2 text-sm text-red-600"></p>
+                    <p x-show="msg" x-text="msg" x-cloak
+                       class="mb-2 rounded bg-emerald-50 px-3 py-2 text-sm text-emerald-700"></p>
+                    <div class="grid gap-4 lg:grid-cols-2">
+                      <div>
+                        <p class="text-xs font-medium text-slate-500">角色任命</p>
+                        <div class="mt-1 flex gap-2">
+                          <select x-model="role" class="rounded border border-slate-300 px-2 py-1.5 text-sm">
+                            <option value="student">学生</option>
+                            <option value="reviewer">协审员</option>
+                            <option value="builder">共建者</option>
+                            <option value="admin">管理员</option>
+                          </select>
+                          <button @click="setRole()" :disabled="loading"
+                                  class="rounded bg-sky-600 px-3 py-1.5 text-sm text-white hover:bg-sky-700 disabled:opacity-50">
+                            任命
+                          </button>
+                        </div>
+                        <p class="mt-4 text-xs font-medium text-slate-500">信用裁决（±1~100，必填理由）</p>
+                        <div class="mt-1 flex flex-wrap gap-2">
+                          <input type="number" x-model.number="delta" min="-100" max="100" placeholder="±分值"
+                                 class="w-24 rounded border border-slate-300 px-2 py-1.5 text-sm">
+                          <input type="text" x-model="reason" placeholder="裁决理由（必填）"
+                                 class="min-w-0 flex-1 rounded border border-slate-300 px-2 py-1.5 text-sm">
+                          <button @click="submitCredit()" :disabled="loading"
+                                  class="rounded bg-sky-600 px-3 py-1.5 text-sm text-white hover:bg-sky-700 disabled:opacity-50">
+                            提交
+                          </button>
+                        </div>
+                      </div>
+                      <div>
+                        <div class="flex items-center gap-2">
+                          <p class="text-xs font-medium text-slate-500">信用明细</p>
+                          <button x-show="logs === null" @click="loadLogs()"
+                                  class="text-xs text-sky-600 hover:underline">加载明细</button>
+                        </div>
+                        <p x-show="logsLoading" x-cloak class="mt-1 text-xs text-slate-400">加载中…</p>
+                        <p x-show="logs && !logs.length" x-cloak class="mt-1 text-xs text-slate-400">暂无信用记录。</p>
+                        <ul x-show="logs && logs.length" x-cloak
+                            class="mt-1 max-h-40 space-y-1 overflow-y-auto text-xs">
+                          <template x-for="log in (logs || [])" :key="log.created_at + String(log.delta)">
+                            <li class="flex items-center gap-2">
+                              <span class="w-10 shrink-0 text-right font-medium"
+                                    :class="log.delta >= 0 ? 'text-emerald-600' : 'text-red-600'"
+                                    x-text="(log.delta >= 0 ? '+' : '') + log.delta"></span>
+                              <span class="min-w-0 flex-1 truncate text-slate-600" x-text="log.reason"></span>
+                              <span class="shrink-0 text-slate-400" x-text="log.admin_nickname"></span>
+                              <span class="shrink-0 text-slate-400"
+                                    x-text="(log.created_at || '').slice(0, 16).replace('T', ' ')"></span>
+                            </li>
+                          </template>
+                        </ul>
+                      </div>
+                    </div>
+                  </td>
+                </tr>
+              </tbody>
+            </template>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    {# ===== 平台配置：生效值可编辑保存（越界 422 展示 detail） ===== #}
+    <div x-show="tab === 'config'" x-cloak>
+      <div class="rounded-lg border border-slate-200 bg-white p-4" x-data="adminConfig()" x-init="load()">
+        <h2 class="text-sm font-semibold text-slate-700">平台配置</h2>
+        <p class="mt-1 text-xs text-slate-400">仅注册键可调；修改写审计日志，即时生效。</p>
+        <p x-show="loading" x-cloak class="mt-3 text-sm text-slate-400">加载中…</p>
+        <p x-show="error" x-text="error" x-cloak
+           class="mt-3 rounded bg-red-50 px-3 py-2 text-sm text-red-600"></p>
+        <div x-show="items.length" x-cloak class="mt-3 overflow-x-auto">
+          <table class="w-full text-sm">
+            <thead>
+              <tr class="border-b border-slate-200 text-left text-xs text-slate-400">
+                <th class="py-2 pr-3 font-medium">配置键</th>
+                <th class="py-2 pr-3 font-medium">描述</th>
+                <th class="py-2 pr-3 font-medium">生效值</th>
+                <th class="py-2 pr-3 font-medium">默认值</th>
+                <th class="py-2 pr-3 font-medium">已覆盖</th>
+                <th class="py-2 pr-3 font-medium">最近修改</th>
+                <th class="py-2 font-medium">操作</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-100">
+              <template x-for="item in items" :key="item.key">
+                <tr>
+                  <td class="py-2 pr-3 font-mono text-xs text-slate-600" x-text="item.key"></td>
+                  <td class="py-2 pr-3 text-xs text-slate-500" x-text="item.description"></td>
+                  <td class="py-2 pr-3">
+                    <input type="number" x-model.number="drafts[item.key]"
+                           :min="item.min_value" :max="item.max_value"
+                           class="w-24 rounded border border-slate-300 px-2 py-1 text-sm">
+                    <p class="mt-0.5 text-[10px] text-slate-400"
+                       x-text="'范围 ' + item.min_value + ' ~ ' + item.max_value"></p>
+                  </td>
+                  <td class="py-2 pr-3 text-slate-500" x-text="item.default"></td>
+                  <td class="py-2 pr-3">
+                    <span class="rounded px-2 py-0.5 text-xs"
+                          :class="item.overridden ? 'bg-amber-100 text-amber-700' : 'bg-slate-100 text-slate-500'"
+                          x-text="item.overridden ? '是' : '否'"></span>
+                  </td>
+                  <td class="py-2 pr-3 text-xs text-slate-400">
+                    <span x-text="item.updated_by || '—'"></span>
+                    <span x-show="item.updated_at"
+                          x-text="' · ' + (item.updated_at || '').slice(0, 16).replace('T', ' ')"></span>
+                  </td>
+                  <td class="py-2">
+                    <button @click="save(item)" :disabled="loading"
+                            class="rounded bg-sky-600 px-2 py-1 text-xs text-white hover:bg-sky-700 disabled:opacity-50">
+                      保存
+                    </button>
+                    <p x-show="rowErrors[item.key]" x-text="rowErrors[item.key]" x-cloak
+                       class="mt-1 max-w-48 text-xs text-red-600"></p>
+                    <p x-show="rowMsgs[item.key]" x-text="rowMsgs[item.key]" x-cloak
+                       class="mt-1 text-xs text-emerald-700"></p>
+                  </td>
+                </tr>
+              </template>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// 管理后台统一 fetch 封装：204 视为成功空响应，错误抛出 detail
+async function adminApi(url, options) {
+  const resp = await fetch(url, options);
+  const data = resp.status === 204 ? {} : await resp.json().catch(() => ({}));
+  if (!resp.ok && resp.status !== 204) {
+    const detail = typeof data.detail === 'string' ? data.detail : JSON.stringify(data.detail);
+    throw new Error(detail || ('请求失败 ' + resp.status));
+  }
+  return data;
+}
+function adminPost(url, method, body) {
+  return adminApi(url, {
+    method: method,
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(body),
+  });
+}
+
+// 专业批量导入：优先按 JSON 解析，失败按逐行「名称,代码」解析
+function majorImport() {
+  return {
+    text: '', loading: false, error: '', result: '',
+    parseItems() {
+      const raw = this.text.trim();
+      if (!raw) throw new Error('请输入专业名单');
+      if (raw.startsWith('[')) {
+        const arr = JSON.parse(raw);
+        return arr.map(it => ({name: String(it.name || '').trim(),
+                              code: it.code ? String(it.code).trim() : null}));
+      }
+      return raw.split('\n').map(line => line.trim()).filter(Boolean).map(line => {
+        const parts = line.split(/[,，]/);
+        return {name: parts[0].trim(), code: parts[1] ? parts[1].trim() : null};
+      });
+    },
+    async submit() {
+      this.loading = true; this.error = ''; this.result = '';
+      try {
+        const items = this.parseItems();
+        if (!items.length || items.some(it => !it.name)) throw new Error('存在空名称行，请检查格式');
+        const data = await adminPost('/api/admin/majors', 'POST', {items: items});
+        this.result = '导入完成：新增 ' + data.created + ' 个，跳过已存在 ' + data.skipped + ' 个';
+        this.text = '';
+      } catch (e) { this.error = e.message; }
+      finally { this.loading = false; }
+    },
+  };
+}
+
+// 公共课程列表：状态过滤 + 审批通过 / 停用
+function adminCourses() {
+  return {
+    status: '', items: [], total: 0, loading: false, loaded: false, error: '',
+    statusLabel(s) { return {active: '已开通', pending: '待审批', disabled: '已停用'}[s] || s; },
+    async load() {
+      this.loading = true; this.error = '';
+      try {
+        const data = await adminApi('/api/admin/courses?size=100'
+          + (this.status ? '&status=' + this.status : ''));
+        this.items = data.items || [];
+        this.total = data.total || 0;
+        this.loaded = true;
+      } catch (e) { this.error = e.message; }
+      finally { this.loading = false; }
+    },
+    async setStatus(c, status) {
+      if (status === 'disabled' && !confirm('确认停用课程「' + c.name + '」？停用后不再公开展示。')) return;
+      this.loading = true; this.error = '';
+      try {
+        await adminPost('/api/admin/courses/' + c.id, 'PATCH', {status: status});
+        c.status = status;
+      } catch (e) { this.error = e.message; }
+      finally { this.loading = false; }
+    },
+  };
+}
+
+// 创建课程：管理员直接 active；专业列表取自 GET /api/majors
+function createCourse() {
+  return {
+    majors: [], form: {name: '', major_id: '', description: ''},
+    loading: false, error: '', result: '',
+    async loadMajors() {
+      try {
+        const data = await adminApi('/api/majors');
+        this.majors = data.items || [];
+      } catch (e) { this.error = e.message; }
+    },
+    async submit() {
+      this.error = ''; this.result = '';
+      if (!this.form.name.trim()) { this.error = '请填写课程名'; return; }
+      if (!this.form.major_id) { this.error = '请选择所属专业'; return; }
+      this.loading = true;
+      try {
+        const data = await adminPost('/api/courses', 'POST', {
+          name: this.form.name.trim(),
+          major_id: Number(this.form.major_id),
+          description: this.form.description.trim() || null,
+        });
+        this.result = '已创建并开通：' + data.name;
+        this.form = {name: '', major_id: '', description: ''};
+      } catch (e) { this.error = e.message; }
+      finally { this.loading = false; }
+    },
+  };
+}
+
+// 用户治理：搜索 + 分页首屏
+function adminUsers() {
+  return {
+    q: '', items: [], total: 0, loading: false, loaded: false, error: '',
+    async load() {
+      this.loading = true; this.error = '';
+      try {
+        const data = await adminApi('/api/admin/users?size=50'
+          + (this.q.trim() ? '&q=' + encodeURIComponent(this.q.trim()) : ''));
+        this.items = data.items || [];
+        this.total = data.total || 0;
+        this.loaded = true;
+      } catch (e) { this.error = e.message; }
+      finally { this.loading = false; }
+    },
+  };
+}
+
+// 单行用户：角色任命 / 信用裁决 / 信用明细（展开行内操作）
+function userRow(u) {
+  return {
+    u: u, open: false, role: u.role, delta: null, reason: '',
+    logs: null, logsLoading: false,
+    loading: false, error: '', msg: '',
+    roleLabel(r) { return {student: '学生', reviewer: '协审员', builder: '共建者', admin: '管理员'}[r] || r; },
+    async setRole() {
+      if (this.role === this.u.role) { this.error = '角色未变更'; this.msg = ''; return; }
+      this.loading = true; this.error = ''; this.msg = '';
+      try {
+        const data = await adminPost('/api/admin/users/' + this.u.id + '/role', 'PUT', {role: this.role});
+        this.u.role = data.role;
+        this.msg = '已任命为「' + this.roleLabel(data.role) + '」';
+      } catch (e) { this.error = e.message; this.role = this.u.role; }
+      finally { this.loading = false; }
+    },
+    async submitCredit() {
+      this.error = ''; this.msg = '';
+      if (!Number.isInteger(this.delta) || this.delta === 0) { this.error = '分值须为 ±1~100 的非零整数'; return; }
+      if (!this.reason.trim()) { this.error = '请填写裁决理由'; return; }
+      this.loading = true;
+      try {
+        const data = await adminPost('/api/admin/users/' + this.u.id + '/credit', 'POST', {
+          delta: this.delta, reason: this.reason.trim(),
+        });
+        this.u.credit = data.credit;
+        this.msg = '信用裁决已提交：' + (data.delta >= 0 ? '+' : '') + data.delta
+          + '，当前信用分 ' + data.credit;
+        this.delta = null; this.reason = '';
+        if (this.logs !== null) await this.loadLogs();
+      } catch (e) { this.error = e.message; }
+      finally { this.loading = false; }
+    },
+    async loadLogs() {
+      this.logsLoading = true; this.error = '';
+      try {
+        const data = await adminApi('/api/admin/users/' + this.u.id + '/credit-logs');
+        this.logs = data.items || [];
+      } catch (e) { this.error = e.message; }
+      finally { this.logsLoading = false; }
+    },
+  };
+}
+
+// 平台配置：行内编辑生效值 + 保存（PUT），422 detail 行内展示
+function adminConfig() {
+  return {
+    items: [], drafts: {}, rowErrors: {}, rowMsgs: {},
+    loading: false, error: '',
+    async load() {
+      this.loading = true; this.error = '';
+      try {
+        const data = await adminApi('/api/admin/config');
+        this.items = data.items || [];
+        this.drafts = {};
+        for (const item of this.items) this.drafts[item.key] = item.value;
+      } catch (e) { this.error = e.message; }
+      finally { this.loading = false; }
+    },
+    async save(item) {
+      this.loading = true;
+      this.rowErrors = {...this.rowErrors, [item.key]: ''};
+      this.rowMsgs = {...this.rowMsgs, [item.key]: ''};
+      try {
+        const data = await adminPost('/api/admin/config/' + item.key, 'PUT',
+                                     {value: Number(this.drafts[item.key])});
+        this.rowMsgs = {...this.rowMsgs,
+                        [item.key]: '已保存：' + data.previous + ' → ' + data.value};
+        await this.load();
+      } catch (e) {
+        this.rowErrors = {...this.rowErrors, [item.key]: e.message};
+      } finally { this.loading = false; }
+    },
+  };
+}
+</script>
+{% endblock %}
