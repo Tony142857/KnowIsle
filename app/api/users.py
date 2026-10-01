@@ -11,6 +11,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.llm.urlguard import validate_base_url
 from app.core.platform_config import get_config
 from app.identity.growth import grant_score
 from app.identity.llm_keys import delete_user_key, get_user_key, upsert_user_key
@@ -133,13 +134,17 @@ async def exchange_quota(
 ):
     """贡献分兑换 AI 额度：exchange_rate 分 = 1 次（平台配置可调），扣分明细与额度入账同一事务。"""
     cost = await get_config(db, "ai_quota_exchange_rate") * payload.count
-    if user.score < cost:
+    # 行锁串行化并发兑换的「读-判-写」（镜像 posts.py 悬赏托管写法）：
+    # user 已被 get_current_user 加载进身份映射，必须 populate_existing=True
+    # 强制发出 SELECT ... FOR UPDATE，否则命中缓存、行锁不生效
+    locked_user = await db.get(User, user.id, with_for_update=True, populate_existing=True)
+    if locked_user.score < cost:
         raise HTTPException(status_code=422, detail="贡献分不足")
-    quota = await ensure_quota(db, user)
-    await grant_score(db, user.id, -cost, "quota_exchange", "ai_quota", quota.id)
+    quota = await ensure_quota(db, locked_user)
+    await grant_score(db, locked_user.id, -cost, "quota_exchange", "ai_quota", quota.id)
     quota.bonus_balance += payload.count
     await db.commit()
-    return {"score": user.score, "bonus_balance": quota.bonus_balance, "spent": cost}
+    return {"score": locked_user.score, "bonus_balance": quota.bonus_balance, "spent": cost}
 
 
 @router.get("/me/llm-key")
@@ -175,10 +180,13 @@ async def put_my_llm_key(
     user: Annotated[User, Depends(get_current_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
-    """配置 / 覆盖自定义 Key（每用户一条，upsert；api_key 加密入库）。"""
+    """配置 / 覆盖自定义 Key（每用户一条，upsert；api_key 加密入库）。
+
+    base_url 走 SSRF 校验（v0.9）：仅允许公网 HTTPS 端点，防内网探测/元数据窃取。
+    """
     base_url = payload.base_url.strip()
-    if not base_url.startswith(("http://", "https://")):
-        raise HTTPException(status_code=422, detail="base_url 须以 http(s):// 开头")
+    if error := await validate_base_url(base_url):
+        raise HTTPException(status_code=422, detail=error)
     api_key = payload.api_key.strip()
     if not api_key:
         raise HTTPException(status_code=422, detail="api_key 不能为空")

@@ -21,6 +21,11 @@ router = APIRouter(prefix="/search", tags=["search"])
 LIST_MAX_SIZE = 50
 
 
+def escape_like(q: str) -> str:
+    """转义 ILIKE 通配符（\\ % _），防用户注入通配符造成全表扫描（v0.9 安全审计）。"""
+    return q.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
 @router.get("")
 async def search(
     user: Annotated[User, Depends(get_current_user)],
@@ -40,15 +45,18 @@ async def search(
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
-    like = f"%{query}%"
+    like = f"%{escape_like(query)}%"
     posts_result: dict = {"total": 0, "items": []}
     resources_result: dict = {"total": 0, "items": []}
 
     if search_type in ("all", "post"):
-        title_hit = case((Post.title.ilike(like), 0), else_=1)  # 标题命中优先
+        title_hit = case((Post.title.ilike(like, escape="\\"), 0), else_=1)  # 标题命中优先
         filters = [
             Post.status.in_(["normal", "featured"]),
-            or_(Post.title.ilike(like), Post.content.ilike(like)),
+            or_(
+                Post.title.ilike(like, escape="\\"),
+                Post.content.ilike(like, escape="\\"),
+            ),
         ]
         if board is not None:
             filters.append(Post.board == board)
@@ -88,10 +96,13 @@ async def search(
         }
 
     if search_type in ("all", "resource"):
-        title_hit = case((Resource.title.ilike(like), 0), else_=1)
+        title_hit = case((Resource.title.ilike(like, escape="\\"), 0), else_=1)
         filters = [
             Resource.review_status == "approved",
-            or_(Resource.title.ilike(like), Resource.description.ilike(like)),
+            or_(
+                Resource.title.ilike(like, escape="\\"),
+                Resource.description.ilike(like, escape="\\"),
+            ),
         ]
         if course_id is not None:
             filters.append(Resource.course_id == course_id)

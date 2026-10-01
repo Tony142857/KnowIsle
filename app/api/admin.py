@@ -13,6 +13,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.search import escape_like
 from app.community.experience import SCORE_POST_FEATURED, validate_feature_target
 from app.core.platform_config import config_specs, set_config
 from app.identity.growth import apply_credit_change, grant_score
@@ -401,8 +402,14 @@ async def list_users(
     size = min(max(size, 1), 100)
     base = select(User)
     if q:
-        like = f"%{q}%"
-        base = base.where(or_(User.student_no.ilike(like), User.nickname.ilike(like)))
+        # 转义 ILIKE 通配符（\ % _），防用户注入通配符造成全表扫描（v0.9 安全审计）
+        like = f"%{escape_like(q)}%"
+        base = base.where(
+            or_(
+                User.student_no.ilike(like, escape="\\"),
+                User.nickname.ilike(like, escape="\\"),
+            )
+        )
     total = (await db.execute(select(func.count()).select_from(base.subquery()))).scalar_one()
     rows = (
         await db.execute(
