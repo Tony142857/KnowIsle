@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.chunking import semantic_splitter
 from app.core.embeddings import get_embedding
 from app.core.parser import parse_by_file_type
+from app.core.retrieval.fine import invalidate_bm25
 from app.core.structure import tree_builder
 from app.storage import object_store
 from app.storage.db import SessionLocal
@@ -90,6 +91,8 @@ async def _run_pipeline(session: AsyncSession, doc: Document) -> None:
     )
     doc.status = "parsed"
     await session.commit()
+    # chunks 已落库：失效该课程 BM25 语料缓存（v0.9），下次检索重建
+    invalidate_bm25(doc.course_id, doc.scope, doc.owner_id)
 
 
 async def parse_document(ctx: dict, document_id: int) -> None:

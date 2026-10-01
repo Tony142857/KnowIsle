@@ -177,6 +177,7 @@ class Document(Base):
         ),
         Index("idx_documents_md5", "md5"),
         Index("idx_documents_owner", "owner_id"),
+        Index("idx_documents_storage_key", "storage_key"),
     )
 
     id: Mapped[int] = _id()
@@ -199,6 +200,7 @@ class Chunk(Base):
     __table_args__ = (
         CheckConstraint("scope IN ('personal','public')", name="ck_chunks_scope"),
         Index("idx_chunks_course_scope", "course_id", "scope"),
+        Index("idx_chunks_document", "document_id"),
         Index(
             "idx_chunks_owner", "owner_id", postgresql_where=text("scope='personal'")
         ),
@@ -279,6 +281,7 @@ class ReviewTask(Base):
         CheckConstraint(
             "stage IN ('precheck','co_review','final','done')", name="ck_review_tasks_stage"
         ),
+        Index("idx_review_tasks_resource", "resource_id"),
     )
 
     id: Mapped[int] = _id()
@@ -299,6 +302,7 @@ class ReviewRecord(Base):
         CheckConstraint(
             "verdict IN ('approve','reject')", name="ck_review_records_verdict"
         ),
+        Index("idx_review_records_task", "task_id"),
     )
 
     id: Mapped[int] = _id()
@@ -349,6 +353,7 @@ class Post(Base):
 
 class Comment(Base):
     __tablename__ = "comments"
+    __table_args__ = (Index("idx_comments_post", "post_id"),)
 
     id: Mapped[int] = _id()
     post_id: Mapped[int] = mapped_column(
@@ -369,6 +374,7 @@ class Vote(Base):
         ),
         CheckConstraint("value IN (1,-1)", name="ck_votes_value"),
         UniqueConstraint("user_id", "target_type", "target_id"),
+        Index("idx_votes_target", "target_type", "target_id"),
     )
 
     id: Mapped[int] = _id()
@@ -402,6 +408,7 @@ class Follow(Base):
     __table_args__ = (
         CheckConstraint("target_type IN ('course','user')", name="ck_follows_target"),
         UniqueConstraint("user_id", "target_type", "target_id"),
+        Index("idx_follows_target", "target_type", "target_id"),
     )
 
     id: Mapped[int] = _id()
@@ -506,6 +513,7 @@ class QaLog(Base):
     """全量问答落库（模块 A5）：检索/生成指标与引用链路，供效果评估与看板。"""
 
     __tablename__ = "qa_logs"
+    __table_args__ = (Index("idx_qa_logs_created_at", "created_at"),)
 
     id: Mapped[int] = _id()
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)

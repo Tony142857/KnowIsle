@@ -15,6 +15,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.embeddings import get_embedding
+from app.core.retrieval.fine import invalidate_bm25
 from app.identity.growth import SCORE_UPLOAD_APPROVED, grant_score
 from app.moderation.assign import assign_reviewers
 from app.storage.models import (
@@ -304,6 +305,8 @@ async def _approve(session: AsyncSession, task: ReviewTask) -> int:
             )
             for d, src in zip(derived, src_chunks, strict=True)
         )
+        # 派生 public chunks 已写入：失效该课程公共库 BM25 语料缓存（v0.9）
+        invalidate_bm25(new_doc.course_id, "public")
 
     await grant_score(
         session, resource.uploader_id, SCORE_UPLOAD_APPROVED,

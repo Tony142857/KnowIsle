@@ -184,17 +184,6 @@ async def list_posts(
     size: int = Query(default=LIST_DEFAULT_SIZE, ge=1, le=LIST_MAX_SIZE),
 ):
     """帖子列表：仅 normal/featured，按发帖时间倒序；board 为空列全部。"""
-    comment_counts = (
-        select(Comment.post_id, func.count().label("n"))
-        .group_by(Comment.post_id)
-        .subquery()
-    )
-    vote_scores = (
-        select(Vote.target_id, func.sum(Vote.value).label("s"))
-        .where(Vote.target_type == "post")
-        .group_by(Vote.target_id)
-        .subquery()
-    )
     filters = [Post.status.in_(["normal", "featured"])]
     if board:
         filters.append(Post.board == board)
@@ -206,18 +195,40 @@ async def list_posts(
     total = (
         await db.execute(select(func.count()).select_from(Post).where(*filters))
     ).scalar_one()
+    # 先取本页帖子，聚合只对这页做 IN 过滤（v0.9：原实现对 comments/votes 全表
+    # GROUP BY 再 JOIN 本页 20 条，表越大越慢）
     rows = (
         await db.execute(
-            select(Post, User, comment_counts.c.n, vote_scores.c.s)
+            select(Post, User)
             .join(User, User.id == Post.author_id)
-            .outerjoin(comment_counts, comment_counts.c.post_id == Post.id)
-            .outerjoin(vote_scores, vote_scores.c.target_id == Post.id)
             .where(*filters)
             .order_by(Post.created_at.desc())
             .offset((page - 1) * size)
             .limit(size)
         )
     ).all()
+    post_ids = [post.id for post, _ in rows]
+    comment_counts: dict[int, int] = {}
+    vote_scores: dict[int, int] = {}
+    if post_ids:
+        comment_counts = dict(
+            (
+                await db.execute(
+                    select(Comment.post_id, func.count())
+                    .where(Comment.post_id.in_(post_ids))
+                    .group_by(Comment.post_id)
+                )
+            ).all()
+        )
+        vote_scores = dict(
+            (
+                await db.execute(
+                    select(Vote.target_id, func.sum(Vote.value))
+                    .where(Vote.target_type == "post", Vote.target_id.in_(post_ids))
+                    .group_by(Vote.target_id)
+                )
+            ).all()
+        )
     # 经验帖且无摘要：一次 mget 批量取摘要状态键（避免逐条 N+1），其余帖子状态为 None
     summary_pending_posts = [
         post
@@ -226,9 +237,14 @@ async def list_posts(
     ]
     summary_states: dict[int, str | None] = {}
     if summary_pending_posts:
-        states = await get_redis().mget(
-            [exp_summary_key(post.id) for post in summary_pending_posts]
-        )
+        try:
+            states = await get_redis().mget(
+                [exp_summary_key(post.id) for post in summary_pending_posts]
+            )
+        except Exception:
+            # Redis 故障仅记日志放行：摘要状态按无状态键处理（与项目容错惯例一致）
+            logger.warning("AI 摘要状态键批量读取失败", exc_info=True)
+            states = [None] * len(summary_pending_posts)
         summary_states = dict(
             zip((post.id for post in summary_pending_posts), states, strict=True)
         )
@@ -241,8 +257,8 @@ async def list_posts(
             "course_id": post.course_id,
             "tags": post.tags or [],
             "view_count": post.view_count,
-            "comment_count": comment_count or 0,
-            "vote_score": vote_score or 0,
+            "comment_count": comment_counts.get(post.id, 0),
+            "vote_score": vote_scores.get(post.id, 0),
             "status": post.status,
             "bounty_score": post.bounty_score,
             "ai_summary": post.ai_summary,
@@ -254,7 +270,7 @@ async def list_posts(
             "created_at": post.created_at.isoformat() if post.created_at else None,
             "excerpt": make_excerpt(post.content),
         }
-        for post, author, comment_count, vote_score in rows
+        for post, author in rows
     ]
     return {"total": total, "items": items}
 
@@ -295,13 +311,21 @@ async def get_post(
 
     redis_state = None
     if post.board == "qa" and not post.ai_first_answer:
-        redis_state = await get_redis().get(ai_answer_key(post.id))
+        try:
+            redis_state = await get_redis().get(ai_answer_key(post.id))
+        except Exception:
+            # Redis 故障仅记日志放行：按无状态键处理（与项目容错惯例一致）
+            logger.warning("AI 首答状态键读取失败 post_id=%s", post.id, exc_info=True)
     ai_citations = (
         await build_ai_citations(db, post.ai_first_answer) if post.ai_first_answer else []
     )
     summary_state = None
     if post.board == "experience" and not post.ai_summary:
-        summary_state = await get_redis().get(exp_summary_key(post.id))
+        try:
+            summary_state = await get_redis().get(exp_summary_key(post.id))
+        except Exception:
+            # Redis 故障仅记日志放行：按无状态键处理（与项目容错惯例一致）
+            logger.warning("AI 摘要状态键读取失败 post_id=%s", post.id, exc_info=True)
     return {
         "id": post.id,
         "board": post.board,

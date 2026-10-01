@@ -435,11 +435,18 @@ async def resource_detail(
     )
 
 
-async def _records_with_names(db: AsyncSession, task_id: int) -> list[dict]:
-    """某任务的协审/终审意见（含协审员昵称，按提交顺序）。"""
+async def _records_with_names_batch(
+    db: AsyncSession, task_ids: list[int]
+) -> dict[int, list[dict]]:
+    """批量取多个任务的协审/终审意见（含协审员昵称），按 task_id 分组（v0.9：消 N+1）。
+
+    records 一次 IN 批量查、users 一次 IN 批量查（参考 api/admin.py 审核任务总览写法）。
+    """
+    if not task_ids:
+        return {}
     records = (
         await db.execute(
-            select(ReviewRecord).where(ReviewRecord.task_id == task_id)
+            select(ReviewRecord).where(ReviewRecord.task_id.in_(task_ids))
             .order_by(ReviewRecord.id)
         )
     ).scalars().all()
@@ -451,16 +458,23 @@ async def _records_with_names(db: AsyncSession, task_id: int) -> list[dict]:
             )
         ).scalars()
     } if records else {}
-    return [
-        {
-            "reviewer": names.get(r.reviewer_id, "协审员"),
-            "stage": r.stage,
-            "verdict": r.verdict,
-            "comment": r.comment,
-            "created_at": r.created_at,
-        }
-        for r in records
-    ]
+    grouped: dict[int, list[dict]] = {task_id: [] for task_id in task_ids}
+    for r in records:
+        grouped[r.task_id].append(
+            {
+                "reviewer": names.get(r.reviewer_id, "协审员"),
+                "stage": r.stage,
+                "verdict": r.verdict,
+                "comment": r.comment,
+                "created_at": r.created_at,
+            }
+        )
+    return grouped
+
+
+async def _records_with_names(db: AsyncSession, task_id: int) -> list[dict]:
+    """某任务的协审/终审意见（含协审员昵称，按提交顺序）。"""
+    return (await _records_with_names_batch(db, [task_id])).get(task_id, [])
 
 
 @router.get("/review")
@@ -564,18 +578,22 @@ async def admin_review(
             stmt = stmt.limit(limit)
         return (await db.execute(stmt)).all()
 
-    final_tasks = []
-    for t, r, course_name, nickname in await _query(["final"]):
-        final_tasks.append({
+    final_rows = await _query(["final"])
+    # 协审/终审意见按 task_ids 一次 IN 批量查（v0.9：原实现每任务两条查询，N+1）
+    records_map = await _records_with_names_batch(db, [t.id for t, *_ in final_rows])
+    final_tasks = [
+        {
             "task_id": t.id,
             "precheck": t.precheck_result,
             "created_at": t.created_at,
             "resource": r,
             "course_name": course_name,
             "uploader_nickname": nickname,
-            "records": await _records_with_names(db, t.id),
+            "records": records_map[t.id],
             "preview_url": f"/api/resources/{r.id}/preview",
-        })
+        }
+        for t, r, course_name, nickname in final_rows
+    ]
     co_tasks = [
         {"task_id": t.id, "created_at": t.created_at,
          "resource": r, "course_name": course_name,
@@ -625,17 +643,6 @@ async def board(
     grades: list[str] = []
     ssr_ok = True
     try:
-        comment_counts = (
-            select(Comment.post_id, func.count().label("n"))
-            .group_by(Comment.post_id)
-            .subquery()
-        )
-        vote_scores = (
-            select(Vote.target_id, func.sum(Vote.value).label("s"))
-            .where(Vote.target_type == "post")
-            .group_by(Vote.target_id)
-            .subquery()
-        )
         filters = [Post.board == board, Post.status.in_(["normal", "featured"])]
         if tag:
             filters.append(Post.tags.contains([tag]))
@@ -650,18 +657,40 @@ async def board(
                 .where(*filters)
             )
         ).scalar_one()
+        # 先取本页帖子，聚合只对这页做 IN 过滤（v0.9：原实现对 comments/votes
+        # 全表 GROUP BY 再 JOIN 本页 20 条，表越大越慢）
         rows = (
             await db.execute(
-                select(Post, User, comment_counts.c.n, vote_scores.c.s)
+                select(Post, User)
                 .join(User, User.id == Post.author_id)
-                .outerjoin(comment_counts, comment_counts.c.post_id == Post.id)
-                .outerjoin(vote_scores, vote_scores.c.target_id == Post.id)
                 .where(*filters)
                 .order_by(Post.created_at.desc())
                 .offset((page - 1) * BOARD_PAGE_SIZE)
                 .limit(BOARD_PAGE_SIZE)
             )
         ).all()
+        post_ids = [post.id for post, _ in rows]
+        comment_counts: dict[int, int] = {}
+        vote_scores: dict[int, int] = {}
+        if post_ids:
+            comment_counts = dict(
+                (
+                    await db.execute(
+                        select(Comment.post_id, func.count())
+                        .where(Comment.post_id.in_(post_ids))
+                        .group_by(Comment.post_id)
+                    )
+                ).all()
+            )
+            vote_scores = dict(
+                (
+                    await db.execute(
+                        select(Vote.target_id, func.sum(Vote.value))
+                        .where(Vote.target_type == "post", Vote.target_id.in_(post_ids))
+                        .group_by(Vote.target_id)
+                    )
+                ).all()
+            )
         items = [
             {
                 "id": post.id,
@@ -669,8 +698,8 @@ async def board(
                 "author": author,
                 "tags": post.tags or [],
                 "view_count": post.view_count,
-                "comment_count": comment_count or 0,
-                "vote_score": vote_score or 0,
+                "comment_count": comment_counts.get(post.id, 0),
+                "vote_score": vote_scores.get(post.id, 0),
                 "status": post.status,
                 "bounty_score": post.bounty_score,
                 "ai_summary": post.ai_summary,
@@ -679,7 +708,7 @@ async def board(
                 "created_at": post.created_at,
                 "excerpt": make_excerpt(post.content),
             }
-            for post, author, comment_count, vote_score in rows
+            for post, author in rows
         ]
         if board == "experience":
             # 标签云（§13 经验长廊页）：该板块全部帖的标签频次，按热度排序取前 12
@@ -863,7 +892,11 @@ async def post_detail(
     if post.board == "qa":
         redis_state = None
         if not post.ai_first_answer:
-            redis_state = await get_redis().get(ai_answer_key(post.id))
+            try:
+                redis_state = await get_redis().get(ai_answer_key(post.id))
+            except Exception:
+                # Redis 故障仅记日志放行：按无状态键处理（与项目容错惯例一致）
+                logger.warning("AI 首答状态键读取失败 post_id=%s", post.id, exc_info=True)
         ai_status = derive_ai_answer_status(
             post.board, post.ai_first_answer, redis_state
         )
@@ -876,7 +909,11 @@ async def post_detail(
     if post.board == "experience":
         summary_state = None
         if not post.ai_summary:
-            summary_state = await get_redis().get(exp_summary_key(post.id))
+            try:
+                summary_state = await get_redis().get(exp_summary_key(post.id))
+            except Exception:
+                # Redis 故障仅记日志放行：按无状态键处理（与项目容错惯例一致）
+                logger.warning("AI 摘要状态键读取失败 post_id=%s", post.id, exc_info=True)
         summary_status = derive_summary_status(post.board, post.ai_summary, summary_state)
 
     await db.commit()
