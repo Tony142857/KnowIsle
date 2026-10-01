@@ -1,6 +1,7 @@
 """资料接口（§12.1）：上传个人库（异步解析）、解析状态轮询、溯源视图、投稿公共库。"""
 
 import hashlib
+import logging
 import re
 from typing import Annotated
 
@@ -19,6 +20,8 @@ from app.storage.models import Chapter, Chunk, Course, Document, User
 from app.workers.pool import get_arq_pool
 
 router = APIRouter(prefix="/documents", tags=["documents"])
+
+logger = logging.getLogger(__name__)
 
 MAX_FILE_SIZE = 50 * 1024 * 1024  # 单文件 ≤ 50MB
 
@@ -99,7 +102,16 @@ async def upload_document(
             existing.status = "parsing"
             await db.commit()
             pool = await get_arq_pool()
-            await pool.enqueue_job("parse_document", existing.id)
+            try:
+                await pool.enqueue_job("parse_document", existing.id)
+            except Exception as exc:
+                # 入队失败补偿（镜像 posts.py 发帖）：落回 failed 供再次重传，避免卡 parsing
+                existing.status = "failed"
+                await db.commit()
+                logger.exception("解析任务入队失败 document_id=%s", existing.id)
+                raise HTTPException(
+                    status_code=500, detail="解析任务入队失败，请稍后重试"
+                ) from exc
             return {
                 "document_id": existing.id,
                 "status": "parsing",
@@ -127,7 +139,16 @@ async def upload_document(
     await db.commit()
 
     pool = await get_arq_pool()
-    await pool.enqueue_job("parse_document", doc.id)
+    try:
+        await pool.enqueue_job("parse_document", doc.id)
+    except Exception as exc:
+        # 入队失败补偿（镜像 posts.py 发帖）：标记 failed 供重传，避免文档永久卡 parsing
+        doc.status = "failed"
+        await db.commit()
+        logger.exception("解析任务入队失败 document_id=%s", doc.id)
+        raise HTTPException(
+            status_code=500, detail="解析任务入队失败，请稍后重传"
+        ) from exc
     return {
         "document_id": doc.id,
         "status": "parsing",
