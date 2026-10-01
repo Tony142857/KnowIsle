@@ -5,15 +5,25 @@ CI 环境无 Postgres/Redis 服务：Fernet 加解密、额度扣减顺序、模
 环境内验证（见开发进度文档）。
 """
 
+from datetime import date
 from types import SimpleNamespace
 
 import pytest
 from cryptography.fernet import Fernet, InvalidToken
+from fastapi import HTTPException
 
 from app.core.llm import router as llm_router
 from app.core.llm.router import ModelTier
+from app.identity import quota
 from app.identity.llm_keys import decrypt_api_key, encrypt_api_key
-from app.identity.quota import apply_consume, can_answer
+from app.identity.quota import (
+    apply_consume,
+    can_answer,
+    check_quota,
+    consume_quota,
+    ensure_quota,
+)
+from app.storage.models import AiQuota
 
 # ---------------------------------------------------------------------------
 # Fernet 加解密（identity/llm_keys.py）
@@ -142,3 +152,89 @@ async def test_get_user_client_decrypt_failure_returns_none(monkeypatch):
 async def test_get_user_client_no_record_returns_none(monkeypatch):
     _patch_key(monkeypatch, None)
     assert await llm_router.get_user_client(None, 1, ModelTier.SHORT) is None
+
+
+# ---------------------------------------------------------------------------
+# 额度 DB 链路（ensure / check / consume，identity/quota.py）：FakeSession 内存替身
+# ---------------------------------------------------------------------------
+
+
+class _QuotaResult:
+    def __init__(self, row):
+        self._row = row
+
+    def scalar_one_or_none(self):
+        return self._row
+
+
+class FakeQuotaSession:
+    """最小 AsyncSession 替身：execute 返回预置额度行，add/flush 记录副作用。"""
+
+    def __init__(self, row=None):
+        self._row = row
+        self.added: list = []
+        self.flushed = False
+
+    async def execute(self, _stmt):
+        return _QuotaResult(self._row)
+
+    def add(self, obj):
+        self.added.append(obj)
+
+    async def flush(self):
+        self.flushed = True
+
+
+async def _fake_daily_limit(_session, key):
+    assert key == "ai_daily_limit"
+    return 30
+
+
+async def test_ensure_quota_returns_existing_row():
+    """当日已有额度行：直接返回，不新建、不 flush。"""
+    row = SimpleNamespace(used=5, daily_limit=30, bonus_balance=2)
+    session = FakeQuotaSession(row)
+    assert await ensure_quota(session, SimpleNamespace(id=7)) is row
+    assert session.added == [] and session.flushed is False
+
+
+async def test_ensure_quota_creates_row(monkeypatch):
+    """当日无额度行：按平台配置建当日行（used=0），只 flush 不 commit。"""
+    monkeypatch.setattr(quota, "get_config", _fake_daily_limit)
+    session = FakeQuotaSession(None)
+    row = await ensure_quota(session, SimpleNamespace(id=7))
+    assert session.added == [row] and session.flushed is True
+    assert isinstance(row, AiQuota)
+    assert row.user_id == 7 and row.date == date.today()
+    assert row.used == 0 and row.daily_limit == 30
+
+
+async def test_check_quota_passes_with_free_remaining():
+    row = SimpleNamespace(used=5, daily_limit=30, bonus_balance=0)
+    await check_quota(FakeQuotaSession(row), SimpleNamespace(id=7))
+
+
+async def test_check_quota_passes_with_bonus_after_free_used_up():
+    row = SimpleNamespace(used=30, daily_limit=30, bonus_balance=2)
+    await check_quota(FakeQuotaSession(row), SimpleNamespace(id=7))
+
+
+async def test_check_quota_429_when_both_exhausted():
+    """免费额度与兑换余额皆尽：429，提示兑换或自定义 Key。"""
+    row = SimpleNamespace(used=30, daily_limit=30, bonus_balance=0)
+    with pytest.raises(HTTPException) as exc_info:
+        await check_quota(FakeQuotaSession(row), SimpleNamespace(id=7))
+    assert exc_info.value.status_code == 429
+    assert "额度已用完" in exc_info.value.detail
+
+
+async def test_consume_quota_prefers_free_quota():
+    row = SimpleNamespace(used=5, daily_limit=30, bonus_balance=2)
+    await consume_quota(FakeQuotaSession(row), SimpleNamespace(id=7))
+    assert row.used == 6 and row.bonus_balance == 2
+
+
+async def test_consume_quota_deducts_bonus_after_free_exhausted():
+    row = SimpleNamespace(used=30, daily_limit=30, bonus_balance=2)
+    await consume_quota(FakeQuotaSession(row), SimpleNamespace(id=7))
+    assert row.used == 30 and row.bonus_balance == 1
