@@ -7,6 +7,7 @@ v0.5 落地：社区板块（问答/讨论列表、发帖、帖子详情含 AI �
 个人中心（成长看板 / AI 额度与 Key / 通知）。
 v0.6 落地：管理后台主页（/admin：空间管理 / 用户治理 / 平台配置）、
 课程关注与资源/帖子收藏按钮的状态注入。
+v0.8 落地：全站搜索页（/search，骨架 SSR + 客户端 fetch 结果）。
 """
 
 import logging
@@ -940,6 +941,35 @@ async def me(
     return templates.TemplateResponse(
         request, "me.html",
         _ctx(user, active="", major=major, growth=growth),
+    )
+
+
+# ---------------------------------------------------------------------------
+# 全站搜索（v0.8）：骨架 SSR（过滤条件回显），结果由客户端 fetch /api/search 渲染
+# （检索交互重，且搜索查询逻辑由后端 API 独立实现，页面端不重复 SSR 查询）
+# ---------------------------------------------------------------------------
+
+
+@router.get("/search")
+async def search_page(
+    request: Request,
+    user: Annotated[User | None, Depends(get_current_user_optional)],
+    q: str = "",
+    type: str = "all",
+    board: str = "",
+    course_id: int | None = None,
+):
+    """全站搜索页（登录）：关键词 + 类型（all/post/resource）+ 板块 + 课程过滤。"""
+    if (resp := _login_redirect(user)) is not None:
+        return resp
+    if type not in ("all", "post", "resource"):
+        type = "all"
+    if board not in BOARDS:
+        board = ""
+    return templates.TemplateResponse(
+        request, "search.html",
+        _ctx(user, active="search", q=q, search_type=type, board=board,
+             course_id=course_id, boards=BOARDS),
     )
 
 

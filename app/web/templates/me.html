@@ -32,6 +32,17 @@
           </p>
         </div>
       </div>
+      {# 处罚状态提示（v0.8）：禁言中显示解除时间；信用偏低显示冷却限制提醒 #}
+      {% if user.status == 'muted' and user.muted_until %}
+      <div class="mt-4 rounded-md border border-red-200 bg-red-50 px-4 py-2.5 text-sm text-red-700">
+        禁言中，至 {{ user.muted_until.strftime('%Y-%m-%d %H:%M') }} 解除。期间无法发帖、评论与上传资料。
+      </div>
+      {% elif user.status != 'muted' and user.credit < 80 %}
+      <div class="mt-4 rounded-md border border-amber-200 bg-amber-50 px-4 py-2.5 text-sm text-amber-700">
+        信用偏低（当前 {{ user.credit }} 分）：发帖 / 评论 / 上传将有冷却限制。
+      </div>
+      {% endif %}
+
       {# 等级进度条 #}
       <div class="mt-4">
         {% if growth.next_threshold is not none %}

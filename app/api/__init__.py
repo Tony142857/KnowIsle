@@ -17,6 +17,7 @@ from app.api import (
     resources,
     review,
     review_tasks,
+    search,
     users,
     votes,
 )
@@ -37,4 +38,5 @@ api_router.include_router(follows.router)
 api_router.include_router(reports.router)
 api_router.include_router(notifications.router)
 api_router.include_router(review_tasks.router)
+api_router.include_router(search.router)
 api_router.include_router(admin.router)

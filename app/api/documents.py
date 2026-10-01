@@ -9,6 +9,8 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.platform_config import get_config
+from app.identity.penalty import check_action_cooldown
 from app.identity.rbac import get_current_user
 from app.moderation.workflow import create_submission
 from app.storage import object_store
@@ -61,6 +63,9 @@ async def upload_document(
 
     chapter_id 为 v0.4 人工挂载章节预留参数；v0.3 章节由 tree_builder 自动构建。
     """
+    # 信用阶梯处罚门控（v0.8）：低信用上传走 Redis 冷却 429
+    cooldown = await get_config(db, "credit_rate_limit_cooldown_seconds")
+    await check_action_cooldown(user, "upload", cooldown)
     course = await db.get(Course, course_id)
     if course is None or course.scope != "personal" or course.owner_id != user.id:
         raise HTTPException(status_code=404, detail="Not Found")

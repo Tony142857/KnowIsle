@@ -7,6 +7,7 @@ v0.7：经验长廊发帖入队 AI 摘要异步生成（§11.7 提示词，写�
 """
 
 import logging
+from datetime import UTC, datetime
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -34,7 +35,9 @@ from app.community.posts import (
     validate_board,
     validate_tags,
 )
+from app.core.platform_config import get_config
 from app.identity.growth import grant_score
+from app.identity.penalty import assert_can_speak, check_action_cooldown
 from app.identity.rbac import get_current_user, get_current_user_optional
 from app.storage.cache import get_redis
 from app.storage.db import get_db
@@ -84,6 +87,11 @@ async def create_post(
             validate_bounty_score(payload.bounty_score)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    # 信用阶梯处罚门控（v0.8）：禁言 403（到期惰性解除）；低信用 Redis 冷却 429
+    assert_can_speak(user, datetime.now(UTC))
+    cooldown = await get_config(db, "credit_rate_limit_cooldown_seconds")
+    await check_action_cooldown(user, "post", cooldown)
 
     course = None
     if payload.board == "qa" and payload.course_id is None:
@@ -396,6 +404,10 @@ async def create_comment(
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
     """发表评论：支持楼中楼（parent_id 须属同一帖子）；closed 帖禁止评论。"""
+    # 信用阶梯处罚门控（v0.8）：禁言 403（到期惰性解除）；低信用 Redis 冷却 429
+    assert_can_speak(user, datetime.now(UTC))
+    cooldown = await get_config(db, "credit_rate_limit_cooldown_seconds")
+    await check_action_cooldown(user, "comment", cooldown)
     post = await db.get(Post, post_id)
     if post is None:
         raise HTTPException(status_code=404, detail="Not Found")

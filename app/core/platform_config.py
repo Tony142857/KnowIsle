@@ -8,6 +8,9 @@
 - ai_daily_limit            每用户每日 AI 问答免费额度（默认 settings.ai_daily_free_quota）
 - ai_quota_exchange_rate    贡献分兑换 1 次额外额度的分值（默认 settings.ai_quota_exchange_rate）
 - review_co_timeout_hours   协审超时自动重指派时限（默认 settings.review_co_timeout_hours）
+- credit_mute_days          信用分 <60 自动禁言天数（默认 settings.credit_mute_days，v0.8）
+- credit_rate_limit_cooldown_seconds  信用分 <80 发帖/评论/上传冷却秒数
+  （默认 settings.credit_rate_limit_cooldown_seconds，v0.8）
 """
 
 from dataclasses import dataclass
@@ -52,6 +55,20 @@ def config_specs() -> dict[str, ConfigSpec]:
             description="协审超时自动重指派时限（小时）",
             min_value=1,
             max_value=720,
+        ),
+        "credit_mute_days": ConfigSpec(
+            key="credit_mute_days",
+            default=s.credit_mute_days,
+            description="信用分低于 60 自动禁言天数",
+            min_value=1,
+            max_value=30,
+        ),
+        "credit_rate_limit_cooldown_seconds": ConfigSpec(
+            key="credit_rate_limit_cooldown_seconds",
+            default=s.credit_rate_limit_cooldown_seconds,
+            description="信用分低于 80 发帖/评论/上传冷却秒数",
+            min_value=30,
+            max_value=3600,
         ),
     }
 

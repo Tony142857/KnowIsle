@@ -47,6 +47,10 @@ class Settings(BaseSettings):
     # ---------- 审核 ----------
     review_co_timeout_hours: int = 48  # 协审超时自动重指派时限
 
+    # ---------- 信用阶梯处罚（v0.8） ----------
+    credit_mute_days: int = 7  # 信用分 <60 自动禁言天数
+    credit_rate_limit_cooldown_seconds: int = 300  # 信用分 <80 发帖/评论/上传冷却（秒）
+
     # ---------- 安全 ----------
     secret_key: str = "change-me"  # 会话签名 + 自定义 Key 加密（Fernet）
 

@@ -1,0 +1,169 @@
+{% extends "base.html" %}
+{% block title %}搜索 · 知屿 KnowIsle{% endblock %}
+
+{% block content %}
+<div x-data="searchPage({{ q|tojson }}, {{ search_type|tojson }}, {{ board|tojson }}, {{ course_id|tojson }})"
+     x-init="init()">
+  <h1 class="mb-6 text-2xl font-bold text-slate-800">全站搜索</h1>
+
+  {# 过滤表单（GET 回 /search，条件 SSR 回显；结果由客户端 fetch /api/search 渲染） #}
+  <form action="/search" method="get" class="rounded-lg border border-slate-200 bg-white p-4">
+    <div class="flex flex-wrap items-center gap-2">
+      <input type="search" name="q" value="{{ q }}" required
+             placeholder="搜索帖子标题 / 正文、资料标题…"
+             class="min-w-0 flex-1 rounded border border-slate-300 px-3 py-2 text-sm">
+      <select name="type" class="rounded border border-slate-300 px-3 py-2 text-sm">
+        <option value="all" {{ 'selected' if search_type == 'all' }}>全部</option>
+        <option value="post" {{ 'selected' if search_type == 'post' }}>帖子</option>
+        <option value="resource" {{ 'selected' if search_type == 'resource' }}>资源</option>
+      </select>
+      {# 板块过滤仅对帖子结果生效（§4.2 四板块） #}
+      <select name="board" class="rounded border border-slate-300 px-3 py-2 text-sm">
+        <option value="">全部板块</option>
+        {% for key, (label, _) in boards.items() %}
+        <option value="{{ key }}" {{ 'selected' if board == key }}>{{ label }}</option>
+        {% endfor %}
+      </select>
+      <input type="number" name="course_id" min="1"
+             value="{{ course_id if course_id is not none else '' }}"
+             placeholder="课程 ID（选填）"
+             class="w-32 rounded border border-slate-300 px-3 py-2 text-sm">
+      <button type="submit"
+              class="rounded bg-sky-600 px-4 py-2 text-sm text-white hover:bg-sky-700">搜索</button>
+    </div>
+    <p class="mt-2 text-xs text-slate-400">板块过滤仅对帖子结果生效；资源按课程 ID 过滤。</p>
+  </form>
+
+  <p x-show="loading" x-cloak class="mt-6 py-8 text-center text-sm text-slate-400">搜索中…</p>
+  <p x-show="error" x-text="error" x-cloak
+     class="mt-6 rounded bg-red-50 px-3 py-2 text-sm text-red-600"></p>
+
+  {# 未输入关键词的引导态 #}
+  <div x-show="!searched && !loading && !error" x-cloak
+       class="mt-6 rounded-lg border border-dashed border-slate-300 bg-white py-16 text-center">
+    <p class="text-4xl">🔍</p>
+    <p class="mt-4 text-slate-600">输入关键词，检索全站帖子与资料</p>
+    <p class="mt-1 text-sm text-slate-400">可按类型、板块或课程缩小范围。</p>
+  </div>
+
+  {# 空结果态 #}
+  <div x-show="searched && !loading && !error && !posts.length && !resources.length" x-cloak
+       class="mt-6 rounded-lg border border-dashed border-slate-300 bg-white py-16 text-center">
+    <p class="text-4xl">🍃</p>
+    <p class="mt-4 text-slate-600">没有找到与「<span x-text="q"></span>」相关的内容</p>
+    <p class="mt-1 text-sm text-slate-400">换个关键词试试，或放宽类型 / 板块过滤。</p>
+  </div>
+
+  {# 帖子结果组 #}
+  <div x-show="posts.length" x-cloak class="mt-6">
+    <h2 class="text-sm font-semibold text-slate-700">
+      帖子 <span class="font-normal text-slate-400" x-text="'共 ' + postsTotal + ' 条'"></span>
+    </h2>
+    <div class="mt-3 space-y-3">
+      <template x-for="p in posts" :key="'p' + p.id">
+        <div class="rounded-lg border border-slate-200 bg-white p-4 transition-shadow hover:shadow-sm">
+          <div class="flex flex-wrap items-center gap-2">
+            <span class="rounded bg-sky-50 px-2 py-0.5 text-xs text-sky-700"
+                  x-text="boardLabel(p.board)"></span>
+            <a :href="'/posts/' + p.id" class="text-base font-medium text-slate-800 hover:text-sky-700"
+               x-text="p.title"></a>
+          </div>
+          <p class="mt-1 line-clamp-2 text-sm text-slate-500" x-text="p.excerpt"></p>
+          <p class="mt-2 flex flex-wrap items-center gap-3 text-xs text-slate-400">
+            <span x-text="p.author_nickname"></span>
+            <span x-text="(p.created_at || '').slice(0, 10)"></span>
+            <span x-text="'浏览 ' + p.view_count"></span>
+          </p>
+        </div>
+      </template>
+    </div>
+  </div>
+
+  {# 资源结果组 #}
+  <div x-show="resources.length" x-cloak class="mt-6">
+    <h2 class="text-sm font-semibold text-slate-700">
+      资源 <span class="font-normal text-slate-400" x-text="'共 ' + resourcesTotal + ' 条'"></span>
+    </h2>
+    <div class="mt-3 space-y-3">
+      <template x-for="r in resources" :key="'r' + r.id">
+        <div class="rounded-lg border border-slate-200 bg-white p-4 transition-shadow hover:shadow-sm">
+          <div class="flex flex-wrap items-center gap-2">
+            <a :href="'/resources/' + r.id" class="text-base font-medium text-slate-800 hover:text-sky-700"
+               x-text="r.title"></a>
+            <span x-show="r.course_name" x-text="r.course_name" x-cloak
+                  class="rounded bg-slate-100 px-2 py-0.5 text-xs text-slate-500"></span>
+          </div>
+          <p x-show="r.description" class="mt-1 line-clamp-2 text-sm text-slate-500"
+             x-text="r.description" x-cloak></p>
+          <p class="mt-2 flex flex-wrap items-center gap-3 text-xs text-slate-400">
+            <span x-text="'评分 ' + (r.rating ?? '—')"></span>
+            <span x-text="'下载 ' + r.download_count"></span>
+            <span x-text="'收藏 ' + r.fav_count"></span>
+          </p>
+        </div>
+      </template>
+    </div>
+  </div>
+
+  {# 加载更多（page 参数对两组结果同时生效，从简） #}
+  <div x-show="searched && hasMore" x-cloak class="mt-6 text-center">
+    <button @click="load(page + 1)" :disabled="loading"
+            class="rounded-md border border-slate-300 px-4 py-2 text-sm text-slate-600 hover:bg-slate-100 disabled:opacity-50">
+      加载更多
+    </button>
+  </div>
+</div>
+
+<script>
+// 全站搜索（v0.8）：GET /api/search?q=&type=&board=&course_id=&page=&size=
+// 响应分组返回：{posts: {total, items: [...]}, resources: {total, items: [...]}}
+function searchPage(q, type, board, courseId) {
+  return {
+    q: q, type: type, board: board, courseId: courseId,
+    posts: [], postsTotal: 0, resources: [], resourcesTotal: 0,
+    page: 1, size: 10,
+    loading: false, searched: false, error: '',
+
+    boardLabel(b) {
+      return {qa: '知屿问答', discuss: '讨论区', experience: '经验长廊', bounty: '资料求援'}[b] || b;
+    },
+    get hasMore() {
+      return this.posts.length < this.postsTotal || this.resources.length < this.resourcesTotal;
+    },
+    buildUrl(page) {
+      const params = new URLSearchParams({
+        q: this.q.trim(), type: this.type, page: String(page), size: String(this.size),
+      });
+      if (this.board) params.set('board', this.board);
+      if (this.courseId) params.set('course_id', String(this.courseId));
+      return '/api/search?' + params.toString();
+    },
+    async init() {
+      if (this.q.trim()) await this.load(1);
+    },
+    async load(page) {
+      this.loading = true; this.error = '';
+      try {
+        const resp = await fetch(this.buildUrl(page));
+        const data = await resp.json().catch(() => ({}));
+        if (!resp.ok) throw new Error(data.detail || ('搜索失败 ' + resp.status));
+        const posts = data.posts || {};
+        const resources = data.resources || {};
+        if (page === 1) {
+          this.posts = posts.items || [];
+          this.resources = resources.items || [];
+        } else {
+          this.posts = this.posts.concat(posts.items || []);
+          this.resources = this.resources.concat(resources.items || []);
+        }
+        this.postsTotal = posts.total || 0;
+        this.resourcesTotal = resources.total || 0;
+        this.page = page;
+        this.searched = true;
+      } catch (e) { this.error = e.message; }
+      finally { this.loading = false; }
+    },
+  };
+}
+</script>
+{% endblock %}

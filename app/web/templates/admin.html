@@ -2,16 +2,18 @@
 {% block title %}管理后台 · 知屿 KnowIsle{% endblock %}
 
 {% block content %}
-<div x-data="{ tab: 'review' }">
+<div x-data="{ tab: 'review' }"
+     x-init="$watch('tab', v => { if (v === 'dashboard') $nextTick(() => window.dispatchEvent(new CustomEvent('admin:dashboard'))); })">
   <div class="mb-6">
     <h1 class="text-2xl font-bold text-slate-800">管理后台</h1>
-    <p class="mt-1 text-sm text-slate-400">审核终审 / 空间管理 / 用户治理 / 平台配置（v0.6）</p>
+    <p class="mt-1 text-sm text-slate-400">审核终审 / 空间管理 / 用户治理 / 平台配置（v0.6）· 举报处理 / 运营看板（v0.8）</p>
   </div>
 
   {# Tab 切换（风格仿 course_detail.html） #}
   <div class="flex gap-1 overflow-x-auto border-b border-slate-200 text-sm">
     {% for key, label in [('review', '审核终审'), ('space', '空间管理'),
-                          ('users', '用户治理'), ('config', '平台配置')] %}
+                          ('users', '用户治理'), ('config', '平台配置'),
+                          ('reports', '举报处理'), ('dashboard', '运营看板')] %}
     <button @click="tab = '{{ key }}'"
             :class="tab === '{{ key }}' ? 'border-sky-600 text-sky-700 font-medium' : 'border-transparent text-slate-500 hover:text-sky-700'"
             class="shrink-0 border-b-2 px-4 py-2 -mb-px transition-colors">{{ label }}</button>
@@ -333,6 +335,165 @@
         </div>
       </div>
     </div>
+
+    {# ===== 举报处理（v0.8）：状态过滤 + 处理流转（open→processing→resolved/dismissed） ===== #}
+    <div x-show="tab === 'reports'" x-cloak>
+      <div class="rounded-lg border border-slate-200 bg-white p-4" x-data="adminReports()" x-init="load(1)">
+        <div class="flex flex-wrap items-center gap-2">
+          <h2 class="text-sm font-semibold text-slate-700">举报处理</h2>
+          <span class="text-xs text-slate-400" x-show="loaded" x-text="'共 ' + total + ' 条'"></span>
+          <select x-model="status" @change="load(1)"
+                  class="ml-auto rounded border border-slate-300 px-2 py-1.5 text-sm">
+            <option value="">全部状态</option>
+            <option value="open">待处理</option>
+            <option value="processing">处理中</option>
+            <option value="resolved">已解决</option>
+            <option value="dismissed">已驳回</option>
+          </select>
+        </div>
+        <p x-show="loading" x-cloak class="mt-3 text-sm text-slate-400">加载中…</p>
+        <p x-show="error" x-text="error" x-cloak
+           class="mt-3 rounded bg-red-50 px-3 py-2 text-sm text-red-600"></p>
+        <p x-show="msg" x-text="msg" x-cloak
+           class="mt-3 rounded bg-emerald-50 px-3 py-2 text-sm text-emerald-700"></p>
+        <p x-show="loaded && !loading && !items.length" x-cloak class="mt-3 text-sm text-slate-400">暂无举报。</p>
+        <div x-show="items.length" x-cloak class="mt-3 overflow-x-auto">
+          <table class="w-full text-sm">
+            <thead>
+              <tr class="border-b border-slate-200 text-left text-xs text-slate-400">
+                <th class="py-2 pr-3 font-medium">举报人</th>
+                <th class="py-2 pr-3 font-medium">举报对象</th>
+                <th class="py-2 pr-3 font-medium">理由</th>
+                <th class="py-2 pr-3 font-medium">状态</th>
+                <th class="py-2 pr-3 font-medium">处理人</th>
+                <th class="py-2 pr-3 font-medium">时间</th>
+                <th class="py-2 font-medium">操作</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-100">
+              <template x-for="r in items" :key="r.id">
+                <tr>
+                  <td class="py-2 pr-3 text-slate-700" x-text="r.reporter ? r.reporter.nickname : '—'"></td>
+                  <td class="py-2 pr-3">
+                    <span class="rounded bg-slate-100 px-1.5 py-0.5 text-xs text-slate-500"
+                          x-text="targetLabel(r.target_type)"></span>
+                    {# 资源/帖子可跳转详情；评论无法定位、用户无公开主页，仅显示摘要文本 #}
+                    <template x-if="targetLink(r)">
+                      <a :href="targetLink(r)" class="ml-1 text-sky-600 hover:underline"
+                         x-text="r.target_summary || ('#' + r.target_id)"></a>
+                    </template>
+                    <template x-if="!targetLink(r)">
+                      <span class="ml-1 text-slate-600" x-text="r.target_summary || ('#' + r.target_id)"></span>
+                    </template>
+                  </td>
+                  <td class="max-w-48 truncate py-2 pr-3 text-slate-600" :title="r.reason"
+                      x-text="r.reason"></td>
+                  <td class="py-2 pr-3">
+                    <span class="rounded px-2 py-0.5 text-xs"
+                          :class="{'bg-red-50 text-red-600': r.status === 'open',
+                                   'bg-amber-100 text-amber-700': r.status === 'processing',
+                                   'bg-emerald-50 text-emerald-700': r.status === 'resolved',
+                                   'bg-slate-100 text-slate-500': r.status === 'dismissed'}"
+                          x-text="statusLabel(r.status)"></span>
+                  </td>
+                  <td class="py-2 pr-3 text-slate-500"
+                      x-text="r.handler ? r.handler.nickname : '—'"></td>
+                  <td class="py-2 pr-3 text-xs text-slate-400"
+                      x-text="(r.created_at || '').slice(0, 16).replace('T', ' ')"></td>
+                  <td class="py-2">
+                    <div class="flex gap-2">
+                      <button x-show="r.status === 'open'" @click="handle(r, 'processing')" :disabled="loading"
+                              class="rounded border border-slate-300 px-2 py-1 text-xs text-slate-600 hover:bg-slate-50 disabled:opacity-50">
+                        开始处理
+                      </button>
+                      <button x-show="r.status === 'open' || r.status === 'processing'"
+                              @click="handle(r, 'resolve')" :disabled="loading"
+                              class="rounded bg-emerald-600 px-2 py-1 text-xs text-white hover:bg-emerald-700 disabled:opacity-50">
+                        解决
+                      </button>
+                      <button x-show="r.status === 'open' || r.status === 'processing'"
+                              @click="handle(r, 'dismiss')" :disabled="loading"
+                              class="rounded border border-red-300 px-2 py-1 text-xs text-red-600 hover:bg-red-50 disabled:opacity-50">
+                        驳回
+                      </button>
+                      <span x-show="r.status === 'resolved' || r.status === 'dismissed'"
+                            class="text-xs text-slate-300">已结案</span>
+                    </div>
+                  </td>
+                </tr>
+              </template>
+            </tbody>
+          </table>
+        </div>
+        <div x-show="total > size" x-cloak class="mt-3 flex items-center justify-center gap-2 text-sm">
+          <button @click="load(page - 1)" :disabled="loading || page <= 1"
+                  class="rounded-md border border-slate-300 px-3 py-1.5 text-slate-600 hover:bg-slate-100 disabled:opacity-50">上一页</button>
+          <span class="px-2 text-slate-400" x-text="page + ' / ' + Math.max(1, Math.ceil(total / size))"></span>
+          <button @click="load(page + 1)" :disabled="loading || page * size >= total"
+                  class="rounded-md border border-slate-300 px-3 py-1.5 text-slate-600 hover:bg-slate-100 disabled:opacity-50">下一页</button>
+        </div>
+      </div>
+    </div>
+
+    {# ===== 运营看板（v0.8）：指标卡组 + 近 7 天趋势折线图（ECharts，切 Tab 后才初始化） ===== #}
+    {# ECharts 5 CDN：与 base.html 三件套同风格（jsdelivr 钉版本） #}
+    <script src="https://cdn.jsdelivr.net/npm/echarts@5.6.0/dist/echarts.min.js"></script>
+    <div x-show="tab === 'dashboard'" x-cloak>
+      <div class="rounded-lg border border-slate-200 bg-white p-4" x-data="adminDashboard()"
+           @admin:dashboard.window="onShow()">
+        <h2 class="text-sm font-semibold text-slate-700">运营看板</h2>
+        <p x-show="loading" x-cloak class="mt-3 text-sm text-slate-400">加载中…</p>
+        <p x-show="error" x-text="error" x-cloak
+           class="mt-3 rounded bg-red-50 px-3 py-2 text-sm text-red-600"></p>
+        <template x-if="data">
+          <div class="mt-4 space-y-6">
+            {# 指标卡组：用户 / 内容 / AI 三行 #}
+            <div class="grid gap-3 sm:grid-cols-3">
+              <div class="rounded-lg border border-slate-100 bg-slate-50 p-4">
+                <p class="text-xs text-slate-400">用户总数</p>
+                <p class="mt-1 text-2xl font-bold text-slate-800" x-text="data.users.total"></p>
+                <p class="mt-1 text-xs text-slate-400"
+                   x-text="'今日新增 ' + data.users.new_today + ' · 今日活跃 ' + data.users.active_today"></p>
+              </div>
+              <div class="rounded-lg border border-slate-100 bg-slate-50 p-4">
+                <p class="text-xs text-slate-400">资源总数</p>
+                <p class="mt-1 text-2xl font-bold text-slate-800" x-text="data.content.resources_total"></p>
+                <p class="mt-1 text-xs"
+                   :class="data.content.resources_pending > 0 ? 'text-amber-600' : 'text-slate-400'"
+                   x-text="'审核积压 ' + data.content.resources_pending"></p>
+              </div>
+              <div class="rounded-lg border border-slate-100 bg-slate-50 p-4">
+                <p class="text-xs text-slate-400">帖子总数</p>
+                <p class="mt-1 text-2xl font-bold text-slate-800" x-text="data.content.posts_total"></p>
+                <p class="mt-1 text-xs text-slate-400"
+                   x-text="'评论 ' + data.content.comments_total + ' · 待处理举报 ' + data.content.reports_open"></p>
+              </div>
+              <div class="rounded-lg border border-slate-100 bg-slate-50 p-4">
+                <p class="text-xs text-slate-400">今日 AI 问答</p>
+                <p class="mt-1 text-2xl font-bold text-slate-800" x-text="data.ai.qa_today"></p>
+                <p class="mt-1 text-xs text-slate-400" x-text="'累计问答 ' + data.ai.qa_total"></p>
+              </div>
+              <div class="rounded-lg border border-slate-100 bg-slate-50 p-4">
+                <p class="text-xs text-slate-400">今日 Token 消耗</p>
+                <p class="mt-1 text-2xl font-bold text-slate-800" x-text="data.ai.tokens_today"></p>
+              </div>
+              <div class="rounded-lg border border-slate-100 bg-slate-50 p-4">
+                <p class="text-xs text-slate-400">今日平均延迟</p>
+                <p class="mt-1 text-2xl font-bold text-slate-800"
+                   x-text="(data.ai.avg_latency_ms_today / 1000).toFixed(1) + ' s'"></p>
+                <p class="mt-1 text-xs text-slate-400"
+                   x-text="data.ai.avg_latency_ms_today + ' ms'"></p>
+              </div>
+            </div>
+            {# 近 7 天趋势：问答 / 发帖 / 上传 三条折线 #}
+            <div>
+              <h3 class="text-xs font-medium text-slate-500">近 7 天趋势</h3>
+              <div x-ref="trendChart" class="mt-2 h-64 w-full"></div>
+            </div>
+          </div>
+        </template>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -535,6 +696,100 @@ function adminConfig() {
       } catch (e) {
         this.rowErrors = {...this.rowErrors, [item.key]: e.message};
       } finally { this.loading = false; }
+    },
+  };
+}
+
+// 举报处理（v0.8）：GET /api/admin/reports?status=&page=&size=
+// 处理流转：POST /api/admin/reports/{id}/handle {action: processing|resolve|dismiss, note?}
+function adminReports() {
+  return {
+    status: '', items: [], total: 0, page: 1, size: 20,
+    loading: false, loaded: false, error: '', msg: '',
+    statusLabel(s) {
+      return {open: '待处理', processing: '处理中', resolved: '已解决', dismissed: '已驳回'}[s] || s;
+    },
+    targetLabel(t) {
+      return {resource: '资源', post: '帖子', comment: '评论', user: '用户'}[t] || t;
+    },
+    // 评论无法定位到楼层、用户无公开主页：这两类仅显示摘要文本
+    targetLink(r) {
+      if (r.target_type === 'resource') return '/resources/' + r.target_id;
+      if (r.target_type === 'post') return '/posts/' + r.target_id;
+      return null;
+    },
+    async load(page) {
+      this.page = Math.max(1, page);
+      this.loading = true; this.error = ''; this.msg = '';
+      try {
+        let url = '/api/admin/reports?page=' + this.page + '&size=' + this.size;
+        if (this.status) url += '&status=' + this.status;
+        const data = await adminApi(url);
+        this.items = data.items || [];
+        this.total = data.total || 0;
+        this.loaded = true;
+      } catch (e) { this.error = e.message; }
+      finally { this.loading = false; }
+    },
+    async handle(r, action) {
+      let note = null;
+      if (action !== 'processing') {
+        note = prompt(action === 'resolve' ? '处理备注（选填）' : '驳回理由（选填）', '');
+        if (note === null) return;  // 取消 prompt 视为放弃操作
+      }
+      this.loading = true; this.error = ''; this.msg = '';
+      try {
+        const body = {action: action};
+        if (note && note.trim()) body.note = note.trim();
+        await adminPost('/api/admin/reports/' + r.id + '/handle', 'POST', body);
+        this.msg = '已提交处理结果';
+        await this.load(this.page);
+      } catch (e) { this.error = e.message; }
+      finally { this.loading = false; }
+    },
+  };
+}
+
+// 运营看板（v0.8）：GET /api/admin/dashboard → 指标卡组 + 近 7 天趋势折线
+// 切到该 Tab 时父级派发 admin:dashboard 事件，此处首次 fetch 并初始化图表
+// （x-show 隐藏容器尺寸为 0，ECharts 必须在 Tab 可见后的 nextTick 初始化）
+function adminDashboard() {
+  return {
+    inited: false, loading: false, error: '', data: null, chart: null,
+    onShow() {
+      if (this.inited) {
+        // 再次切回时容器从隐藏恢复，需重算尺寸
+        if (this.chart) this.chart.resize();
+        return;
+      }
+      this.inited = true;
+      this.$nextTick(() => this.load());
+    },
+    async load() {
+      this.loading = true; this.error = '';
+      try {
+        this.data = await adminApi('/api/admin/dashboard');
+        this.$nextTick(() => this.renderChart());
+      } catch (e) { this.error = e.message; }
+      finally { this.loading = false; }
+    },
+    renderChart() {
+      const el = this.$refs.trendChart;
+      if (!el || typeof echarts === 'undefined' || !this.data) return;
+      if (!this.chart) this.chart = echarts.init(el);
+      const t = this.data.trend || {};
+      this.chart.setOption({
+        tooltip: {trigger: 'axis'},
+        legend: {data: ['问答', '发帖', '上传']},
+        grid: {left: 48, right: 16, top: 32, bottom: 24},
+        xAxis: {type: 'category', data: t.days || []},
+        yAxis: {type: 'value', minInterval: 1},
+        series: [
+          {name: '问答', type: 'line', smooth: true, data: t.qa || []},
+          {name: '发帖', type: 'line', smooth: true, data: t.posts || []},
+          {name: '上传', type: 'line', smooth: true, data: t.uploads || []},
+        ],
+      });
     },
   };
 }

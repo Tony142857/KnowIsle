@@ -34,7 +34,10 @@ async def get_me(
     user: Annotated[User, Depends(get_current_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
-    """当前用户信息（含学号；真实姓名不下发，前端无需也不应展示）。"""
+    """当前用户信息（含学号；真实姓名不下发，前端无需也不应展示）。
+
+    v0.8：补充 status / muted_until，供个人中心展示信用处罚状态。
+    """
     major = await db.get(Major, user.major_id) if user.major_id else None
     return {
         "id": user.id,
@@ -45,6 +48,8 @@ async def get_me(
         "score": user.score,
         "level": user.level,
         "credit": user.credit,
+        "status": user.status,
+        "muted_until": user.muted_until.isoformat() if user.muted_until else None,
         "grade": user.grade,
         "major": _major_brief(major),
     }

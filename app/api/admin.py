@@ -2,10 +2,10 @@
 改派/直审（v0.5）、用户治理与平台配置（v0.6）、经验帖精华标记（v0.7）、审计日志（§3.2）。
 
 所有管理操作写 audit_logs，可追溯、可回滚。
-运营看板在 v0.8 落地。
+v0.8：举报处理流转与运营看板（GET /dashboard）。
 """
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -22,6 +22,7 @@ from app.moderation.workflow import direct_verdict, final_verdict
 from app.storage.db import get_db
 from app.storage.models import (
     AuditLog,
+    Comment,
     Course,
     CreditLog,
     Document,
@@ -29,6 +30,8 @@ from app.storage.models import (
     Notification,
     PlatformConfig,
     Post,
+    QaLog,
+    Report,
     Resource,
     ReviewRecord,
     ReviewTask,
@@ -487,7 +490,8 @@ async def adjust_credit(
 ):
     """信用裁决（§3.3.3）：credit_logs 留痕（裁决人+理由）+ 限幅 0~100 + 通知本人。
 
-    阶梯处罚（<80 限流 / <60 禁言 / <40 冻结）的自动执行留 v0.8 与举报一起做。
+    v0.8 起由 apply_credit_change 自动执行阶梯处罚（<80 门控限流 / <60 禁言 /
+    <40 冻结），解除同理自动。
     """
     if payload.delta == 0:
         raise HTTPException(status_code=422, detail="delta 不能为 0")
@@ -733,4 +737,295 @@ async def feature_post(
     return {"post_id": post.id, "featured": post.status == "featured",
             "score_granted": score_granted}
 
-# TODO(v0.8): GET /dashboard（运营看板，模块 A5 指标可视化）
+# ---------------------------------------------------------------------------
+# 举报处理（§12.1，v0.8）：列表 / 流转（open→processing→resolved/dismissed）
+# ---------------------------------------------------------------------------
+
+
+@router.get("/reports")
+async def list_reports(
+    admin: Annotated[User, Depends(require_admin)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    status: Literal["open", "processing", "resolved", "dismissed"] | None = None,
+    page: int = 1,
+    size: int = 20,
+):
+    """举报列表：状态过滤 + 分页，附举报人/处理人昵称与目标摘要
+    （resource/post→标题，comment→内容截断，user→昵称；目标已删除则为 null）。"""
+    page = max(page, 1)
+    size = min(max(size, 1), 100)
+    filters = []
+    if status is not None:
+        filters.append(Report.status == status)
+    total = (
+        await db.execute(select(func.count()).select_from(Report).where(*filters))
+    ).scalar_one()
+    rows = (
+        await db.execute(
+            select(Report, User.nickname)
+            .join(User, User.id == Report.reporter_id)
+            .where(*filters)
+            .order_by(Report.created_at.desc())
+            .offset((page - 1) * size)
+            .limit(size)
+        )
+    ).all()
+
+    # 目标摘要按类型批量查询（避免逐条 N+1）
+    by_type: dict[str, set[int]] = {}
+    for report, _ in rows:
+        by_type.setdefault(report.target_type, set()).add(report.target_id)
+    summaries: dict[tuple[str, int], str] = {}
+    if ids := by_type.get("resource"):
+        summaries.update(
+            {
+                ("resource", rid): title
+                for rid, title in (
+                    await db.execute(
+                        select(Resource.id, Resource.title).where(Resource.id.in_(ids))
+                    )
+                ).all()
+            }
+        )
+    if ids := by_type.get("post"):
+        summaries.update(
+            {
+                ("post", pid): title
+                for pid, title in (
+                    await db.execute(select(Post.id, Post.title).where(Post.id.in_(ids)))
+                ).all()
+            }
+        )
+    if ids := by_type.get("comment"):
+        summaries.update(
+            {
+                ("comment", cid): (content or "")[:80]
+                for cid, content in (
+                    await db.execute(
+                        select(Comment.id, Comment.content).where(Comment.id.in_(ids))
+                    )
+                ).all()
+            }
+        )
+    if ids := by_type.get("user"):
+        summaries.update(
+            {
+                ("user", uid): nickname
+                for uid, nickname in (
+                    await db.execute(select(User.id, User.nickname).where(User.id.in_(ids)))
+                ).all()
+            }
+        )
+
+    handler_ids = {r.handler_id for r, _ in rows if r.handler_id is not None}
+    handlers: dict[int, str] = {}
+    if handler_ids:
+        handlers = {
+            u.id: u.nickname
+            for u in (
+                await db.execute(select(User).where(User.id.in_(handler_ids)))
+            ).scalars().all()
+        }
+    return {
+        "total": total,
+        "items": [
+            {
+                "id": report.id,
+                "reporter": {"id": report.reporter_id, "nickname": reporter_nickname},
+                "target_type": report.target_type,
+                "target_id": report.target_id,
+                "target_summary": summaries.get((report.target_type, report.target_id)),
+                "reason": report.reason,
+                "status": report.status,
+                "handler": (
+                    {"id": report.handler_id, "nickname": handlers[report.handler_id]}
+                    if report.handler_id is not None and report.handler_id in handlers
+                    else None
+                ),
+                "created_at": report.created_at,
+            }
+            for report, reporter_nickname in rows
+        ],
+    }
+
+
+class HandleReportRequest(BaseModel):
+    action: Literal["processing", "resolve", "dismiss"]
+    note: str | None = Field(default=None, max_length=500)
+
+
+@router.post("/reports/{report_id}/handle")
+async def handle_report(
+    report_id: int,
+    payload: HandleReportRequest,
+    admin: Annotated[User, Depends(require_admin)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    """举报处理流转（v0.8）：open→processing→resolved/dismissed；终态再操作 422。
+
+    resolve/dismiss 通知举报人（report_result，含处理结论与备注）；全程审计。
+    举报不自动扣分——扣分走既有信用裁决端点（POST /admin/users/{id}/credit）。
+    """
+    report = await db.get(Report, report_id)
+    if report is None:
+        raise HTTPException(status_code=404, detail="Not Found")
+    if report.status in ("resolved", "dismissed"):
+        raise HTTPException(status_code=422, detail="举报已结案，不可再操作")
+    if payload.action == "processing":
+        if report.status != "open":
+            raise HTTPException(status_code=422, detail="举报已在处理中")
+        report.status = "processing"
+    else:
+        report.status = "resolved" if payload.action == "resolve" else "dismissed"
+        verdict = (
+            "认定违规，已处理" if payload.action == "resolve" else "未认定违规，举报已驳回"
+        )
+        body = f"处理结论：{verdict}"
+        if payload.note:
+            body += f"；备注：{payload.note}"
+        db.add(
+            Notification(
+                user_id=report.reporter_id,
+                type="report_result",
+                title="你的举报已有处理结果",
+                body=body,
+            )
+        )
+    report.handler_id = admin.id
+    await _audit(
+        db, admin.id, "report_handle",
+        {"report_id": report.id, "action": payload.action, "note": payload.note},
+    )
+    await db.commit()
+    return {"report_id": report.id, "status": report.status}
+
+
+# ---------------------------------------------------------------------------
+# 运营看板（模块 A5，v0.8）：全站核心指标聚合（func.count / date_trunc 现算）
+# ---------------------------------------------------------------------------
+
+
+@router.get("/dashboard")
+async def admin_dashboard(
+    admin: Annotated[User, Depends(require_admin)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    """运营看板：用户/内容/AI 指标 + 近 7 天趋势（qa_logs / posts / documents）。
+
+    active_today = 今日 qa_logs.user_id ∪ posts.author_id ∪ comments.author_id 去重；
+    trend 按 date_trunc('day') 分组（DB 会话时区，默认 UTC）。
+    """
+    now = datetime.now(UTC)
+    today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+
+    users_total = (await db.execute(select(func.count()).select_from(User))).scalar_one()
+    new_today = (
+        await db.execute(
+            select(func.count()).select_from(User).where(User.created_at >= today_start)
+        )
+    ).scalar_one()
+    active_union = (
+        select(QaLog.user_id.label("uid"))
+        .where(QaLog.created_at >= today_start)
+        .union(
+            select(Post.author_id.label("uid")).where(Post.created_at >= today_start),
+            select(Comment.author_id.label("uid")).where(Comment.created_at >= today_start),
+        )
+        .subquery()
+    )
+    active_today = (
+        await db.execute(select(func.count()).select_from(active_union))
+    ).scalar_one()
+
+    resources_total = (
+        await db.execute(select(func.count()).select_from(Resource))
+    ).scalar_one()
+    resources_pending = (
+        await db.execute(
+            select(func.count())
+            .select_from(Resource)
+            .where(Resource.review_status.in_(["pending", "co_reviewing"]))
+        )
+    ).scalar_one()
+    posts_total = (await db.execute(select(func.count()).select_from(Post))).scalar_one()
+    posts_by_board = dict(
+        (
+            await db.execute(select(Post.board, func.count()).group_by(Post.board))
+        ).all()
+    )
+    comments_total = (
+        await db.execute(select(func.count()).select_from(Comment))
+    ).scalar_one()
+    reports_open = (
+        await db.execute(
+            select(func.count()).select_from(Report).where(Report.status == "open")
+        )
+    ).scalar_one()
+
+    qa_total = (await db.execute(select(func.count()).select_from(QaLog))).scalar_one()
+    qa_today = (
+        await db.execute(
+            select(func.count()).select_from(QaLog).where(QaLog.created_at >= today_start)
+        )
+    ).scalar_one()
+    tokens_today = int(
+        (
+            await db.execute(
+                select(func.coalesce(func.sum(QaLog.token_usage), 0)).where(
+                    QaLog.created_at >= today_start
+                )
+            )
+        ).scalar_one()
+    )
+    avg_latency = (
+        await db.execute(
+            select(func.avg(QaLog.latency_ms)).where(QaLog.created_at >= today_start)
+        )
+    ).scalar_one()
+
+    days = [(today_start - timedelta(days=i)).date() for i in range(6, -1, -1)]
+    trend_start = today_start - timedelta(days=6)
+
+    async def _daily(model) -> list[int]:
+        """近 7 天（含今天）每日新增数，缺日补 0。"""
+        day_col = func.date_trunc("day", model.created_at)
+        counts = {
+            day_trunc.date(): n
+            for day_trunc, n in (
+                await db.execute(
+                    select(day_col.label("d"), func.count())
+                    .where(model.created_at >= trend_start)
+                    .group_by(day_col)
+                )
+            ).all()
+        }
+        return [counts.get(day, 0) for day in days]
+
+    return {
+        "users": {
+            "total": users_total,
+            "new_today": new_today,
+            "active_today": active_today,
+        },
+        "content": {
+            "resources_total": resources_total,
+            "resources_pending": resources_pending,
+            "posts_total": posts_total,
+            "posts_by_board": posts_by_board,
+            "comments_total": comments_total,
+            "reports_open": reports_open,
+        },
+        "ai": {
+            "qa_total": qa_total,
+            "qa_today": qa_today,
+            "tokens_today": tokens_today,
+            "avg_latency_ms_today": int(round(avg_latency)) if avg_latency is not None else 0,
+        },
+        "trend": {
+            "days": [day.strftime("%m-%d") for day in days],
+            "qa": await _daily(QaLog),
+            "posts": await _daily(Post),
+            "uploads": await _daily(Document),
+        },
+    }
+

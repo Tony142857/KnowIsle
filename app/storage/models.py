@@ -77,6 +77,7 @@ class User(Base):
     credit: Mapped[int] = mapped_column(Integer, server_default="100", nullable=False)  # 信用分
     gpa_public: Mapped[bool] = mapped_column(server_default="false", nullable=False)  # 学业画像授权
     status: Mapped[str] = mapped_column(Text, server_default="active", nullable=False)
+    muted_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))  # 禁言截止
     created_at: Mapped[datetime] = _created_at()
 
 
