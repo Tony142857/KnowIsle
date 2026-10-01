@@ -8,13 +8,29 @@
     <a href="/posts/{{ p.id }}" class="text-base font-medium text-slate-800 hover:text-sky-700">
       {{ p.title }}
     </a>
-    {% if p.has_accepted %}
+    {% if p.status == 'featured' %}
+    <span class="rounded bg-amber-50 px-2 py-0.5 text-xs text-amber-700">精华</span>
+    {% endif %}
+    {% if board == 'bounty' %}
+      {% if p.has_accepted %}
+      <span class="rounded bg-emerald-50 px-2 py-0.5 text-xs text-emerald-700">已结算</span>
+      {% else %}
+      <span class="rounded bg-violet-50 px-2 py-0.5 text-xs text-violet-700">悬赏 {{ p.bounty_score }} 分</span>
+      {% endif %}
+    {% elif p.has_accepted %}
     <span class="rounded bg-emerald-50 px-2 py-0.5 text-xs text-emerald-700">已采纳</span>
     {% elif p.has_ai_answer and board == 'qa' %}
     <span class="rounded bg-sky-50 px-2 py-0.5 text-xs text-sky-700">AI 已答</span>
     {% endif %}
   </div>
   <p class="mt-1 line-clamp-2 text-sm text-slate-500">{{ p.excerpt }}</p>
+  {# 经验帖 AI 摘要折叠卡（§13：AI 摘要折叠卡） #}
+  {% if board == 'experience' and p.ai_summary %}
+  <details class="mt-2 rounded border border-slate-100 bg-slate-50 px-3 py-2 text-xs text-slate-500">
+    <summary class="cursor-pointer select-none text-slate-400 hover:text-sky-700">AI 摘要</summary>
+    <p class="mt-1 whitespace-pre-wrap leading-5">{{ p.ai_summary }}</p>
+  </details>
+  {% endif %}
   <div class="mt-2 flex flex-wrap items-center gap-3 text-xs text-slate-400">
     <span class="flex items-center gap-1">
       {% if p.author.avatar_url %}
@@ -22,6 +38,7 @@
       {% endif %}
       {{ p.author.nickname }}
     </span>
+    {% if board == 'experience' and p.author.grade %}<span>{{ p.author.grade }}</span>{% endif %}
     <span>{{ p.created_at.strftime('%Y-%m-%d') if p.created_at }}</span>
     <span>浏览 {{ p.view_count }}</span>
     <span>评论 {{ p.comment_count }}</span>
@@ -36,9 +53,9 @@
 
 {% block content %}
 <div class="mb-6 flex flex-wrap items-center gap-3">
-  {# 板块切换 Tab（知屿问答 / 讨论区） #}
+  {# 板块切换 Tab（§4.2 四板块，v0.7 全部开放） #}
   <div class="flex gap-1 rounded-lg border border-slate-200 bg-white p-1 text-sm">
-    {% for key, label in [('qa', '知屿问答'), ('discuss', '讨论区')] %}
+    {% for key, label in [('qa', '知屿问答'), ('discuss', '讨论区'), ('experience', '经验长廊'), ('bounty', '资料求援')] %}
     <a href="/boards/{{ key }}"
        class="rounded-md px-4 py-1.5 transition-colors
               {{ 'bg-sky-600 text-white font-medium' if board == key
@@ -51,27 +68,70 @@
     <a href="/boards/{{ board }}" class="ml-1 text-sky-600 hover:underline">清除</a>
   </p>
   {% endif %}
+  {% if grade %}
+  <p class="text-sm text-slate-500">
+    届别筛选：<span class="rounded bg-sky-50 px-2 py-0.5 text-sky-700">{{ grade }}</span>
+    <a href="/boards/{{ board }}" class="ml-1 text-sky-600 hover:underline">清除</a>
+  </p>
+  {% endif %}
   <a href="/posts/new?board={{ board }}"
      class="ml-auto rounded-md bg-sky-600 px-4 py-2 text-sm text-white hover:bg-sky-700">发帖</a>
 </div>
+
+{# 经验长廊：精华区入口 + 标签云 + 届别过滤（§13） #}
+{% if board == 'experience' and ssr_ok and (tag_cloud or grades) %}
+<div class="mb-4 rounded-lg border border-slate-200 bg-white p-4">
+  <div class="flex flex-wrap items-center gap-2 text-xs">
+    <span class="font-medium text-slate-500">精华区</span>
+    {% if featured %}
+    <a href="/boards/experience" class="rounded bg-amber-100 px-2 py-0.5 text-amber-700">全部帖子</a>
+    {% else %}
+    <a href="/boards/experience?featured=1"
+       class="rounded bg-amber-50 px-2 py-0.5 text-amber-700 hover:bg-amber-100">精华帖</a>
+    {% endif %}
+    {% if grades %}
+    <span class="ml-3 font-medium text-slate-500">按届别</span>
+    {% for g in grades %}
+    <a href="/boards/experience?grade={{ g|urlencode }}"
+       class="rounded bg-slate-100 px-2 py-0.5 text-slate-500 hover:bg-sky-50 hover:text-sky-700
+              {{ 'bg-sky-100 text-sky-700' if grade == g }}">{{ g }}</a>
+    {% endfor %}
+    {% endif %}
+  </div>
+  {% if tag_cloud %}
+  <div class="mt-2 flex flex-wrap items-center gap-2 text-xs">
+    <span class="font-medium text-slate-500">标签云</span>
+    {% for t in tag_cloud %}
+    <a href="/boards/experience?tag={{ t.tag|urlencode }}"
+       class="rounded bg-slate-100 px-2 py-0.5 text-slate-500 hover:bg-sky-50 hover:text-sky-700
+              {{ 'bg-sky-100 text-sky-700' if tag == t.tag }}">
+      #{{ t.tag }} <span class="text-slate-300">{{ t.count }}</span>
+    </a>
+    {% endfor %}
+  </div>
+  {% endif %}
+</div>
+{% endif %}
 
 {% if posts %}
 <div class="space-y-3">
   {% for p in posts %}{{ post_card(p, board) }}{% endfor %}
 </div>
 
-{# 分页（?page= 链接，保留 tag 过滤） #}
+{# 分页（?page= 链接，保留 tag/grade/featured 过滤） #}
 {% set pages = ((total + size - 1) // size) %}
 {% if pages > 1 %}
-{% set tag_qs = '&tag=' + tag|urlencode if tag else '' %}
+{% set extra_qs = ('&tag=' + tag|urlencode) if tag else '' %}
+{% set extra_qs = extra_qs + ('&grade=' + grade|urlencode) if grade else extra_qs %}
+{% set extra_qs = extra_qs + '&featured=1' if featured else extra_qs %}
 <nav class="mt-6 flex items-center justify-center gap-2 text-sm">
   {% if page > 1 %}
-  <a href="/boards/{{ board }}?page={{ page - 1 }}{{ tag_qs }}"
+  <a href="/boards/{{ board }}?page={{ page - 1 }}{{ extra_qs }}"
      class="rounded-md border border-slate-300 px-3 py-1.5 text-slate-600 hover:bg-slate-100">上一页</a>
   {% endif %}
   <span class="px-2 text-slate-400">{{ page }} / {{ pages }}</span>
   {% if page < pages %}
-  <a href="/boards/{{ board }}?page={{ page + 1 }}{{ tag_qs }}"
+  <a href="/boards/{{ board }}?page={{ page + 1 }}{{ extra_qs }}"
      class="rounded-md border border-slate-300 px-3 py-1.5 text-slate-600 hover:bg-slate-100">下一页</a>
   {% endif %}
 </nav>
@@ -99,7 +159,14 @@
         <div class="flex flex-wrap items-center gap-2">
           <a :href="'/posts/' + p.id" class="text-base font-medium text-slate-800 hover:text-sky-700"
              x-text="p.title"></a>
-          <span x-show="p.has_accepted" x-cloak
+          <span x-show="p.status === 'featured'" x-cloak
+                class="rounded bg-amber-50 px-2 py-0.5 text-xs text-amber-700">精华</span>
+          <span x-show="board === 'bounty' && p.has_accepted" x-cloak
+                class="rounded bg-emerald-50 px-2 py-0.5 text-xs text-emerald-700">已结算</span>
+          <span x-show="board === 'bounty' && !p.has_accepted" x-cloak
+                class="rounded bg-violet-50 px-2 py-0.5 text-xs text-violet-700"
+                x-text="'悬赏 ' + p.bounty_score + ' 分'"></span>
+          <span x-show="p.has_accepted && board !== 'bounty'" x-cloak
                 class="rounded bg-emerald-50 px-2 py-0.5 text-xs text-emerald-700">已采纳</span>
           <span x-show="!p.has_accepted && p.has_ai_answer && board === 'qa'" x-cloak
                 class="rounded bg-sky-50 px-2 py-0.5 text-xs text-sky-700">AI 已答</span>

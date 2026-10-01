@@ -12,27 +12,39 @@
     <p x-show="error" x-text="error" x-cloak
        class="rounded bg-red-50 px-3 py-2 text-sm text-red-600"></p>
 
-    {# 板块选择（qa / discuss） #}
+    {# 板块选择（§4.2 四板块，v0.7 全部开放） #}
     <div>
       <label class="block text-xs font-medium text-slate-500">板块</label>
-      <div class="mt-1 flex gap-1 rounded-lg border border-slate-200 p-1 text-sm w-fit">
-        <button @click="board = 'qa'" type="button"
+      <div class="mt-1 flex flex-wrap gap-1 rounded-lg border border-slate-200 p-1 text-sm w-fit">
+        <button @click="switchBoard('qa')" type="button"
                 :class="board === 'qa' ? 'bg-sky-600 text-white font-medium' : 'text-slate-600 hover:bg-slate-100'"
                 class="rounded-md px-4 py-1.5 transition-colors">知屿问答</button>
-        <button @click="board = 'discuss'" type="button"
+        <button @click="switchBoard('discuss')" type="button"
                 :class="board === 'discuss' ? 'bg-sky-600 text-white font-medium' : 'text-slate-600 hover:bg-slate-100'"
                 class="rounded-md px-4 py-1.5 transition-colors">讨论区</button>
+        <button @click="switchBoard('experience')" type="button"
+                :class="board === 'experience' ? 'bg-sky-600 text-white font-medium' : 'text-slate-600 hover:bg-slate-100'"
+                class="rounded-md px-4 py-1.5 transition-colors">经验长廊</button>
+        <button @click="switchBoard('bounty')" type="button"
+                :class="board === 'bounty' ? 'bg-sky-600 text-white font-medium' : 'text-slate-600 hover:bg-slate-100'"
+                class="rounded-md px-4 py-1.5 transition-colors">资料求援</button>
       </div>
       <p class="mt-1 text-xs text-slate-400" x-show="board === 'qa'">
         问答帖发布后将由 AI 助教基于课程资料生成首答（标注"AI 生成，仅供参考"）。
       </p>
+      <p class="mt-1 text-xs text-slate-400" x-show="board === 'experience'">
+        按「背景 → 时间线 → 经验要点 → 避坑提示」结构化模板填写，发布后自动生成 AI 摘要。
+      </p>
+      <p class="mt-1 text-xs text-slate-400" x-show="board === 'bounty'">
+        发布时托管悬赏贡献分，采纳响应后赏金转给响应者；未采纳不结算。
+      </p>
     </div>
 
-    {# 课程（qa 必选）与章节（选填） #}
-    <div>
+    {# 课程（qa 必选，其余选填）与章节（选填） #}
+    <div x-show="board !== 'experience'">
       <label class="block text-xs font-medium text-slate-500">
         关联课程 <span x-show="board === 'qa'" class="text-red-500">*</span>
-        <span x-show="board === 'discuss'" class="text-slate-400">（选填）</span>
+        <span x-show="board === 'discuss' || board === 'bounty'" class="text-slate-400">（选填）</span>
       </label>
       <select x-model="courseId" @change="loadChapters()"
               class="mt-1 w-full rounded border border-slate-300 px-3 py-2 text-sm">
@@ -59,20 +71,50 @@
 
     <div>
       <label class="block text-xs font-medium text-slate-500">标题 <span class="text-red-500">*</span></label>
-      <input type="text" x-model="title" maxlength="128" placeholder="一句话说清楚你的问题或主题"
+      <input type="text" x-model="title" maxlength="128"
+             placeholder="一句话说清楚你的问题、经验主题或求援需求"
              class="mt-1 w-full rounded border border-slate-300 px-3 py-2 text-sm">
     </div>
 
-    <div>
+    {# 经验长廊：结构化模板四栏（§4.3：背景 → 时间线 → 经验要点 → 避坑提示） #}
+    <template x-if="board === 'experience'">
+      <div class="space-y-4">
+        <template x-for="sec in experienceSections" :key="sec.key">
+          <div>
+            <label class="block text-xs font-medium text-slate-500">
+              <span x-text="sec.label"></span>
+              <span class="text-slate-400" x-text="sec.key === '背景' ? '（必填）' : '（选填）'"></span>
+            </label>
+            <textarea x-model="sections[sec.key]" rows="4"
+                      class="mt-1 w-full rounded border border-slate-300 px-3 py-2 text-sm"
+                      :placeholder="sec.placeholder"></textarea>
+          </div>
+        </template>
+      </div>
+    </template>
+
+    {# 其余板块：普通正文 #}
+    <div x-show="board !== 'experience'">
       <label class="block text-xs font-medium text-slate-500">正文 <span class="text-red-500">*</span></label>
       <textarea x-model="content" rows="10"
                 placeholder="问题的背景、你已尝试的思路、希望得到的帮助…"
                 class="mt-1 w-full rounded border border-slate-300 px-3 py-2 text-sm"></textarea>
     </div>
 
+    {# 资料求援：悬赏贡献分（发布时托管） #}
+    <div x-show="board === 'bounty'">
+      <label class="block text-xs font-medium text-slate-500">
+        悬赏贡献分 <span class="text-red-500">*</span>
+        <span class="text-slate-400">（1~1000，发布时从贡献分中托管）</span>
+      </label>
+      <input type="number" x-model.number="bountyScore" min="1" max="1000" step="1"
+             class="mt-1 w-40 rounded border border-slate-300 px-3 py-2 text-sm">
+    </div>
+
     <div>
       <label class="block text-xs font-medium text-slate-500">标签（选填，逗号分隔，最多 5 个）</label>
-      <input type="text" x-model="tagsInput" placeholder="如：期中复习, 习题课"
+      <input type="text" x-model="tagsInput"
+             :placeholder="board === 'experience' ? '如：保研, 夏令营（经验帖常用：保研/竞赛/实习/选课/转专业）' : '如：期中复习, 习题课'"
              class="mt-1 w-full rounded border border-slate-300 px-3 py-2 text-sm">
     </div>
 
@@ -91,8 +133,16 @@
 function postNew(initialBoard) {
   return {
     board: initialBoard,
-    title: '', content: '', tagsInput: '',
+    title: '', content: '', tagsInput: '', bountyScore: 10,
     courseId: '', chapterId: '', courses: [], chapters: [],
+    // 经验长廊结构化模板四栏（与 app/community/experience.py 的 EXPERIENCE_TEMPLATE_SECTIONS 一致）
+    experienceSections: [
+      {key: '背景', label: '背景', placeholder: '个人基本情况：专业、排名、英语、科研/项目经历等…'},
+      {key: '时间线', label: '时间线', placeholder: '按时间顺序记录关键节点，如：3 月报名 → 5 月夏令营 → 7 月 offer…'},
+      {key: '经验要点', label: '经验要点', placeholder: '你认为最有价值的经验，分条写清楚…'},
+      {key: '避坑提示', label: '避坑提示', placeholder: '踩过的坑、需要注意的细节…'},
+    ],
+    sections: {'背景': '', '时间线': '', '经验要点': '', '避坑提示': ''},
     loading: false, error: '',
 
     // 课程下拉按专业分组（GET /api/courses 的 items 带 major_name）
@@ -104,6 +154,12 @@ function postNew(initialBoard) {
         groups[major].items.push(c);
       }
       return Object.values(groups);
+    },
+
+    switchBoard(b) {
+      // 切换板块时清空课程绑定（experience 板块不使用课程）
+      this.board = b;
+      if (b === 'experience') { this.courseId = ''; this.chapterId = ''; }
     },
 
     async loadCourses() {
@@ -140,23 +196,44 @@ function postNew(initialBoard) {
         .map(t => t.trim()).filter(t => t).slice(0, 5);
     },
 
+    // 经验帖正文：非空小节按固定顺序组装为「## 小节 + 内容」Markdown
+    buildExperienceContent() {
+      const parts = [];
+      for (const sec of this.experienceSections) {
+        const body = (this.sections[sec.key] || '').trim();
+        if (body) parts.push('## ' + sec.key + '\n' + body);
+      }
+      return parts.join('\n\n');
+    },
+
     async submit() {
       this.error = '';
       if (!this.title.trim()) { this.error = '请填写标题'; return; }
-      if (!this.content.trim()) { this.error = '请填写正文'; return; }
+      let content = this.content.trim();
+      if (this.board === 'experience') {
+        if (!(this.sections['背景'] || '').trim()) { this.error = '请至少填写「背景」小节'; return; }
+        content = this.buildExperienceContent();
+        if (!content) { this.error = '请填写正文'; return; }
+      } else if (!content) { this.error = '请填写正文'; return; }
       if (this.board === 'qa' && !this.courseId) { this.error = '问答帖必须选择关联课程'; return; }
+      if (this.board === 'bounty') {
+        const n = Number(this.bountyScore);
+        if (!Number.isInteger(n) || n < 1 || n > 1000) { this.error = '悬赏贡献分须为 1~1000 的整数'; return; }
+      }
       this.loading = true;
       try {
+        const body = {
+          board: this.board,
+          title: this.title.trim(),
+          content: content,
+          course_id: this.courseId ? Number(this.courseId) : null,
+          chapter_id: this.chapterId ? Number(this.chapterId) : null,
+          tags: this.parseTags(),
+        };
+        if (this.board === 'bounty') body.bounty_score = Number(this.bountyScore);
         const resp = await fetch('/api/posts', {
           method: 'POST', headers: {'Content-Type': 'application/json'},
-          body: JSON.stringify({
-            board: this.board,
-            title: this.title.trim(),
-            content: this.content.trim(),
-            course_id: this.courseId ? Number(this.courseId) : null,
-            chapter_id: this.chapterId ? Number(this.chapterId) : null,
-            tags: this.parseTags(),
-          }),
+          body: JSON.stringify(body),
         });
         const data = await resp.json().catch(() => ({}));
         if (!resp.ok) throw new Error(data.detail || ('发布失败 ' + resp.status));

@@ -1,4 +1,9 @@
-"""社区帖子接口（§12.1）：帖子列表/发帖、详情（含 AI 首答）、评论、采纳。"""
+"""社区帖子接口（§12.1）：帖子列表/发帖、详情（含 AI 首答/AI 摘要）、评论、采纳。
+
+v0.7：经验长廊发帖入队 AI 摘要异步生成（§11.7 提示词，写入 posts.ai_summary）；
+资料求援发帖托管悬赏分（bounty_escrow），采纳响应评论时赏金结算给响应者
+（bounty_award），响应评论即通知帖主（§B5 悬赏被响应事件源）。
+"""
 
 from typing import Annotated
 
@@ -7,11 +12,19 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.community.bounty import (
+    SCORE_BOUNTY_AWARD,
+    SCORE_BOUNTY_ESCROW,
+    decide_bounty_award,
+    validate_bounty_score,
+)
 from app.community.comments import decide_accept_score, validate_accept
 from app.community.posts import (
     ai_answer_key,
     build_ai_citations,
     derive_ai_answer_status,
+    derive_summary_status,
+    exp_summary_key,
     make_excerpt,
     validate_board,
     validate_tags,
@@ -44,6 +57,7 @@ class CreatePostRequest(BaseModel):
     course_id: int | None = None
     chapter_id: int | None = None
     tags: list[str] | None = None
+    bounty_score: int = Field(default=0, ge=0)  # 仅资料求援板块：托管悬赏贡献分
 
 
 @router.post("", status_code=201, include_in_schema=False)
@@ -53,10 +67,13 @@ async def create_post(
     user: Annotated[User, Depends(get_current_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
-    """发帖：qa 帖需指定公共课程，commit 后入队 AI 首答异步生成；discuss 帖不入队。"""
+    """发帖：qa 帖必选公共课程并入队 AI 首答；experience 帖入队 AI 摘要；
+    bounty 帖托管悬赏分；discuss 帖无附加动作。"""
     try:
         validate_board(payload.board)
         tags = validate_tags(payload.tags)
+        if payload.board == "bounty":
+            validate_bounty_score(payload.bounty_score)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
@@ -73,6 +90,8 @@ async def create_post(
         chapter = await db.get(Chapter, payload.chapter_id)
         if chapter is None or chapter.course_id != course.id:
             raise HTTPException(status_code=422, detail="章节不存在或不属于该课程")
+    if payload.board == "bounty" and user.score < payload.bounty_score:
+        raise HTTPException(status_code=422, detail="贡献分不足，无法托管悬赏")
 
     post = Post(
         author_id=user.id,
@@ -83,17 +102,35 @@ async def create_post(
         title=payload.title,
         content=payload.content,
         tags=tags or None,
+        bounty_score=payload.bounty_score if payload.board == "bounty" else 0,
     )
     db.add(post)
+    await db.flush()
+    if post.board == "bounty":
+        # 悬赏托管：帖主贡献分扣减，采纳结算时转给响应者（v0.7 落地形态）
+        await grant_score(
+            db, user.id, -post.bounty_score, SCORE_BOUNTY_ESCROW, "post", post.id
+        )
     await db.commit()
 
     ai_pending = False
+    summary_pending = False
+    redis = get_redis()
     if post.board == "qa":
-        await get_redis().set(ai_answer_key(post.id), "pending", ex=24 * 3600)
+        await redis.set(ai_answer_key(post.id), "pending", ex=24 * 3600)
         pool = await get_arq_pool()
         await pool.enqueue_job("generate_ai_first_answer", post.id)
         ai_pending = True
-    return {"post_id": post.id, "ai_first_answer_pending": ai_pending}
+    elif post.board == "experience":
+        await redis.set(exp_summary_key(post.id), "pending", ex=24 * 3600)
+        pool = await get_arq_pool()
+        await pool.enqueue_job("generate_experience_summary", post.id)
+        summary_pending = True
+    return {
+        "post_id": post.id,
+        "ai_first_answer_pending": ai_pending,
+        "ai_summary_pending": summary_pending,
+    }
 
 
 @router.get("")
@@ -152,6 +189,9 @@ async def list_posts(
             "view_count": post.view_count,
             "comment_count": comment_count or 0,
             "vote_score": vote_score or 0,
+            "status": post.status,
+            "bounty_score": post.bounty_score,
+            "ai_summary": post.ai_summary,
             "has_ai_answer": post.ai_first_answer is not None,
             "has_accepted": post.accepted_comment_id is not None,
             "created_at": post.created_at.isoformat() if post.created_at else None,
@@ -202,6 +242,9 @@ async def get_post(
     ai_citations = (
         await build_ai_citations(db, post.ai_first_answer) if post.ai_first_answer else []
     )
+    summary_state = None
+    if post.board == "experience" and not post.ai_summary:
+        summary_state = await get_redis().get(exp_summary_key(post.id))
     return {
         "id": post.id,
         "board": post.board,
@@ -214,11 +257,15 @@ async def get_post(
         "view_count": post.view_count,
         "vote_score": vote_score,
         "my_vote": my_vote,
+        "status": post.status,
+        "bounty_score": post.bounty_score,
         "ai_first_answer": post.ai_first_answer,
         "ai_answer_status": derive_ai_answer_status(
             post.board, post.ai_first_answer, redis_state
         ),
         "ai_citations": ai_citations,
+        "ai_summary": post.ai_summary,
+        "ai_summary_status": derive_summary_status(post.board, post.ai_summary, summary_state),
         "accepted_comment_id": post.accepted_comment_id,
         "created_at": post.created_at.isoformat() if post.created_at else None,
     }
@@ -313,6 +360,18 @@ async def create_comment(
         post_id=post.id, author_id=user.id, parent_id=payload.parent_id, content=payload.content
     )
     db.add(comment)
+    await db.flush()
+    if post.board == "bounty" and user.id != post.author_id:
+        # 悬赏被响应（§B5 事件源，v0.7）：响应评论即通知帖主（楼中楼回复不重复通知）
+        if payload.parent_id is None:
+            db.add(
+                Notification(
+                    user_id=post.author_id,
+                    type="bounty",
+                    title=f"你的求援有了新响应：{post.title}",
+                    link=f"/posts/{post.id}",
+                )
+            )
     await db.commit()
     return {"comment_id": comment.id}
 
@@ -323,7 +382,8 @@ async def accept_comment(
     user: Annotated[User, Depends(get_current_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
-    """采纳最佳答案：仅帖主、仅 qa 帖；首次采纳计分并通知，改采不再变动积分。"""
+    """采纳：qa 帖采纳最佳答案（+15，自问自答不计分）；bounty 帖采纳响应即结算悬赏
+    （托管赏金转给响应者，自响应不结算）；重复采纳幂等，改采只换标记不动积分。"""
     comment = await db.get(Comment, comment_id)
     if comment is None:
         raise HTTPException(status_code=404, detail="Not Found")
@@ -332,7 +392,7 @@ async def accept_comment(
     if error == "not_owner":
         raise HTTPException(status_code=404, detail="Not Found")
     if error is not None:
-        detail = "仅问答贴可采纳" if error == "not_qa" else "评论不属于该帖子"
+        detail = "仅问答贴或求援贴可采纳" if error == "not_board" else "评论不属于该帖子"
         raise HTTPException(status_code=422, detail=detail)
 
     if post.accepted_comment_id == comment.id and comment.is_accepted:
@@ -343,12 +403,38 @@ async def accept_comment(
         # 首次采纳
         comment.is_accepted = True
         post.accepted_comment_id = comment.id
-        score_granted = decide_accept_score(post.author_id, comment.author_id)
-        if score_granted:
-            await grant_score(
-                db, comment.author_id, score_granted, "answer_accepted", "comment", comment.id,
-                course_id=post.course_id,
-            )
+        if post.board == "bounty":
+            # 悬赏结算：托管赏金全额转给响应者（v0.7 落地形态）
+            award = decide_bounty_award(post.author_id, comment.author_id, post.bounty_score)
+            if award:
+                await grant_score(
+                    db, comment.author_id, award, SCORE_BOUNTY_AWARD, "post", post.id
+                )
+                score_granted = award
+                db.add(
+                    Notification(
+                        user_id=comment.author_id,
+                        type="bounty",
+                        title=f"你的响应被采纳，获得悬赏 {award} 分",
+                        link=f"/posts/{post.id}",
+                    )
+                )
+                db.add(
+                    Notification(
+                        user_id=post.author_id,
+                        type="bounty",
+                        title=f"求援已结算：{post.title}",
+                        body=f"悬赏 {award} 分已转给响应者",
+                        link=f"/posts/{post.id}",
+                    )
+                )
+        else:
+            score_granted = decide_accept_score(post.author_id, comment.author_id)
+            if score_granted:
+                await grant_score(
+                    db, comment.author_id, score_granted, "answer_accepted", "comment",
+                    comment.id, course_id=post.course_id,
+                )
             db.add(
                 Notification(
                     user_id=comment.author_id,
@@ -358,7 +444,7 @@ async def accept_comment(
                 )
             )
     else:
-        # 改采另一条评论：旧评论取消标记，积分不再变动
+        # 改采另一条评论：旧评论取消标记，积分不再变动（求援改采不转移赏金，v0.7 口径）
         old = await db.get(Comment, post.accepted_comment_id)
         if old is not None:
             old.is_accepted = False

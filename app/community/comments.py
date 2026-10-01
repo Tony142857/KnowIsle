@@ -8,12 +8,13 @@ def validate_accept(
 ) -> str | None:
     """采纳资格判定（纯函数）：返回错误码，None 表示可采纳。
 
-    not_owner → 404（越权不暴露存在性）；not_qa / wrong_post → 422。
+    not_owner → 404（越权不暴露存在性）；not_board / wrong_post → 422。
+    v0.7 起问答贴与求援贴均可采纳（求援采纳 = 悬赏结算）。
     """
     if operator_id != post_author_id:
         return "not_owner"
-    if board != "qa":
-        return "not_qa"
+    if board not in ("qa", "bounty"):
+        return "not_board"
     if comment_post_id != post_id:
         return "wrong_post"
     return None

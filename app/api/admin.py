@@ -1,5 +1,5 @@
 """管理后台接口（§12.1）：空间管理（v0.2 子集 + v0.6 课程总览）、三级审核终审（v0.4）、
-改派/直审（v0.5）、用户治理与平台配置（v0.6）、审计日志（§3.2）。
+改派/直审（v0.5）、用户治理与平台配置（v0.6）、经验帖精华标记（v0.7）、审计日志（§3.2）。
 
 所有管理操作写 audit_logs，可追溯、可回滚。
 运营看板在 v0.8 落地。
@@ -13,9 +13,10 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.community.experience import SCORE_POST_FEATURED, validate_feature_target
 from app.core.platform_config import config_specs, set_config
-from app.identity.growth import apply_credit_change
-from app.identity.rbac import require_admin
+from app.identity.growth import apply_credit_change, grant_score
+from app.identity.rbac import require_admin, require_builder
 from app.moderation.assign import assign_reviewers
 from app.moderation.workflow import direct_verdict, final_verdict
 from app.storage.db import get_db
@@ -27,9 +28,11 @@ from app.storage.models import (
     Major,
     Notification,
     PlatformConfig,
+    Post,
     Resource,
     ReviewRecord,
     ReviewTask,
+    ScoreLog,
     User,
 )
 from app.workers.pool import get_arq_pool
@@ -658,5 +661,76 @@ async def update_platform_config(
                  {"key": key, "from": old_value, "to": new_value})
     await db.commit()
     return {"key": key, "value": new_value, "previous": old_value}
+
+
+# ---------------------------------------------------------------------------
+# 内容治理：经验帖精华标记（模块 B3，v0.7）
+# ---------------------------------------------------------------------------
+
+
+class FeaturePostRequest(BaseModel):
+    featured: bool = True
+
+
+@router.post("/posts/{post_id}/feature")
+async def feature_post(
+    post_id: int,
+    payload: FeaturePostRequest,
+    operator: Annotated[User, Depends(require_builder)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    """经验帖精华标记/取消（管理员或共建者，§4.3）。
+
+    首次标记 featured：作者 +30（post_featured，每帖仅一次——以 score_logs 留痕判定，
+    取消后再标记不重复发放）+ 通知作者 + 审计；重复标记幂等（score_granted=0）；
+    取消精华只回退状态不动积分。
+    """
+    post = await db.get(Post, post_id)
+    if post is None:
+        raise HTTPException(status_code=404, detail="Not Found")
+    error = validate_feature_target(post.board, post.author_id, operator.id)
+    if error == "wrong_board":
+        raise HTTPException(status_code=422, detail="仅经验长廊帖子可标记精华")
+    if error == "self":
+        raise HTTPException(status_code=422, detail="不可标记自己的帖子")
+
+    score_granted = 0
+    if payload.featured:
+        if post.status != "featured":
+            post.status = "featured"
+            # 每帖仅发放一次：以 score_logs（post_featured + ref=本帖）留痕判定
+            featured_before = (
+                await db.execute(
+                    select(func.count(ScoreLog.id)).where(
+                        ScoreLog.user_id == post.author_id,
+                        ScoreLog.reason == "post_featured",
+                        ScoreLog.ref_type == "post",
+                        ScoreLog.ref_id == post.id,
+                    )
+                )
+            ).scalar_one()
+            if not featured_before:
+                await grant_score(
+                    db, post.author_id, SCORE_POST_FEATURED, "post_featured", "post", post.id
+                )
+                score_granted = SCORE_POST_FEATURED
+                db.add(
+                    Notification(
+                        user_id=post.author_id,
+                        type="featured",
+                        title=f"你的经验帖被评为精华：{post.title}",
+                        link=f"/posts/{post.id}",
+                    )
+                )
+            await _audit(db, operator.id, "post_feature",
+                         {"post_id": post.id, "from": "normal", "to": "featured"})
+    else:
+        if post.status == "featured":
+            post.status = "normal"
+            await _audit(db, operator.id, "post_feature",
+                         {"post_id": post.id, "from": "featured", "to": "normal"})
+    await db.commit()
+    return {"post_id": post.id, "featured": post.status == "featured",
+            "score_granted": score_granted}
 
 # TODO(v0.8): GET /dashboard（运营看板，模块 A5 指标可视化）

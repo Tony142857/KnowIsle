@@ -9,6 +9,7 @@ from arq.connections import RedisSettings
 from app.config import get_settings
 from app.workers import (
     ai_answer_worker,
+    experience_summary_worker,
     notify_worker,
     parse_worker,
     preview_worker,
@@ -29,6 +30,7 @@ class WorkerSettings:
         settle_worker.settle_scores,
         review_timeout_worker.review_timeout_scan,
         ai_answer_worker.generate_ai_first_answer,
+        experience_summary_worker.generate_experience_summary,  # v0.7 经验帖 AI 摘要
     ]
     cron_jobs = [
         cron(review_timeout_worker.review_timeout_scan, minute={11, 41}),  # 每 30 分钟扫一次

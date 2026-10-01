@@ -20,10 +20,13 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.community.experience import can_feature
 from app.community.posts import (
     ai_answer_key,
     build_ai_citations,
     derive_ai_answer_status,
+    derive_summary_status,
+    exp_summary_key,
     make_excerpt,
 )
 from app.config import get_settings
@@ -64,8 +67,8 @@ BOARDS = {
     "discuss": ("讨论区", "v0.5"),
 }
 
-# 已落地的社区板块（其余仍为占位页）
-OPEN_BOARDS = ("qa", "discuss")
+# 已落地的社区板块（v0.7 起四板块全部开放）
+OPEN_BOARDS = ("qa", "discuss", "experience", "bounty")
 
 BOARD_PAGE_SIZE = 20
 
@@ -604,22 +607,21 @@ async def board(
     user: Annotated[User | None, Depends(get_current_user_optional)],
     db: Annotated[AsyncSession, Depends(get_db)],
     tag: str | None = None,
+    grade: str | None = None,
+    featured: str | None = None,
     page: int = 1,
 ):
-    """板块帖子列表：qa/discuss 服务端渲染第一页（+ ?page=/ ?tag= 过滤）；
-    experience/bounty 仍为占位页。DB 不可用时降级为空列表 + 客户端补载。"""
+    """板块帖子列表（v0.7 四板块全部 SSR）：经验长廊附标签云/届别过滤/精华区，
+    资料求援卡片展示悬赏分；DB 不可用时降级为空列表 + 客户端补载。"""
     if board not in BOARDS:
         raise HTTPException(status_code=404)
     name, version = BOARDS[board]
-    if board not in OPEN_BOARDS:
-        return templates.TemplateResponse(
-            request, "placeholder.html",
-            _ctx(user, name=name, version=version, note="", active=board),
-        )
 
     page = max(page, 1)
     total = 0
     items: list[dict] = []
+    tag_cloud: list[dict] = []
+    grades: list[str] = []
     ssr_ok = True
     try:
         comment_counts = (
@@ -636,8 +638,16 @@ async def board(
         filters = [Post.board == board, Post.status.in_(["normal", "featured"])]
         if tag:
             filters.append(Post.tags.contains([tag]))
+        if grade:
+            filters.append(User.grade == grade)
+        if featured == "1":
+            filters.append(Post.status == "featured")
         total = (
-            await db.execute(select(func.count()).select_from(Post).where(*filters))
+            await db.execute(
+                select(func.count(Post.id))
+                .join(User, User.id == Post.author_id)
+                .where(*filters)
+            )
         ).scalar_one()
         rows = (
             await db.execute(
@@ -660,6 +670,9 @@ async def board(
                 "view_count": post.view_count,
                 "comment_count": comment_count or 0,
                 "vote_score": vote_score or 0,
+                "status": post.status,
+                "bounty_score": post.bounty_score,
+                "ai_summary": post.ai_summary,
                 "has_ai_answer": post.ai_first_answer is not None,
                 "has_accepted": post.accepted_comment_id is not None,
                 "created_at": post.created_at,
@@ -667,6 +680,40 @@ async def board(
             }
             for post, author, comment_count, vote_score in rows
         ]
+        if board == "experience":
+            # 标签云（§13 经验长廊页）：该板块全部帖的标签频次，按热度排序取前 12
+            rows_tags = (
+                await db.execute(
+                    select(Post.tags).where(
+                        Post.board == "experience",
+                        Post.status.in_(["normal", "featured"]),
+                        Post.tags.is_not(None),
+                    )
+                )
+            ).scalars().all()
+            counts: dict[str, int] = {}
+            for tags in rows_tags:
+                for t in tags or []:
+                    counts[t] = counts.get(t, 0) + 1
+            tag_cloud = [
+                {"tag": t, "count": n}
+                for t, n in sorted(counts.items(), key=lambda x: (-x[1], x[0]))[:12]
+            ]
+            # 届别过滤（§13）：该板块作者年级去重（如 2023 级），供页面渲染过滤链接
+            grade_rows = (
+                await db.execute(
+                    select(User.grade)
+                    .join(Post, Post.author_id == User.id)
+                    .where(
+                        Post.board == "experience",
+                        Post.status.in_(["normal", "featured"]),
+                        User.grade.is_not(None),
+                    )
+                    .distinct()
+                    .order_by(User.grade)
+                )
+            ).scalars().all()
+            grades = [g for g in grade_rows if g]
     except Exception:
         # DB 不可用（如 CI 冒烟环境）：页面骨架照常渲染，列表由客户端 fetch 补载
         logger.warning("板块列表查询失败，降级客户端加载 board=%s", board, exc_info=True)
@@ -675,7 +722,8 @@ async def board(
         request, "board.html",
         _ctx(user, active=board, board=board, board_name=name, posts=items,
              total=total, page=page, size=BOARD_PAGE_SIZE, tag=tag or "",
-             ssr_ok=ssr_ok),
+             grade=grade or "", featured=featured == "1", tag_cloud=tag_cloud,
+             grades=grades, ssr_ok=ssr_ok),
     )
 
 
@@ -685,7 +733,8 @@ async def post_new(
     user: Annotated[User | None, Depends(get_current_user_optional)],
     board: str | None = None,
 ):
-    """发帖页（登录）：qa 帖必选公共课程（+可选章节），discuss 帖无课程要求。"""
+    """发帖页（登录）：qa 帖必选公共课程（+可选章节）；experience 帖走结构化模板；
+    bounty 帖须填悬赏贡献分；discuss 帖无附加要求。"""
     if (resp := _login_redirect(user)) is not None:
         return resp
     if board not in OPEN_BOARDS:
@@ -821,6 +870,14 @@ async def post_detail(
             ai_citations = await build_ai_citations(db, post.ai_first_answer)
             ai_segments = _ai_segments(post.ai_first_answer, ai_citations)
 
+    # 经验帖 AI 摘要状态（v0.7）：done 渲染摘要 / pending 轮询 / failed 友好提示
+    summary_status = "none"
+    if post.board == "experience":
+        summary_state = None
+        if not post.ai_summary:
+            summary_state = await get_redis().get(exp_summary_key(post.id))
+        summary_status = derive_summary_status(post.board, post.ai_summary, summary_state)
+
     await db.commit()
     is_favorited = False
     if user is not None:
@@ -840,8 +897,10 @@ async def post_detail(
              comment_tree=roots, comment_count=len(rows),
              is_author=user is not None and user.id == post.author_id,
              is_favorited=is_favorited,
+             can_feature=(user is not None and post.board == "experience"
+                          and can_feature(user, post.author_id)),
              ai_status=ai_status, ai_citations=ai_citations,
-             ai_segments=ai_segments),
+             ai_segments=ai_segments, summary_status=summary_status),
     )
 
 

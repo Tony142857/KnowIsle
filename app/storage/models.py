@@ -339,6 +339,7 @@ class Post(Base):
     tags: Mapped[list[str] | None] = mapped_column(ARRAY(Text))  # 如 {保研, 夏令营}
     bounty_score: Mapped[int] = mapped_column(Integer, server_default="0", nullable=False)
     ai_first_answer: Mapped[str | None] = mapped_column(Text)  # AI 首答（问答贴）
+    ai_summary: Mapped[str | None] = mapped_column(Text)  # AI 摘要（经验长廊帖，v0.7）
     accepted_comment_id: Mapped[int | None] = mapped_column(BigInteger)  # 采纳的评论
     view_count: Mapped[int] = mapped_column(Integer, server_default="0", nullable=False)
     status: Mapped[str] = mapped_column(Text, server_default="normal", nullable=False)
