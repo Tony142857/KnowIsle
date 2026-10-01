@@ -1,14 +1,15 @@
 # 知屿 KnowIsle · 智能课程知识社区
 
 > 以学生社区为驱动、以结构化 RAG-AI 为学习引擎的大学课程知识平台。
-> 详细设计见《知屿-智能课程知识社区-项目文档.md》（v3.2.9）。
+> 详细设计见《知屿-智能课程知识社区-项目文档.md》（v3.3.0）。
 > 进度跟踪见 [docs/开发进度与目标.md](docs/开发进度与目标.md)（每迭代更新）。
 
 技术栈：FastAPI + Jinja2/HTMX/Tailwind · PostgreSQL 16 · Redis 7 · SeaweedFS（S3） · Chroma · ARQ · Docker Compose
 
 ## 当前状态
 
-**v0.7 已完成**（2026-09-30，2026-10-01 全面检查与并发加固）：经验长廊（结构化模板发帖：背景/时间线/经验要点/避坑提示，发帖异步生成 AI 摘要含轮询展示，标签云 + 届别过滤 + 精华区，AI 摘要折叠卡；精华标记：admin/builder 可标记、防自改 422、作者 +30 每帖一次、取消不回扣、通知 + 审计）✅ · 资料求援（发帖托管悬赏分 1~1000 校验/贡献分不足 422，评论即响应并通知帖主，采纳响应评论结算赏金 bounty_escrow→bounty_award、禁止自采纳与结算后改采（422）、重复采纳幂等，未采纳不结算）✅ · 板块页四 Tab 全部开放，`posts.ai_summary` 新列（迁移 9cbb7dcfd2f3）✅ · 检查加固：悬赏托管/采纳结算/精华标记三处并发读-判-写加行锁（并发冲击实测封堵透支与重复结算）、异步入队失败补偿、列表接口补齐 ai_summary_status ✅ · 容器内 ruff + pytest 164 例全绿、15 项真实 DeepSeek E2E（含并发冲击）全过
+**v0.8 已完成**（2026-10-01）：全站搜索（帖子/资源 ILIKE、标题命中优先于正文再按时间排序、板块/课程/专业过滤、/search 页 + 导航搜索框）✅ · 信用阶梯处罚自动执行（<80 行为冷却 429 含剩余秒数 / <60 禁言 403 含截止时间 / <40 冻结 401，回升自动解除 + 禁言到期惰性解除，users.muted_until 新列迁移 d1e5f7a29c03）✅ · 举报处理（四类目标幂等举报 + 管理端 open→processing→resolved/dismissed 状态机 + report_result 通知 + report_handle 审计）✅ · 运营看板（/api/admin/dashboard 四分组 + ECharts 7 天趋势）✅ · 容器内 ruff + pytest 189 例全绿、42 项 E2E 断言全过
+（此前 v0.7：经验长廊（结构化模板发帖 + AI 摘要异步生成、标签云/届别过滤/精华区、精华标记作者 +30 每帖一次）· 资料求援（悬赏托管/评论响应/采纳结算，禁自采纳与结算后改采）· 四板块全部开放、posts.ai_summary 新列 · 检查加固：采纳/精华/悬赏三处读-判-写加行锁封堵并发透支与重复结算）
 （此前 v0.6：收藏/关注（资源/帖子收藏含 fav_count 同步、课程/用户关注，幂等开关语义）· 订阅类通知（终审上架自动通知课程关注者 new_resource）· 管理后台完整版 `/admin`（用户治理：角色任命/信用裁决限幅 0~100 + credit_logs 留痕；空间管理：专业导入/课程审批停用；平台配置：新增第 26 表 platform_config，AI 日额度/兑换汇率/协审时限在线调整 + 审计）· 个人中心新增「我的收藏/我的关注」卡片、课程页关注按钮、资源/帖子页收藏按钮）
 （此前 v0.5：问答贴 + AI 首答（异步生成、带引用溯源）· 评论/点赞/采纳（自问自答不计分）· 成长体系完整版（等级升级 + Redis 实时贡献榜 + 每日对账 + 下载积分 80% 上传者分成）· AI 额度贡献分兑换 + 用户自定义 Key（Fernet 加密、qa_logs 双通道溯源）· 协审 48h 超时自动重指派 + 管理员改派/直审 · 公共资源克隆进个人库）
 （此前 v0.4：公共库投稿→三级审核→上架全流程 · 自动预检（格式/MD5 查重/敏感词/AI 初评）· 资源预览/下载/评分 · 章节摘要回填启用粗召回）
@@ -66,7 +67,12 @@ docker compose -f deploy/docker-compose.yml exec app python scripts/init_majors.
 #    http://localhost:8080/boards/bounty 发布求资料需求并悬赏贡献分，他人评论响应、
 #    帖主采纳后赏金自动转给响应者（双方收站内通知）
 
-# 11. 停止 / 清理
+# 11. 全站搜索与治理（v0.8 起）：导航栏搜索框或 http://localhost:8080/search
+#    全站搜索（帖子/资源分组结果，支持板块/课程/专业过滤）；管理后台
+#    http://localhost:8080/admin 新增「举报处理」「运营看板」（ECharts 7 天趋势）两 Tab；
+#    信用低于阈值自动阶梯处罚（<80 行为冷却 / <60 禁言 / <40 冻结，信用回升自动解除）
+
+# 12. 停止 / 清理
 docker compose -f deploy/docker-compose.yml down          # 停止
 docker compose -f deploy/docker-compose.yml down -v       # 停止并删除数据卷（慎用）
 ```
@@ -89,7 +95,7 @@ tests/          pytest（unit / integration / e2e）
 - Commit 规范：Conventional Commits（`feat:` / `fix:` / `refactor:` / `test:` / `docs:`）
 - 本地检查：`pip install -r requirements-dev.txt && ruff check app tests scripts && pytest -q`
 - 依赖分层：`requirements.txt` 为应用与 CI 共用；`requirements-ml.txt`（torch CPU + sentence-transformers）仅由 Dockerfile 装入镜像，应用代码对其一律惰性导入
-- 镜像版本全部钉死：自建镜像按版本号命名（`knowisle-app:0.7.0`，发版时手动递增，禁止 latest）；五个第三方镜像与 Dockerfile 基础镜像均以 `@sha256` digest 固定，团队构建逐字节一致
+- 镜像版本全部钉死：自建镜像按版本号命名（`knowisle-app:0.8.0`，发版时手动递增，禁止 latest）；五个第三方镜像与 Dockerfile 基础镜像均以 `@sha256` digest 固定，团队构建逐字节一致
 - Embedding 模型 bge-small-zh-v1.5 在镜像构建时预下载（经 hf-mirror），运行时 `HF_HUB_OFFLINE=1` 离线加载
 - 数据库迁移：`alembic revision --autogenerate -m "..."`，迁移随 app 容器启动自动执行
 
