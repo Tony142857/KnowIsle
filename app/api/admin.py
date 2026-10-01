@@ -685,7 +685,7 @@ async def feature_post(
     取消后再标记不重复发放）+ 通知作者 + 审计；重复标记幂等（score_granted=0）；
     取消精华只回退状态不动积分。
     """
-    post = await db.get(Post, post_id)
+    post = await db.get(Post, post_id, with_for_update=True)  # 行锁防并发重复发放 +30
     if post is None:
         raise HTTPException(status_code=404, detail="Not Found")
     error = validate_feature_target(post.board, post.author_id, operator.id)

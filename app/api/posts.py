@@ -2,9 +2,11 @@
 
 v0.7：经验长廊发帖入队 AI 摘要异步生成（§11.7 提示词，写入 posts.ai_summary）；
 资料求援发帖托管悬赏分（bounty_escrow），采纳响应评论时赏金结算给响应者
-（bounty_award），响应评论即通知帖主（§B5 悬赏被响应事件源）。
+（bounty_award；不可采纳自己的响应，结算后不可改采），响应评论即通知帖主
+（§B5 悬赏被响应事件源）。
 """
 
+import logging
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -16,10 +18,13 @@ from app.community.bounty import (
     SCORE_BOUNTY_AWARD,
     SCORE_BOUNTY_ESCROW,
     decide_bounty_award,
+    validate_bounty_board,
     validate_bounty_score,
 )
 from app.community.comments import decide_accept_score, validate_accept
 from app.community.posts import (
+    AI_ANSWER_KEY_TTL,
+    SUMMARY_KEY_TTL,
     ai_answer_key,
     build_ai_citations,
     derive_ai_answer_status,
@@ -37,6 +42,8 @@ from app.storage.models import Chapter, Comment, Course, Notification, Post, Use
 from app.workers.pool import get_arq_pool
 
 router = APIRouter(prefix="/posts", tags=["posts"])
+
+logger = logging.getLogger(__name__)
 
 LIST_DEFAULT_SIZE = 20
 LIST_MAX_SIZE = 100
@@ -72,6 +79,7 @@ async def create_post(
     try:
         validate_board(payload.board)
         tags = validate_tags(payload.tags)
+        validate_bounty_board(payload.board, payload.bounty_score)
         if payload.board == "bounty":
             validate_bounty_score(payload.bounty_score)
     except ValueError as exc:
@@ -90,8 +98,16 @@ async def create_post(
         chapter = await db.get(Chapter, payload.chapter_id)
         if chapter is None or chapter.course_id != course.id:
             raise HTTPException(status_code=422, detail="章节不存在或不属于该课程")
-    if payload.board == "bounty" and user.score < payload.bounty_score:
-        raise HTTPException(status_code=422, detail="贡献分不足，无法托管悬赏")
+    if payload.board == "bounty":
+        # 行锁串行化并发发帖的托管扣分判定，防并发透支（H2）；
+        # user 已被 get_current_user 加载进身份映射，必须 populate_existing=True
+        # 强制发出 SELECT ... FOR UPDATE，否则 session.get 直接命中缓存、行锁不生效；
+        # grant_score 经 session.get(User, ...) 复用同一身份映射实例，锁持续有效
+        locked_user = await db.get(
+            User, user.id, with_for_update=True, populate_existing=True
+        )
+        if locked_user.score < payload.bounty_score:
+            raise HTTPException(status_code=422, detail="贡献分不足，无法托管悬赏")
 
     post = Post(
         author_id=user.id,
@@ -107,7 +123,7 @@ async def create_post(
     db.add(post)
     await db.flush()
     if post.board == "bounty":
-        # 悬赏托管：帖主贡献分扣减，采纳结算时转给响应者（v0.7 落地形态）
+        # 悬赏托管：帖主贡献分扣减（上行已持该行锁），采纳结算时转给响应者（v0.7 落地形态）
         await grant_score(
             db, user.id, -post.bounty_score, SCORE_BOUNTY_ESCROW, "post", post.id
         )
@@ -117,14 +133,30 @@ async def create_post(
     summary_pending = False
     redis = get_redis()
     if post.board == "qa":
-        await redis.set(ai_answer_key(post.id), "pending", ex=24 * 3600)
+        await redis.set(ai_answer_key(post.id), "pending", ex=AI_ANSWER_KEY_TTL)
         pool = await get_arq_pool()
-        await pool.enqueue_job("generate_ai_first_answer", post.id)
+        try:
+            await pool.enqueue_job("generate_ai_first_answer", post.id)
+        except Exception as exc:
+            # 入队失败补偿（L3）：帖子已 commit，删除待办键并如实上报 500
+            await redis.delete(ai_answer_key(post.id))
+            logger.exception("AI 首答任务入队失败 post_id=%s", post.id)
+            raise HTTPException(
+                status_code=500, detail="AI 首答任务入队失败，请稍后重试"
+            ) from exc
         ai_pending = True
     elif post.board == "experience":
-        await redis.set(exp_summary_key(post.id), "pending", ex=24 * 3600)
+        await redis.set(exp_summary_key(post.id), "pending", ex=SUMMARY_KEY_TTL)
         pool = await get_arq_pool()
-        await pool.enqueue_job("generate_experience_summary", post.id)
+        try:
+            await pool.enqueue_job("generate_experience_summary", post.id)
+        except Exception as exc:
+            # 入队失败补偿（L3）：帖子已 commit，删除待办键并如实上报 500
+            await redis.delete(exp_summary_key(post.id))
+            logger.exception("经验帖 AI 摘要任务入队失败 post_id=%s", post.id)
+            raise HTTPException(
+                status_code=500, detail="AI 摘要任务入队失败，请稍后重试"
+            ) from exc
         summary_pending = True
     return {
         "post_id": post.id,
@@ -178,6 +210,20 @@ async def list_posts(
             .limit(size)
         )
     ).all()
+    # 经验帖且无摘要：一次 mget 批量取摘要状态键（避免逐条 N+1），其余帖子状态为 None
+    summary_pending_posts = [
+        post
+        for post, *_ in rows
+        if post.board == "experience" and not post.ai_summary
+    ]
+    summary_states: dict[int, str | None] = {}
+    if summary_pending_posts:
+        states = await get_redis().mget(
+            [exp_summary_key(post.id) for post in summary_pending_posts]
+        )
+        summary_states = dict(
+            zip((post.id for post in summary_pending_posts), states, strict=True)
+        )
     items = [
         {
             "id": post.id,
@@ -192,6 +238,9 @@ async def list_posts(
             "status": post.status,
             "bounty_score": post.bounty_score,
             "ai_summary": post.ai_summary,
+            "ai_summary_status": derive_summary_status(
+                post.board, post.ai_summary, summary_states.get(post.id)
+            ),
             "has_ai_answer": post.ai_first_answer is not None,
             "has_accepted": post.accepted_comment_id is not None,
             "created_at": post.created_at.isoformat() if post.created_at else None,
@@ -383,16 +432,28 @@ async def accept_comment(
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
     """采纳：qa 帖采纳最佳答案（+15，自问自答不计分）；bounty 帖采纳响应即结算悬赏
-    （托管赏金转给响应者，自响应不结算）；重复采纳幂等，改采只换标记不动积分。"""
+    （托管赏金转给响应者；不可采纳自己的响应，结算后不可改采）；重复采纳同一条幂等，
+    qa 帖改采只换标记不动积分。"""
     comment = await db.get(Comment, comment_id)
     if comment is None:
         raise HTTPException(status_code=404, detail="Not Found")
-    post = await db.get(Post, comment.post_id)
-    error = validate_accept(post.board, post.author_id, user.id, comment.post_id, post.id)
+    # 行锁串行化同一帖的并发采纳，防并发重复结算（H1）
+    post = await db.get(Post, comment.post_id, with_for_update=True)
+    # 已采纳且非本评论：求援帖据此拦截结算后改采；重复采纳同一条的幂等分支不受影响
+    already_accepted = (
+        post.accepted_comment_id is not None and post.accepted_comment_id != comment.id
+    )
+    error = validate_accept(
+        post.board, post.author_id, user.id, comment.author_id, already_accepted
+    )
     if error == "not_owner":
         raise HTTPException(status_code=404, detail="Not Found")
     if error is not None:
-        detail = "仅问答贴或求援贴可采纳" if error == "not_board" else "评论不属于该帖子"
+        detail = {
+            "not_board": "仅问答贴或求援贴可采纳",
+            "self_response": "不能采纳自己的响应",
+            "already_settled": "求援已结算，不可改采",
+        }[error]
         raise HTTPException(status_code=422, detail=detail)
 
     if post.accepted_comment_id == comment.id and comment.is_accepted:
@@ -444,7 +505,8 @@ async def accept_comment(
                 )
             )
     else:
-        # 改采另一条评论：旧评论取消标记，积分不再变动（求援改采不转移赏金，v0.7 口径）
+        # 改采另一条评论（仅 qa 可达：求援已结算后改采已被 already_settled 拦截）：
+        # 旧评论取消标记，积分不再变动
         old = await db.get(Comment, post.accepted_comment_id)
         if old is not None:
             old.is_accepted = False

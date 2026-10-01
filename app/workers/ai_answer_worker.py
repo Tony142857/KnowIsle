@@ -7,7 +7,7 @@
 
 import logging
 
-from app.community.posts import ai_answer_key
+from app.community.posts import AI_ANSWER_KEY_TTL, ai_answer_key
 from app.core.llm.prompts import AI_FIRST_ANSWER_PROMPT
 from app.core.llm.router import ModelTier, get_official_client
 from app.core.pipeline import retrieve
@@ -29,6 +29,7 @@ async def generate_ai_first_answer(ctx: dict, post_id: int) -> None:
     async with SessionLocal() as session:
         post = await session.get(Post, post_id)
         if post is None or post.board != "qa" or post.ai_first_answer:
+            await redis.delete(key)  # 早退路径清理 pending 键，避免残留至 TTL 过期
             return
         try:
             author = await session.get(User, post.author_id)
@@ -59,6 +60,6 @@ async def generate_ai_first_answer(ctx: dict, post_id: int) -> None:
             await session.rollback()
             if ctx.get("job_try", 1) >= _MAX_TRIES:
                 logger.exception("AI 首答生成失败（末次重试）post_id=%s", post_id)
-                await redis.set(key, "failed", ex=24 * 3600)
+                await redis.set(key, "failed", ex=AI_ANSWER_KEY_TTL)
                 return
             raise

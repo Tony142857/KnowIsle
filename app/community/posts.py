@@ -19,8 +19,8 @@ TAG_MAX_COUNT = 5
 TAG_MAX_LENGTH = 20
 EXCERPT_LENGTH = 120
 
-_AI_ANSWER_KEY_TTL = 24 * 3600  # AI 首答状态键过期时间（秒）
-_SUMMARY_KEY_TTL = 24 * 3600  # 经验帖 AI 摘要状态键过期时间（秒）
+AI_ANSWER_KEY_TTL = 24 * 3600  # AI 首答状态键过期时间（秒）
+SUMMARY_KEY_TTL = 24 * 3600  # 经验帖 AI 摘要状态键过期时间（秒）
 
 # 与 core/pipeline.py 的 chunk_id 引用格式一致（[per_d12_00034] 式）
 _CITATION_RE = re.compile(r"\[((?:per|pub)_d\d+_\d{4,})\]")

@@ -439,7 +439,8 @@ class Report(Base):
 
 
 class ScoreLog(Base):
-    """贡献分明细（事件驱动结算，事务 + 唯一约束防重复计分，模块 B4）。"""
+    """贡献分明细（事件驱动结算：明细与 users.score 同事务写入，
+    重复计分由业务层判重 / 行锁防护，模块 B4）。"""
 
     __tablename__ = "score_logs"
     __table_args__ = (Index("idx_score_logs_user", "user_id", text("created_at DESC")),)

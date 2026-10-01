@@ -7,7 +7,7 @@
 
 import logging
 
-from app.community.posts import exp_summary_key
+from app.community.posts import SUMMARY_KEY_TTL, exp_summary_key
 from app.core.llm.prompts import EXPERIENCE_SUMMARY_PROMPT
 from app.core.llm.router import ModelTier, get_official_client
 from app.storage.cache import get_redis
@@ -28,6 +28,8 @@ async def generate_experience_summary(ctx: dict, post_id: int) -> None:
     async with SessionLocal() as session:
         post = await session.get(Post, post_id)
         if post is None or post.board != "experience" or post.ai_summary:
+            # 早退路径清理待办键，避免详情页长期停留 pending 轮询
+            await redis.delete(key)
             return
         try:
             content = f"{post.title}\n{post.content[:_CONTENT_LIMIT]}"
@@ -51,6 +53,6 @@ async def generate_experience_summary(ctx: dict, post_id: int) -> None:
             await session.rollback()
             if ctx.get("job_try", 1) >= _MAX_TRIES:
                 logger.exception("经验帖 AI 摘要生成失败（末次重试）post_id=%s", post_id)
-                await redis.set(key, "failed", ex=24 * 3600)
+                await redis.set(key, "failed", ex=SUMMARY_KEY_TTL)
                 return
             raise

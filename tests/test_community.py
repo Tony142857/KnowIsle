@@ -10,7 +10,11 @@ from pydantic import ValidationError
 
 from app.api.posts import CreateCommentRequest, CreatePostRequest
 from app.api.votes import VoteRequest
-from app.community.bounty import decide_bounty_award, validate_bounty_score
+from app.community.bounty import (
+    decide_bounty_award,
+    validate_bounty_board,
+    validate_bounty_score,
+)
 from app.community.comments import (
     SCORE_ANSWER_ACCEPTED,
     decide_accept_score,
@@ -160,6 +164,20 @@ def test_validate_bounty_score_out_of_range():
         validate_bounty_score(1001)
 
 
+def test_validate_bounty_board_rejects_non_bounty():
+    # 非求援板块带悬赏分：报错而非静默忽略
+    with pytest.raises(ValueError, match="仅资料求援板块支持悬赏"):
+        validate_bounty_board("qa", 50)
+    with pytest.raises(ValueError, match="仅资料求援板块支持悬赏"):
+        validate_bounty_board("experience", 1)
+
+
+def test_validate_bounty_board_ok():
+    validate_bounty_board("bounty", 50)  # 求援板块带分：正常
+    validate_bounty_board("qa", 0)  # 非求援板块 0 分：通过
+    validate_bounty_board("discuss", 0)
+
+
 def test_decide_bounty_award():
     # 他人响应：全额赏金；自己响应自己：不结算（与自问自答不计分同口径）
     assert decide_bounty_award(post_author_id=1, responder_id=2, bounty_score=50) == 50
@@ -185,15 +203,21 @@ def test_build_experience_content_all_empty():
 
 
 class _FakeUser:
-    """can_feature 只需要 role 字段（纯函数，内存替身）。"""
+    """can_feature 只需要 role 与 id 字段（纯函数，内存替身）。"""
 
-    def __init__(self, role: str):
+    def __init__(self, role: str, user_id: int = 2):
         self.role = role
+        self.id = user_id
 
 
 def test_can_feature():
+    # 管理员/共建者可标记他人的帖子
     assert can_feature(_FakeUser("admin"), post_author_id=1) is True
     assert can_feature(_FakeUser("builder"), post_author_id=1) is True
+    # 帖主本人不可标记（防刷分）
+    assert can_feature(_FakeUser("admin", user_id=1), post_author_id=1) is False
+    assert can_feature(_FakeUser("builder", user_id=1), post_author_id=1) is False
+    # 其余角色一律不可
     assert can_feature(_FakeUser("reviewer"), post_author_id=1) is False
     assert can_feature(_FakeUser("student"), post_author_id=1) is False
 
@@ -244,24 +268,45 @@ def test_vote_request_literal():
 
 
 def test_validate_accept_ok():
-    assert validate_accept("qa", 1, 1, 9, 9) is None
-    # v0.7：求援贴也可采纳（采纳响应 = 悬赏结算）
-    assert validate_accept("bounty", 1, 1, 9, 9) is None
+    # 帖主采纳他人评论：qa / bounty 均可（求援采纳 = 悬赏结算）
+    assert validate_accept("qa", 1, 1, 2, False) is None
+    assert validate_accept("bounty", 1, 1, 2, False) is None
 
 
 def test_validate_accept_not_owner():
     # 非帖主：404 语义
-    assert validate_accept("qa", 1, 2, 9, 9) == "not_owner"
+    assert validate_accept("qa", 1, 2, 2, False) == "not_owner"
 
 
 def test_validate_accept_not_board():
     # 仅问答贴/求援贴可采纳，其余板块 422 语义
-    assert validate_accept("discuss", 1, 1, 9, 9) == "not_board"
-    assert validate_accept("experience", 1, 1, 9, 9) == "not_board"
+    assert validate_accept("discuss", 1, 1, 2, False) == "not_board"
+    assert validate_accept("experience", 1, 1, 2, False) == "not_board"
 
 
-def test_validate_accept_wrong_post():
-    assert validate_accept("qa", 1, 1, 8, 9) == "wrong_post"
+def test_validate_accept_bounty_self_response():
+    # 求援帖不可采纳自己的响应（自响应不结算，端点映射 422）
+    assert validate_accept("bounty", 1, 1, 1, False) == "self_response"
+
+
+def test_validate_accept_bounty_already_settled():
+    # 求援已结算后改采其他评论：拦截（端点映射 422）
+    assert validate_accept("bounty", 1, 1, 2, True) == "already_settled"
+
+
+def test_validate_accept_bounty_repeat_same_comment():
+    # 重复采纳同一条评论（already_accepted=False）：幂等分支前置，资格判定放行
+    assert validate_accept("bounty", 1, 1, 2, False) is None
+
+
+def test_validate_accept_qa_self_answer_ok():
+    # qa 帖自问自答可采纳（0 分）
+    assert validate_accept("qa", 1, 1, 1, False) is None
+
+
+def test_validate_accept_qa_reaccept_ok():
+    # qa 帖改采仍允许（只换标记不动积分）
+    assert validate_accept("qa", 1, 1, 2, True) is None
 
 
 def test_decide_accept_score():

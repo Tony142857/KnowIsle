@@ -38,8 +38,8 @@ def build_experience_content(sections: dict[str, str]) -> str:
 
 
 def can_feature(user: User, post_author_id: int) -> bool:
-    """精华标记资格（纯函数）：管理员/共建者可标记，帖主本人不可（防刷分，§3.3.1）。"""
-    return user.role in FEATURE_ROLES
+    """精华标记资格（纯函数）：管理员/共建者可标记他人帖子，帖主本人不可（防刷分，§3.3.1）。"""
+    return user.role in FEATURE_ROLES and user.id != post_author_id
 
 
 def validate_feature_target(board: str, post_author_id: int, operator_id: int) -> str | None:

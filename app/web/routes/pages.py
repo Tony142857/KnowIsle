@@ -615,7 +615,7 @@ async def board(
     资料求援卡片展示悬赏分；DB 不可用时降级为空列表 + 客户端补载。"""
     if board not in BOARDS:
         raise HTTPException(status_code=404)
-    name, version = BOARDS[board]
+    name = BOARDS[board][0]
 
     page = max(page, 1)
     total = 0

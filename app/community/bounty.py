@@ -6,7 +6,10 @@
 - 响应：任何用户（帖主除外）可在求援帖下评论响应（可附已上传的资源链接），
   评论即触发「悬赏被响应」站内通知（§B5 事件源）；
 - 结算：帖主采纳某条响应评论时，托管赏金全额转给响应者（score_logs 记
-  bounty_award）并双方通知；未采纳不结算、不退款（帖子保持 open）。
+  bounty_award）并双方通知；帖主不可采纳自己的响应（自响应不结算，采纳入口
+  422 拦截），已结算后不可改采其他评论（改采不转移赏金，结算即终态）；
+  未采纳不结算、不退款（帖子保持 open）。
+- 悬赏仅资料求援板块可用：其余板块传 bounty_score>0 直接 422，不静默忽略。
 - 响应者另行上传的资料走常规三级审核，过审得 upload_approved +20（独立链路）。
 
 零新增表：全部复用 posts.bounty_score / comments / score_logs / notifications。
@@ -23,6 +26,12 @@ def validate_bounty_score(score: int) -> None:
     """悬赏分校验（纯函数）：必须在 [BOUNTY_MIN, BOUNTY_MAX] 区间内。"""
     if score < BOUNTY_MIN or score > BOUNTY_MAX:
         raise ValueError(f"悬赏贡献分须在 {BOUNTY_MIN}~{BOUNTY_MAX} 之间")
+
+
+def validate_bounty_board(board: str, bounty_score: int) -> None:
+    """悬赏板块校验（纯函数）：仅资料求援板块支持悬赏，其余板块带分即报错（不静默忽略）。"""
+    if board != "bounty" and bounty_score > 0:
+        raise ValueError("仅资料求援板块支持悬赏")
 
 
 def decide_bounty_award(post_author_id: int, responder_id: int, bounty_score: int) -> int:
