@@ -224,6 +224,8 @@
           </li>
         </template>
       </ul>
+    </div>
+
     {# ===== 我的收藏卡（v0.6）：资源 / 帖子分组，可取消收藏 ===== #}
     <div class="rounded-lg border border-slate-200 bg-white p-4 sm:p-6 lg:col-span-2">
       <h2 class="text-sm font-semibold text-slate-700">我的收藏</h2>
@@ -444,8 +446,17 @@ function mePage() {
       finally { this.loading = false; }
     },
 
-    async deleteKey() {
-      if (!confirm('确定删除自定义 Key？删除后 AI 问答将回到平台额度通道。')) return;
+    deleteKey() {
+      // 破坏性操作：全局 confirmModal 确认后执行
+      this.$dispatch('zy-ask', {
+        title: '删除自定义 Key',
+        message: '确定删除自定义 Key？删除后 AI 问答将回到平台额度通道。',
+        confirmText: '删除',
+        onConfirm: () => this.doDeleteKey(),
+      });
+    },
+
+    async doDeleteKey() {
       this.loading = true; this.keyError = '';
       try {
         await this.api('/api/users/me/llm-key', {method: 'DELETE'});

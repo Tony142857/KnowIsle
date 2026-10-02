@@ -99,37 +99,89 @@
   {% endif %}
 </section>
 
-{# 等待协审（可改派 / 直审） #}
+{# 等待协审（可改派 / 直审）；改派走「搜索 → 选择」两步弹窗，直审走全局 confirmModal #}
 {% if co_tasks %}
-<section class="mt-10">
+<section class="mt-10" x-data="coReviewBoard()">
   <h2 class="mb-3 text-lg font-semibold text-slate-700">
     等待协审 <span class="text-xs font-normal text-slate-400">{{ co_tasks|length }} 条</span>
   </h2>
   <div class="rounded-lg border border-slate-200 bg-white">
     <ul class="divide-y divide-slate-100">
       {% for t in co_tasks %}
-      <li class="flex flex-wrap items-center gap-3 px-4 py-3 text-sm" x-data="coTaskOps({{ t.task_id }})">
+      <li class="flex flex-wrap items-center gap-3 px-4 py-3 text-sm">
         <span class="min-w-0 flex-1 truncate text-slate-700">{{ t.resource.title }}</span>
         <span class="text-xs text-slate-400">{{ t.course_name }} · {{ t.uploader_nickname }}</span>
         <span class="text-xs text-slate-400">{{ t.created_at.strftime('%m-%d %H:%M') }}</span>
         <span class="rounded bg-violet-50 px-2 py-0.5 text-xs text-violet-700">等待协审</span>
-        <p x-show="error" x-text="error" x-cloak
-           class="w-full rounded bg-red-50 px-3 py-1.5 text-xs text-red-600"></p>
-        <button @click="reassign()" :disabled="loading"
+        <button @click="openReassign({{ t.task_id }})" :disabled="loading"
                 class="rounded border border-slate-300 px-2 py-1 text-xs text-slate-600 hover:bg-slate-50 disabled:opacity-50">
           改派
         </button>
-        <button @click="direct('approve')" :disabled="loading"
+        <button @click="askDirect({{ t.task_id }}, 'approve')" :disabled="loading"
                 class="rounded bg-sky-600 px-2 py-1 text-xs text-white hover:bg-sky-700 disabled:opacity-50">
           直审通过
         </button>
-        <button @click="direct('reject')" :disabled="loading"
+        <button @click="askDirect({{ t.task_id }}, 'reject')" :disabled="loading"
                 class="rounded border border-red-300 px-2 py-1 text-xs text-red-600 hover:bg-red-50 disabled:opacity-50">
           直审驳回
         </button>
       </li>
       {% endfor %}
     </ul>
+  </div>
+
+  {# 改派协审员弹窗：搜索（GET /api/admin/users?q=）→ 点击选择（可多选，仅协审员可选）；
+     不选人直接确认 = 自动重指派 #}
+  <div x-show="reassignOpen" x-cloak @keydown.escape.window="closeReassign()"
+       class="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4">
+    <div class="w-full max-w-md rounded-lg bg-white p-5 shadow-xl" @click.outside="closeReassign()">
+      <h2 class="text-base font-semibold text-slate-800">改派协审员</h2>
+      <p class="mt-1 text-xs text-slate-400">搜索并点击选择新协审员（可多选）；不选择直接确认则自动重指派。</p>
+      <div class="mt-3 flex gap-2">
+        <input type="text" x-model="rq" x-ref="reassignInput" placeholder="学号 / 昵称"
+               @keydown.enter.prevent="searchReviewers()"
+               class="min-w-0 flex-1 rounded border border-slate-300 px-3 py-2 text-sm
+                      focus:border-sky-500 focus:outline-none">
+        <button @click="searchReviewers()" :disabled="searching"
+                class="rounded bg-sky-600 px-3 py-2 text-sm text-white hover:bg-sky-700 disabled:opacity-50"
+                x-text="searching ? '搜索中…' : '搜索'"></button>
+      </div>
+      <p x-show="searchError" x-text="searchError" x-cloak
+         class="mt-2 rounded bg-red-50 px-3 py-2 text-sm text-red-600"></p>
+      <p x-show="candidates && !candidates.length" x-cloak class="mt-3 text-sm text-slate-400">
+        无匹配用户，换个关键词试试。
+      </p>
+      <ul x-show="candidates && candidates.length" x-cloak
+          class="mt-3 max-h-56 divide-y divide-slate-100 overflow-y-auto rounded border border-slate-200">
+        <template x-for="u in candidates" :key="u.id">
+          <li @click="togglePick(u)"
+              class="flex items-center gap-2 px-3 py-2 text-sm transition-colors"
+              :class="u.role !== 'reviewer'
+                      ? 'cursor-not-allowed text-slate-300'
+                      : (isPicked(u) ? 'cursor-pointer bg-sky-50' : 'cursor-pointer hover:bg-slate-50')">
+            <span class="min-w-0 flex-1 truncate"
+                  x-text="u.nickname + '（' + (u.student_no || '无学号') + '）'"></span>
+            <span class="shrink-0 rounded px-1.5 py-0.5 text-xs"
+                  :class="u.role === 'reviewer' ? 'bg-sky-50 text-sky-700' : 'bg-slate-100 text-slate-400'"
+                  x-text="roleLabel(u.role)"></span>
+            <span x-show="isPicked(u)" x-cloak class="shrink-0 text-sky-600">✓</span>
+          </li>
+        </template>
+      </ul>
+      <p x-show="selected.length" x-cloak class="mt-2 text-xs text-slate-500">
+        已选 <span x-text="selected.length"></span> 人：<span x-text="selected.map(u => u.nickname).join('、')"></span>
+      </p>
+      <p x-show="opError" x-text="opError" x-cloak
+         class="mt-2 rounded bg-red-50 px-3 py-2 text-sm text-red-600"></p>
+      <div class="mt-4 flex justify-end gap-2">
+        <button @click="closeReassign()" :disabled="loading"
+                class="rounded border border-slate-300 px-4 py-1.5 text-sm text-slate-600
+                       hover:bg-slate-100 disabled:opacity-50">取消</button>
+        <button @click="confirmReassign()" :disabled="loading"
+                class="rounded bg-sky-600 px-4 py-1.5 text-sm text-white hover:bg-sky-700 disabled:opacity-50"
+                x-text="loading ? '提交中…' : (selected.length ? '确认改派' : '自动重指派')"></button>
+      </div>
+    </div>
   </div>
 </section>
 {% endif %}
@@ -193,46 +245,100 @@ function finalVerdict(taskId) {
     },
   };
 }
-function coTaskOps(taskId) {
+function coReviewBoard() {
   return {
-    loading: false, error: '',
+    loading: false,
+    // 改派弹窗：搜索 → 选择两步
+    reassignOpen: false, reassignTaskId: null,
+    rq: '', candidates: null, searching: false, searchError: '',
+    selected: [], opError: '',
 
-    async post(url, body) {
-      this.loading = true; this.error = '';
+    roleLabel(r) { return {student: '学生', reviewer: '协审员', builder: '共建者', admin: '管理员'}[r] || r; },
+    isPicked(u) { return this.selected.some(x => x.id === u.id); },
+    togglePick(u) {
+      if (u.role !== 'reviewer') return;  // 服务端仅接受协审员，前端直接禁选
+      const i = this.selected.findIndex(x => x.id === u.id);
+      if (i >= 0) this.selected.splice(i, 1);
+      else this.selected.push(u);
+    },
+
+    async postAction(url, body) {
+      const resp = await fetch(url, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(body),
+      });
+      const data = await resp.json().catch(() => ({}));
+      if (!resp.ok) throw new Error(data.detail || ('操作失败 ' + resp.status));
+    },
+
+    // 操作失败时经全局 confirmModal 弹出错误提示（setTimeout 避开 ask 与 confirm 的竞态）
+    fail(e) {
+      setTimeout(() => this.$dispatch('zy-ask', {
+        title: '操作失败', message: e.message, confirmText: '知道了',
+      }), 0);
+    },
+
+    openReassign(taskId) {
+      this.reassignTaskId = taskId; this.reassignOpen = true;
+      this.rq = ''; this.candidates = null; this.selected = [];
+      this.searchError = ''; this.opError = '';
+      this.$nextTick(() => { if (this.$refs.reassignInput) this.$refs.reassignInput.focus(); });
+    },
+    closeReassign() {
+      if (this.loading) return;
+      this.reassignOpen = false;
+    },
+    async searchReviewers() {
+      this.searching = true; this.searchError = '';
       try {
-        const resp = await fetch(url, {
-          method: 'POST',
-          headers: {'Content-Type': 'application/json'},
-          body: JSON.stringify(body),
-        });
+        const q = this.rq.trim();
+        const resp = await fetch('/api/admin/users?size=20'
+          + (q ? '&q=' + encodeURIComponent(q) : ''));
         const data = await resp.json().catch(() => ({}));
-        if (!resp.ok) throw new Error(data.detail || ('操作失败 ' + resp.status));
-        setTimeout(() => window.location.reload(), 1200);
-      } catch (e) { this.error = e.message; }
+        if (!resp.ok) throw new Error(data.detail || ('搜索失败 ' + resp.status));
+        this.candidates = data.items || [];
+      } catch (e) { this.searchError = e.message; }
+      finally { this.searching = false; }
+    },
+    async confirmReassign() {
+      const body = {task_id: this.reassignTaskId};
+      if (this.selected.length) body.reviewer_ids = this.selected.map(u => u.id);
+      this.loading = true; this.opError = '';
+      try {
+        await this.postAction('/api/admin/review/reassign', body);
+        setTimeout(() => window.location.reload(), 800);
+      } catch (e) { this.opError = e.message; }
       finally { this.loading = false; }
     },
 
-    reassign() {
-      const input = prompt('输入新协审员用户 ID（逗号分隔），留空则自动重指派：', '');
-      if (input === null) return;
-      const ids = input.split(',').map(s => parseInt(s.trim(), 10)).filter(n => !isNaN(n));
-      const body = {task_id: taskId};
-      if (ids.length) body.reviewer_ids = ids;
-      this.post('/api/admin/review/reassign', body);
-    },
-
-    direct(verdict) {
-      let comment = null;
-      if (verdict === 'reject') {
-        comment = prompt('请输入驳回理由（必填）：', '');
-        if (comment === null) return;
-        if (!comment.trim()) { this.error = '驳回必须填写理由'; return; }
-        comment = comment.trim();
-      } else if (!confirm('确认直审通过该投稿？将直接上架并结算贡献分。')) {
-        return;
+    // 直审：approve 走确认弹窗，reject 走必填理由弹窗（全局 confirmModal）
+    askDirect(taskId, verdict) {
+      if (verdict === 'approve') {
+        this.$dispatch('zy-ask', {
+          title: '直审通过',
+          message: '确认直审通过该投稿？将直接上架并结算贡献分。',
+          confirmText: '直审通过',
+          onConfirm: () => this.direct(taskId, 'approve', null),
+        });
+      } else {
+        this.$dispatch('zy-ask', {
+          title: '直审驳回',
+          withInput: true, requireInput: true,
+          placeholder: '请输入驳回理由（必填）',
+          confirmText: '直审驳回',
+          onConfirm: (comment) => this.direct(taskId, 'reject', comment),
+        });
       }
-      this.post('/api/admin/review/direct',
-                {task_id: taskId, verdict: verdict, comment: comment});
+    },
+    async direct(taskId, verdict, comment) {
+      this.loading = true;
+      try {
+        await this.postAction('/api/admin/review/direct',
+                              {task_id: taskId, verdict: verdict, comment: comment});
+        setTimeout(() => window.location.reload(), 800);
+      } catch (e) { this.fail(e); }
+      finally { this.loading = false; }
     },
   };
 }

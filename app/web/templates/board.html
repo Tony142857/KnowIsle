@@ -28,7 +28,8 @@
   {% if board == 'experience' and p.ai_summary %}
   <details class="mt-2 rounded border border-slate-100 bg-slate-50 px-3 py-2 text-xs text-slate-500">
     <summary class="cursor-pointer select-none text-slate-400 hover:text-sky-700">AI 摘要</summary>
-    <p class="mt-1 whitespace-pre-wrap leading-5">{{ p.ai_summary }}</p>
+    <div class="md-body mt-1 leading-6" x-data
+         x-init='ZY.md.renderInto($el, {{ p.ai_summary|tojson }})'></div>
   </details>
   {% endif %}
   <div class="mt-2 flex flex-wrap items-center gap-3 text-xs text-slate-400">
@@ -71,6 +72,12 @@
   {% if grade %}
   <p class="text-sm text-slate-500">
     届别筛选：<span class="rounded bg-sky-50 px-2 py-0.5 text-sky-700">{{ grade }}</span>
+    <a href="/boards/{{ board }}" class="ml-1 text-sky-600 hover:underline">清除</a>
+  </p>
+  {% endif %}
+  {% if course_id %}
+  <p class="text-sm text-slate-500">
+    课程筛选：<span class="rounded bg-sky-50 px-2 py-0.5 text-sky-700">{{ course.name if course else ('课程 #' ~ course_id) }}</span>
     <a href="/boards/{{ board }}" class="ml-1 text-sky-600 hover:underline">清除</a>
   </p>
   {% endif %}
@@ -124,6 +131,7 @@
 {% set extra_qs = ('&tag=' + tag|urlencode) if tag else '' %}
 {% set extra_qs = extra_qs + ('&grade=' + grade|urlencode) if grade else extra_qs %}
 {% set extra_qs = extra_qs + '&featured=1' if featured else extra_qs %}
+{% set extra_qs = extra_qs + ('&course_id=' ~ course_id) if course_id else extra_qs %}
 <nav class="mt-6 flex items-center justify-center gap-2 text-sm">
   {% if page > 1 %}
   <a href="/boards/{{ board }}?page={{ page - 1 }}{{ extra_qs }}"
@@ -149,7 +157,7 @@
 
 {% else %}
 {# DB 不可用时的降级路径：客户端 fetch 补载列表（页面骨架已由 SSR 渲染） #}
-<div x-data="boardList('{{ board }}', {{ page }}, {{ tag|tojson }})" x-init="load()">
+<div x-data='boardList({{ board|tojson }}, {{ page }}, {{ tag|tojson }}, {{ course_id|tojson }})' x-init="load()">
   <p x-show="loading" x-cloak class="py-8 text-center text-sm text-slate-400">加载中…</p>
   <p x-show="error" x-text="error" x-cloak
      class="rounded bg-red-50 px-3 py-2 text-sm text-red-600"></p>
@@ -194,7 +202,7 @@
 </div>
 
 <script>
-function boardList(board, page, tag) {
+function boardList(board, page, tag, courseId) {
   return {
     board: board, items: [], loading: false, loaded: false, error: '',
     async load() {
@@ -202,6 +210,7 @@ function boardList(board, page, tag) {
       try {
         let url = '/api/posts?board=' + board + '&page=' + page + '&size=20';
         if (tag) url += '&tag=' + encodeURIComponent(tag);
+        if (courseId) url += '&course_id=' + courseId;
         const resp = await fetch(url);
         const data = await resp.json().catch(() => ({}));
         if (!resp.ok) throw new Error(data.detail || ('加载失败 ' + resp.status));

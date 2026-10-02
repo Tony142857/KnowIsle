@@ -1,14 +1,20 @@
 {% extends "base.html" %}
 {% block title %}AI 问答 · {{ course.name }} · 知屿 KnowIsle{% endblock %}
 {% block content %}
-<div x-data="chatPage({{ course.id }})">
+<div x-data="chatPage({{ course.id }}, {{ default_scope|tojson }})">
   <div class="mb-4">
+    {% if course.scope == 'personal' %}
     <a href="/library" class="text-sm text-sky-600 hover:underline">← 返回个人知识库</a>
+    {% else %}
+    <a href="/courses/{{ course.id }}" class="text-sm text-sky-600 hover:underline">← 返回课程空间</a>
+    {% endif %}
     <div class="mt-2 flex flex-wrap items-center gap-4">
       <h1 class="text-2xl font-bold text-slate-800">{{ course.name }} · AI 问答</h1>
-      {# 检索范围三态（§4.3：个人库 / 公共库 / 混合）；窄屏横向滚动 #}
+      {# 检索范围三态（§4.3：个人库 / 公共库 / 混合）；公共课程无个人库语料，不展示「个人库」档 #}
       <div class="flex max-w-full items-center gap-1 overflow-x-auto rounded-lg border border-slate-200 bg-white p-1 text-sm">
-        {% for key, label in [('personal', '个人库'), ('public', '公共库'), ('mixed', '混合')] %}
+        {% set scope_options = [('personal', '个人库'), ('public', '公共库'), ('mixed', '混合')]
+           if course.scope == 'personal' else [('public', '公共库'), ('mixed', '混合')] %}
+        {% for key, label in scope_options %}
         <label class="shrink-0 cursor-pointer rounded-md px-3 py-1 transition-colors"
                :class="scope === '{{ key }}' ? 'bg-sky-50 text-sky-700 font-medium' : 'text-slate-500 hover:text-sky-700'">
           <input type="radio" name="scope" value="{{ key }}" x-model="scope" class="hidden">
@@ -38,8 +44,12 @@
           <div class="max-w-[85%] w-full rounded-lg bg-slate-100 px-4 py-3">
             <div x-show="msg.error" class="rounded bg-red-50 px-3 py-2 text-sm text-red-600"
                  x-text="msg.error"></div>
-            <div x-show="!msg.error" class="whitespace-pre-wrap text-sm leading-6 text-slate-700"
-                 x-text="msg.text || (msg.done ? '' : '思考中…')"></div>
+            {# 流式过程保持纯文本逐字渲染（x-text），done 后整段 Markdown 重渲染，
+               避免中途解析半截标记闪烁 #}
+            <div x-show="!msg.error && !msg.done" class="whitespace-pre-wrap text-sm leading-6 text-slate-700"
+                 x-text="msg.text || '思考中…'"></div>
+            <div x-show="!msg.error && msg.done" x-cloak class="md-body text-sm"
+                 x-effect="if (msg.done) ZY.md.renderInto($el, msg.text)"></div>
 
             {# 引用卡片：点击跳转原文溯源页并高亮对应 chunk #}
             <div x-show="msg.citations.length" class="mt-3 space-y-2 border-t border-slate-200 pt-3">
@@ -84,9 +94,9 @@
 </div>
 
 <script>
-function chatPage(courseId) {
+function chatPage(courseId, defaultScope) {
   return {
-    courseId, scope: 'personal', question: '', sending: false,
+    courseId, scope: defaultScope || 'personal', question: '', sending: false,
     messages: [],
 
     httpErrorHint(status) {

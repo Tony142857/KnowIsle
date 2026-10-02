@@ -72,9 +72,9 @@
     </p>
 
     <div x-show="outlineState === 'done'" x-cloak class="mt-3">
-      <!-- Markdown 渲染器由主代理后续统一接入，当前为纯文本占位渲染（请勿改 class 名 md-body） -->
-      <div class="md-body whitespace-pre-wrap rounded-lg bg-slate-50 px-4 py-3 text-sm leading-6 text-slate-700"
-           x-text="outline"></div>
+      <!-- Markdown 渲染挂载点（ZY.md.render，class 名 md-body 勿改）：大纲变化时整段重渲染 -->
+      <div class="md-body rounded-lg bg-slate-50 px-4 py-3 text-sm text-slate-700"
+           x-effect="if (outlineState === 'done') ZY.md.renderInto($el, outline)"></div>
       <p class="mt-2 text-xs text-slate-400"
          x-text="outlineUsage ? ('本次消耗 ' + outlineUsage.token_usage + ' tokens · 耗时 ' +
                 (outlineUsage.latency_ms / 1000).toFixed(1) + ' s') : ''"></p>

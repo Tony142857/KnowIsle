@@ -282,6 +282,9 @@
         <p x-show="loading" x-cloak class="mt-3 text-sm text-slate-400">加载中…</p>
         <p x-show="error" x-text="error" x-cloak
            class="mt-3 rounded bg-red-50 px-3 py-2 text-sm text-red-600"></p>
+        <p x-show="!loading && !error && !items.length" x-cloak class="mt-3 text-sm text-slate-400">
+          暂无注册配置项。
+        </p>
         <div x-show="items.length" x-cloak class="mt-3 overflow-x-auto">
           <table class="w-full text-sm">
             <thead>
@@ -563,8 +566,20 @@ function adminCourses() {
       } catch (e) { this.error = e.message; }
       finally { this.loading = false; }
     },
-    async setStatus(c, status) {
-      if (status === 'disabled' && !confirm('确认停用课程「' + c.name + '」？停用后不再公开展示。')) return;
+    setStatus(c, status) {
+      if (status === 'disabled') {
+        // 停用为破坏性操作：全局 confirmModal 确认后再提交
+        this.$dispatch('zy-ask', {
+          title: '停用课程',
+          message: '确认停用课程「' + c.name + '」？停用后不再公开展示。',
+          confirmText: '停用',
+          onConfirm: () => this.applyStatus(c, status),
+        });
+        return;
+      }
+      this.applyStatus(c, status);
+    },
+    async applyStatus(c, status) {
       this.loading = true; this.error = '';
       try {
         await adminPost('/api/admin/courses/' + c.id, 'PATCH', {status: status});
@@ -731,12 +746,21 @@ function adminReports() {
       } catch (e) { this.error = e.message; }
       finally { this.loading = false; }
     },
-    async handle(r, action) {
-      let note = null;
-      if (action !== 'processing') {
-        note = prompt(action === 'resolve' ? '处理备注（选填）' : '驳回理由（选填）', '');
-        if (note === null) return;  // 取消 prompt 视为放弃操作
+    handle(r, action) {
+      // 解决 / 驳回可附备注：全局 confirmModal 输入（选填）；开始处理直接提交
+      if (action === 'processing') {
+        this.submitHandle(r, action, null);
+        return;
       }
+      this.$dispatch('zy-ask', {
+        title: action === 'resolve' ? '解决举报' : '驳回举报',
+        withInput: true,
+        placeholder: action === 'resolve' ? '处理备注（选填）' : '驳回理由（选填）',
+        confirmText: action === 'resolve' ? '解决' : '驳回',
+        onConfirm: (note) => this.submitHandle(r, action, note),
+      });
+    },
+    async submitHandle(r, action, note) {
       this.loading = true; this.error = ''; this.msg = '';
       try {
         const body = {action: action};

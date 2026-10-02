@@ -12,6 +12,10 @@
   {# api.js / components.js 须在 Alpine 之前加载（components 经 alpine:init 注册全局组件） #}
   <script defer src="/static/js/api.js"></script>
   <script defer src="/static/js/components.js"></script>
+  {# Markdown 渲染三件套（体积小全站引入）：marked 解析 + DOMPurify 消毒 + ZY.md 封装 #}
+  <script defer src="/static/vendor/marked-12.0.2.min.js"></script>
+  <script defer src="/static/vendor/purify-3.1.6.min.js"></script>
+  <script defer src="/static/js/markdown.js"></script>
   <script defer src="/static/vendor/alpine-3.14.1.min.js"></script>
   <link rel="stylesheet" href="/static/css/main.css">
   {% block head %}{% endblock %}
@@ -207,6 +211,31 @@
       <a href="/" class="hover:text-sky-700">关于</a>
     </nav>
   </footer>
+
+  {# 全局确认对话框（confirmModal 组件，components.js）：页面内任意组件
+     $dispatch('zy-ask', {title, message, confirmText, withInput, requireInput,
+     placeholder, onConfirm}) 即可弹出，替代原生 confirm/prompt #}
+  <div x-data="confirmModal()" @zy-ask.window="ask($event.detail)">
+    <div x-show="open" x-cloak @keydown.escape.window="close()"
+         class="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4">
+      <div class="w-full max-w-sm rounded-lg bg-white p-5 shadow-xl" @click.outside="close()">
+        <h2 class="text-base font-semibold text-slate-800" x-text="title"></h2>
+        <p x-show="message" x-text="message" x-cloak class="mt-2 text-sm leading-6 text-slate-600"></p>
+        <input x-show="withInput" x-model="input" type="text" :placeholder="placeholder"
+               @keydown.enter.prevent="confirm()"
+               class="mt-3 w-full rounded border border-slate-300 px-3 py-2 text-sm
+                      focus:border-sky-500 focus:outline-none">
+        <div class="mt-4 flex justify-end gap-2">
+          <button @click="close()" :disabled="loading"
+                  class="rounded border border-slate-300 px-4 py-1.5 text-sm text-slate-600
+                         hover:bg-slate-100 disabled:opacity-50">取消</button>
+          <button @click="confirm()" :disabled="loading || (requireInput && !input.trim())"
+                  class="rounded bg-sky-600 px-4 py-1.5 text-sm text-white
+                         hover:bg-sky-700 disabled:opacity-50" x-text="confirmText"></button>
+        </div>
+      </div>
+    </div>
+  </div>
 
   {# 未读角标更新：服务端返回 {"unread": n}，>0 时显示数字 #}
   <script>

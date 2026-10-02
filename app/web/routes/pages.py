@@ -60,6 +60,9 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(include_in_schema=False)
 templates = Jinja2Templates(directory=Path(__file__).resolve().parents[1] / "templates")
+# tojson 保留非 ASCII 原文（Markdown 文本经 tojson 注入 x-init，中文不应变成 \uXXXX；
+# 安全性不受影响——htmlsafe_json_dumps 始终转义 < > & '）
+templates.env.policies["json.dumps_kwargs"] = {"ensure_ascii": False}
 
 # 社区板块（§4.2），用于 /boards/{board} 校验
 BOARDS = {
@@ -361,17 +364,26 @@ async def library_chat(
     db: Annotated[AsyncSession, Depends(get_db)],
     course_id: int | None = None,
 ):
-    """AI 对话页：SSE 流式问答 + 引用溯源（scope 三态切换）。"""
+    """AI 对话页：SSE 流式问答 + 引用溯源（scope 三态切换）。
+
+    个人课程仅本人可进；公共 active 课程任何登录用户可进（课程空间「AI 问答」
+    Tab 链接到本页做预选），默认检索档按课程类型预选 personal/public。"""
     if (resp := _login_redirect(user)) is not None:
         return resp
     if course_id is None:
         return RedirectResponse("/library", status_code=303)
     course = await db.get(Course, course_id)
-    if course is None or course.scope != "personal" or course.owner_id != user.id:
+    if course is None:
         raise HTTPException(status_code=404)
+    if course.scope == "personal":
+        if course.owner_id != user.id:
+            raise HTTPException(status_code=404)
+    elif course.status != "active":
+        raise HTTPException(status_code=404)
+    default_scope = "personal" if course.scope == "personal" else "public"
     return templates.TemplateResponse(
         request, "library_chat.html",
-        _ctx(user, active="library", course=course),
+        _ctx(user, active="library", course=course, default_scope=default_scope),
     )
 
 
@@ -683,10 +695,12 @@ async def board(
     tag: str | None = None,
     grade: str | None = None,
     featured: str | None = None,
+    course_id: int | None = None,
     page: int = 1,
 ):
     """板块帖子列表（v0.7 四板块全部 SSR）：经验长廊附标签云/届别过滤/精华区，
-    资料求援卡片展示悬赏分；DB 不可用时降级为空列表 + 客户端补载。"""
+    资料求援卡片展示悬赏分；course_id 过滤（课程空间「讨论」Tab 链接过来）；
+    DB 不可用时降级为空列表 + 客户端补载。"""
     if board not in BOARDS:
         raise HTTPException(status_code=404)
     name = BOARDS[board][0]
@@ -696,9 +710,14 @@ async def board(
     items: list[dict] = []
     tag_cloud: list[dict] = []
     grades: list[str] = []
+    filter_course = None
     ssr_ok = True
     try:
+        if course_id is not None:
+            filter_course = await db.get(Course, course_id)
         filters = [Post.board == board, Post.status.in_(["normal", "featured"])]
+        if course_id is not None:
+            filters.append(Post.course_id == course_id)
         if tag:
             filters.append(Post.tags.contains([tag]))
         if grade:
@@ -808,7 +827,8 @@ async def board(
         _ctx(user, active=board, board=board, board_name=name, posts=items,
              total=total, page=page, size=BOARD_PAGE_SIZE, tag=tag or "",
              grade=grade or "", featured=featured == "1", tag_cloud=tag_cloud,
-             grades=grades, ssr_ok=ssr_ok),
+             grades=grades, ssr_ok=ssr_ok, course=filter_course,
+             course_id=course_id),
     )
 
 

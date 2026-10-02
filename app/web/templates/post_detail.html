@@ -26,7 +26,8 @@
     {% endif %}
     <span>{{ c.created_at.strftime('%Y-%m-%d %H:%M') if c.created_at }}</span>
   </div>
-  <p class="mt-2 whitespace-pre-wrap text-sm leading-6 text-slate-700">{{ c.content }}</p>
+  <div class="md-body mt-2 text-sm text-slate-700"
+       x-init='ZY.md.renderInto($el, {{ c.content|tojson }})'></div>
 
   <div class="mt-2 flex items-center gap-3 text-xs">
     {# 点赞 / 点踩（未登录点击跳 /login） #}
@@ -111,11 +112,12 @@
   </div>
 </div>
 
-{# 帖子正文 + 点赞组件（Markdown 按纯文本换行渲染） #}
+{# 帖子正文 + 点赞组件（Markdown 客户端渲染：ZY.md.render，服务端转义 + DOMPurify 双保险） #}
 <div class="rounded-lg border border-slate-200 bg-white p-6"
      x-data="voteBox('post', {{ post.id }}, {{ vote_score }}, {{ my_vote }},
                      {{ 'true' if user else 'false' }})">
-  <p class="whitespace-pre-wrap text-sm leading-7 text-slate-700">{{ post.content }}</p>
+  <div class="md-body text-sm text-slate-700"
+       x-init='ZY.md.renderInto($el, {{ post.content|tojson }})'></div>
   <div class="mt-4 flex items-center gap-3 border-t border-slate-100 pt-4 text-sm">
     <button @click="vote(1)" :disabled="loading"
             :class="myVote === 1 ? 'border-sky-600 bg-sky-50 text-sky-700' : 'border-slate-300 text-slate-500 hover:border-sky-400 hover:text-sky-700'"
@@ -164,15 +166,17 @@
     <h2 class="text-sm font-semibold text-sky-800">AI 助教首答</h2>
     <span class="rounded bg-amber-100 px-2 py-0.5 text-xs text-amber-700">AI 生成，仅供参考</span>
   </div>
-  <div class="mt-3 whitespace-pre-wrap text-sm leading-7 text-slate-700">
-    {%- for seg in ai_segments -%}
-      {%- if seg.text is defined -%}{{ seg.text }}{%- else -%}
-      <a href="/documents/{{ seg.document_id }}/source#{{ seg.cite }}"
-         class="font-mono text-xs text-sky-700 underline decoration-dotted hover:text-sky-900"
-         title="查看原文溯源">[{{ seg.cite }}]</a>
-      {%- endif -%}
-    {%- endfor -%}
-  </div>
+  {# 文本段 + 引用锚点拼成整段 Markdown，客户端一次性渲染（引用转为溯源链接） #}
+  {% set md_ns = namespace(text='') %}
+  {% for seg in ai_segments %}
+    {% if seg.text is defined %}
+      {% set md_ns.text = md_ns.text + seg.text %}
+    {% else %}
+      {% set md_ns.text = md_ns.text ~ '[\\[' ~ seg.cite ~ '\\]](/documents/' ~ seg.document_id ~ '/source#' ~ seg.cite ~ ')' %}
+    {% endif %}
+  {% endfor %}
+  <div class="md-body mt-3 text-sm text-slate-700"
+       x-data x-init='ZY.md.renderInto($el, {{ md_ns.text|tojson }})'></div>
   {% if ai_citations %}
   <div class="mt-4 border-t border-sky-100 pt-3">
     <p class="text-xs font-medium text-slate-500">引用来源</p>
@@ -221,7 +225,8 @@
     <h2 class="text-sm font-semibold text-amber-800">AI 摘要</h2>
     <span class="rounded bg-amber-100 px-2 py-0.5 text-xs text-amber-700">AI 生成，仅供参考</span>
   </div>
-  <p class="mt-3 whitespace-pre-wrap text-sm leading-7 text-slate-700">{{ post.ai_summary }}</p>
+  <div class="md-body mt-3 text-sm text-slate-700"
+       x-data x-init='ZY.md.renderInto($el, {{ post.ai_summary|tojson }})'></div>
 </div>
 {% elif summary_status == 'pending' %}
 <div class="mt-6 rounded-lg border border-amber-200 bg-amber-50/50 p-6"

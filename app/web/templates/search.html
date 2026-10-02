@@ -2,7 +2,7 @@
 {% block title %}搜索 · 知屿 KnowIsle{% endblock %}
 
 {% block content %}
-<div x-data="searchPage({{ q|tojson }}, {{ search_type|tojson }}, {{ board|tojson }}, {{ course_id|tojson }})"
+<div x-data='searchPage({{ q|tojson }}, {{ search_type|tojson }}, {{ board|tojson }}, {{ course_id|tojson }})'
      x-init="init()">
   <h1 class="mb-6 text-2xl font-bold text-slate-800">全站搜索</h1>
 
@@ -24,14 +24,18 @@
         <option value="{{ key }}" {{ 'selected' if board == key }}>{{ label }}</option>
         {% endfor %}
       </select>
-      <input type="number" name="course_id" min="1"
-             value="{{ course_id if course_id is not none else '' }}"
-             placeholder="课程 ID（选填）"
-             class="w-full rounded border border-slate-300 px-3 py-2 text-sm sm:w-32">
+      {# 课程过滤：下拉选择公共课程（客户端拉取 /api/courses 填充，SSR course_id 回显） #}
+      <select name="course_id"
+              class="w-full rounded border border-slate-300 px-3 py-2 text-sm sm:w-48">
+        <option value="">全部课程</option>
+        <template x-for="c in courseOptions" :key="c.id">
+          <option :value="c.id" x-text="c.name" :selected="courseId === c.id"></option>
+        </template>
+      </select>
       <button type="submit"
               class="w-full rounded bg-sky-600 px-4 py-2 text-sm text-white hover:bg-sky-700 sm:w-auto">搜索</button>
     </div>
-    <p class="mt-2 text-xs text-slate-400">板块过滤仅对帖子结果生效；资源按课程 ID 过滤。</p>
+    <p class="mt-2 text-xs text-slate-400">板块过滤仅对帖子结果生效；课程过滤下拉仅含公共课程。</p>
   </form>
 
   <p x-show="loading" x-cloak class="mt-6 py-8 text-center text-sm text-slate-400">搜索中…</p>
@@ -123,6 +127,7 @@ function searchPage(q, type, board, courseId) {
     posts: [], postsTotal: 0, resources: [], resourcesTotal: 0,
     page: 1, size: 10,
     loading: false, searched: false, error: '',
+    courseOptions: [],
 
     boardLabel(b) {
       return {qa: '知屿问答', discuss: '讨论区', experience: '经验长廊', bounty: '资料求援'}[b] || b;
@@ -138,7 +143,17 @@ function searchPage(q, type, board, courseId) {
       if (this.courseId) params.set('course_id', String(this.courseId));
       return '/api/search?' + params.toString();
     },
+    // 课程下拉选项（GET /api/courses 公共课程列表）；失败静默降级为「全部课程」
+    async loadCourses() {
+      try {
+        const resp = await fetch('/api/courses?size=100');
+        const data = await resp.json().catch(() => ({}));
+        if (!resp.ok) return;
+        this.courseOptions = data.items || [];
+      } catch (e) { /* 课程下拉加载失败不阻塞搜索 */ }
+    },
     async init() {
+      this.loadCourses();
       if (this.q.trim()) await this.load(1);
     },
     async load(page) {

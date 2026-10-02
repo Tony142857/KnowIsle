@@ -201,6 +201,15 @@ def test_library_chat_page():
     gets = {(Course, 7): make_course(7, scope="personal", owner_id=1)}
     with http_client(FakeSession(gets=gets), USER) as client:
         assert client.get("/library/chat", params={"course_id": 7}).status_code == 200
+    # 公共 active 课程：任何登录用户可进（课程空间「AI 问答」Tab 预选），默认公共库档
+    gets = {(Course, 8): make_course(8, scope="public", status="active")}
+    with http_client(FakeSession(gets=gets), USER) as client:
+        resp = client.get("/library/chat", params={"course_id": 8})
+        assert resp.status_code == 200 and "公共库" in resp.text
+    # 公共非 active 课程：越权/未开通一律 404
+    gets = {(Course, 9): make_course(9, scope="public", status="pending")}
+    with http_client(FakeSession(gets=gets), USER) as client:
+        assert client.get("/library/chat", params={"course_id": 9}).status_code == 404
 
 
 def test_document_source_page():
