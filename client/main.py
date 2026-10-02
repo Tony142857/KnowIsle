@@ -1,7 +1,7 @@
 """知屿桌面客户端（pywebview 联网薄壳，§6.4 / §15.2.1）。
 
 壳只负责窗口与加载服务端页面，业务逻辑全在服务端。
-打包（v0.9 起）：pyinstaller --noconfirm client/zhiyu.spec
+打包命令与安装包流程见 client/README.md（PyInstaller spec → NSIS）。
 """
 
 import json

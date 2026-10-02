@@ -1,7 +1,7 @@
-# 知屿桌面客户端 PyInstaller 打包规格（§15.2.1，v0.9 就绪）。
+# 知屿桌面客户端 PyInstaller 打包规格（§15.2.1，v1.0 就绪）。
 # 用法（项目根目录，需先 pip install pyinstaller pywebview）：
-#   pyinstaller --noconfirm client/zhiyu.spec
-# 产物：client/dist/知屿/（one-folder 模式，供 NSIS 打包）
+#   pyinstaller --noconfirm --distpath client/dist --workpath client/build client/zhiyu.spec
+# 产物：client/dist/知屿/（one-folder 模式，供 NSIS 打包；NSIS 只认该路径）
 
 from pathlib import Path
 

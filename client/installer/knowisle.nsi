@@ -1,9 +1,12 @@
-; 知屿 KnowIsle NSIS 安装包脚本（§15.2.1，v0.9 完成）
-; 用法（Windows，已安装 NSIS）：makensis client\installer\knowisle.nsi
+; 知屿 KnowIsle NSIS 安装包脚本（§15.2.1，v1.0 对齐服务端契约）
+; 用法（Windows，已安装 NSIS 3.x，任意工作目录均可）：makensis client\installer\knowisle.nsi
 ; 前置：PyInstaller 已产出 client\dist\知屿\（见 client/README.md）
+; 注：文件路径一律相对脚本自身目录（${__FILEDIR__}）解析，不受 makensis 工作目录影响
+
+!include "LogicLib.nsh"  ; ${If} 等宏
 
 !define APP_NAME "知屿"
-!define APP_VERSION "0.9.0"
+!define APP_VERSION "1.0.0"
 !define APP_PUBLISHER "KnowIsle Team"
 !define INSTALL_DIR "$PROGRAMFILES64\${APP_NAME}"
 ; WebView2 Runtime 在 EdgeUpdate 客户端注册表项下登记（微软官方探测方式）
@@ -11,7 +14,7 @@
 !define WEBVIEW2_BOOTSTRAPPER "https://go.microsoft.com/fwlink/p/?LinkId=2124703"
 
 Name "${APP_NAME}"
-OutFile "knowisle-setup-${APP_VERSION}.exe"
+OutFile "${__FILEDIR__}\knowisle-setup-${APP_VERSION}.exe"
 InstallDir "${INSTALL_DIR}"
 RequestExecutionLevel admin
 SetCompressor /SOLID lzma
@@ -23,7 +26,7 @@ UninstPage instfiles
 
 Section "Install"
   SetOutPath "$INSTDIR"
-  File /r "..\dist\知屿\*.*"
+  File /r "${__FILEDIR__}\..\dist\知屿\*.*"
 
   ; 开始菜单与桌面快捷方式
   CreateDirectory "$SMPROGRAMS\${APP_NAME}"
