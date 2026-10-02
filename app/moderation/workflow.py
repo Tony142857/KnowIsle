@@ -140,6 +140,11 @@ async def submit_co_verdict(
 ) -> str:
     """提交协审意见，返回 "recorded" / "advanced_final" / "rejected"。
 
+    计票口径（v0.9 已知限制①修正）：多数决只统计**当前有效指派人**
+    （task.assignee_ids 当前值）的票——超时重指派/管理员改派均为覆盖语义，
+    卸任者的票保留在 review_records 作档案，但不参与分子/分母统计，
+    避免结论由已卸任者的票决定。
+
     ValueError 约定：stage（非协审阶段）/ not_assigned（未指派）→ 调用方映射 404；
     already（重复提交）/ comment_required（驳回无理由）→ 映射 422。
     """
@@ -175,14 +180,16 @@ async def submit_co_verdict(
             .order_by(ReviewRecord.id)
         )
     ).scalars().all()
-    outcome = decide_co_outcome(
-        [r.verdict for r in records], needed=len(task.assignee_ids or [])
-    )
+    # v0.9 已知限制①修正：分子（有效票）与分母（所需人数）都只看当前 assignee_ids；
+    # 卸任者的票保留在 records 中作档案，不进 counted
+    current_ids = set(task.assignee_ids or [])
+    counted = [r for r in records if r.reviewer_id in current_ids]
+    outcome = decide_co_outcome([r.verdict for r in counted], needed=len(current_ids))
     if outcome is None:
         return "recorded"
     if outcome == "reject":
         reason = "；".join(
-            r.comment for r in records if r.verdict == "reject" and r.comment
+            r.comment for r in counted if r.verdict == "reject" and r.comment
         )
         await _reject(session, task, reason or "协审驳回")
         return "rejected"

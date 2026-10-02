@@ -1535,6 +1535,46 @@ def test_preview_resource_missing_returns_404(monkeypatch):
         assert client.get("/api/resources/21/preview").status_code == 404
 
 
+class _SpySession(FakeSession):
+    """在 fakestack.FakeSession 上记录 execute 收到的语句，供断言授权 SQL 口径。"""
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.statements = []
+
+    async def execute(self, stmt, *args, **kwargs):
+        self.statements.append(stmt)
+        return await super().execute(stmt, *args, **kwargs)
+
+
+def test_preview_co_review_only_scope_and_final_stage_forbidden(monkeypatch):
+    """v0.9 已知限制②修正：协审员预览放行收紧为 stage='co_review' 单阶段。
+
+    - 当前有效协审指派（stage=co_review 且 assignee_ids 含本人）：仍 200（回归）
+    - 任务进入 final（终审）后原协审员已卸任：授权查询无命中 → 404
+    - 授权 SQL 口径锁定：stage 单值等值，不再 IN ('co_review', 'final')
+      （fakestack 的 execute 按序出队不求值 SQL，故用 _SpySession 断言语句形态）
+    """
+    _patch_resources(monkeypatch, store=FakeObjectStore({"k/11": b"pdf"}))
+    doc = make_doc(11, owner_id=9)
+    reviewing = make_resource(review_status="co_reviewing")  # 终审中资源状态仍 co_reviewing
+    reviewer = make_user(5, role="reviewer")
+    gets = {(Resource, 21): reviewing, (Document, 11): doc}
+    # 当前协审员：授权查询命中（task_id=41）→ 200 流式预览
+    session = _SpySession(gets=gets, results=[FakeResult(rows=[(41,)])])
+    with http_client(session, reviewer) as client:
+        resp = client.get("/api/resources/21/preview")
+    assert resp.status_code == 200 and resp.content == b"pdf"
+    (stmt,) = session.statements
+    sql = str(stmt)
+    assert "review_tasks.stage = " in sql
+    assert "review_tasks.stage IN" not in sql  # 不再放行 final 阶段
+    # final 阶段旧指派：收紧后授权查询查不到记录 → 404（卸任者无预览权限）
+    session = _SpySession(gets=gets, results=[FakeResult(rows=[])])
+    with http_client(session, reviewer) as client:
+        assert client.get("/api/resources/21/preview").status_code == 404
+
+
 def test_direct_review_approve_word_enqueues_preview(monkeypatch):
     pool = FakeArqPool()
     task = make_task(41, stage="co_review")

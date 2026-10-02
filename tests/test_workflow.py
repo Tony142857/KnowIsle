@@ -558,6 +558,38 @@ async def test_co_verdict_single_reject_not_majority():
     assert result == "advanced_final" and task.stage == "final"
 
 
+async def test_co_verdict_departed_reviewer_vote_not_counted():
+    """v0.9 已知限制①修正：重指派卸任者的票保留作档案但不计入多数决。
+
+    模拟超时重指派后 assignee_ids 覆盖为 [6, 7]（5 已提交驳回票后卸任）：
+    6 驳回时有效票仅 1 张、人数未齐 → recorded；7 通过后有效票 1 驳 1 过、
+    驳回未过半 → 推进终审（旧口径会把 5 的卸任驳回票计入，2 驳 1 过误驳）。
+    """
+    session = FakeSession()
+    resource, task = _resource(review_status="co_reviewing"), _task(stage="co_review", assignee_ids=[6, 7])
+    departed = _record(4001, reviewer_id=5, verdict="reject", comment="卸任前的驳回")
+    session.seed(resource, task, departed)
+    result = await submit_co_verdict(session, _user(6), task, "reject", "排版混乱")
+    assert result == "recorded"  # 5 的卸任票不计入：有效票 1/2 未齐
+    assert task.stage == "co_review" and resource.review_status == "co_reviewing"
+    result = await submit_co_verdict(session, _user(7), task, "approve", None)
+    assert result == "advanced_final" and task.stage == "final"
+    assert departed in session.records  # 卸任者的票仍留档，未被删除
+
+
+async def test_co_verdict_departed_approve_does_not_block_reject():
+    """卸任者的通过票同样不计入：当前 2 名协审员均驳回 → 驳回，
+    驳回理由只拼接有效指派人的驳回意见。"""
+    session = FakeSession()
+    resource, task = _resource(review_status="co_reviewing"), _task(stage="co_review", assignee_ids=[6, 7])
+    session.seed(resource, task, _record(4001, reviewer_id=5, verdict="approve"))
+    assert await submit_co_verdict(session, _user(6), task, "reject", "内容错误") == "recorded"
+    result = await submit_co_verdict(session, _user(7), task, "reject", "排版混乱")
+    assert result == "rejected"
+    (notice,) = _notifications(session, "review_result")
+    assert notice.body == "内容错误；排版混乱"
+
+
 # ---------------------------------------------------------------------------
 # final_verdict：终审（驳回 / 通过派生 public 副本）
 # ---------------------------------------------------------------------------

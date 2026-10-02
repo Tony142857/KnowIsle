@@ -174,7 +174,11 @@ async def preview_resource(
 ):
     """在线预览：inline 流式返回（markdown 原文 / pdf 原文 / word·ppt 转换产物）。
 
-    权限：approved 任何登录用户 / 本人 / admin / 该资源协审或终审阶段的被指派人。
+    权限：approved 任何登录用户 / 本人 / admin / 协审阶段的当前被指派人。
+
+    v0.9 已知限制②修正：assignee_ids 在超时重指派与管理员改派时均为覆盖语义
+    （卸任者不再保留在列表中），故仅 stage='co_review' 且当前 assignee_ids
+    含该用户才放行——进入 final（终审）后原协审员已卸任，不再有预览权限。
     """
     resource = await db.get(Resource, resource_id)
     if resource is None:
@@ -190,7 +194,7 @@ async def preview_resource(
                 select(ReviewTask.id)
                 .where(
                     ReviewTask.resource_id == resource.id,
-                    ReviewTask.stage.in_(["co_review", "final"]),
+                    ReviewTask.stage == "co_review",
                     user.id == any_(ReviewTask.assignee_ids),
                 )
                 .limit(1)
