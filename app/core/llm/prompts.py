@@ -30,11 +30,23 @@ REVIEW_OUTLINE_PROMPT = """请基于以下章节内容生成结构化复习提�
 {chapter_text}
 """
 
-# §11.4 习题生成提示词
-QUIZ_PROMPT = """请基于以下章节内容生成 5 道复习题，包含：
-- 2 道单选题（含答案与解析）
-- 2 道简答题（含参考答案要点）
-- 1 道计算/应用题（含完整解答步骤）
+# §11.4 习题生成提示词（模块 A4：结构化 JSON 输出，count 由调用方控制 1~10）
+QUIZ_PROMPT = """请基于以下章节内容生成 {count} 道复习题（单选题 single_choice 与简答题 short_answer 混合）。
+严格输出 JSON（不要输出 JSON 以外的任何文字，不要用 markdown 代码块包裹）：
+{{
+  "questions": [
+    {{
+      "type": "single_choice 或 short_answer",
+      "question": "题干",
+      "options": ["A. ...", "B. ...", "C. ...", "D. ..."],
+      "answer": "单选题填选项字母，简答题填参考答案要点",
+      "explanation": "解析",
+      "chunk_id": "该题主要依据的资料块 ID（取自上下文 [chunk_id] 标注）"
+    }}
+  ]
+}}
+options 仅单选题需要，简答题填空数组。
+【章节内容】
 {chapter_text}
 """
 

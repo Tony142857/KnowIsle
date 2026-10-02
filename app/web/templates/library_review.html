@@ -1,0 +1,291 @@
+{% extends "base.html" %}
+{% block title %}复习工具 · 知屿 KnowIsle{% endblock %}
+{% block content %}
+<div x-data="reviewPage({{ course_id if course_id is not none else 'null' }})" x-init="init()">
+  <div class="mb-4">
+    <a href="/library" class="text-sm text-sky-600 hover:underline">← 返回个人知识库</a>
+    <div class="mt-2 flex flex-wrap items-center gap-3">
+      <h1 class="text-2xl font-bold text-slate-800">复习工具</h1>
+      <p class="text-sm text-slate-400">基于课程资料生成复习大纲与考点习题（模块 A4，串讲留二期）</p>
+    </div>
+  </div>
+
+  {# 课程与章节选择 #}
+  <div class="rounded-lg border border-slate-200 bg-white p-4">
+    <div class="flex flex-wrap items-center gap-2">
+      <select x-model="courseKey" @change="onCourseChange()"
+              class="rounded border border-slate-300 px-3 py-2 text-sm">
+        <option value="">请选择课程</option>
+        <optgroup label="个人知识库" x-show="personalCourses.length">
+          <template x-for="c in personalCourses" :key="'p' + c.id">
+            <option :value="'personal:' + c.id" x-text="c.name"></option>
+          </template>
+        </optgroup>
+        <optgroup label="公共课程空间" x-show="publicCourses.length">
+          <template x-for="c in publicCourses" :key="'c' + c.id">
+            <option :value="'public:' + c.id" x-text="c.name"></option>
+          </template>
+        </optgroup>
+      </select>
+      <span x-show="coursesLoading" class="text-xs text-slate-400">课程加载中…</span>
+      <span x-show="coursesError" x-text="coursesError" x-cloak
+            class="text-xs text-red-600"></span>
+    </div>
+
+    {# 章节多选（大纲范围）；无章节课程按全课程生成 #}
+    <div x-show="courseKey" x-cloak class="mt-3">
+      <p class="text-xs font-medium text-slate-500">选择章节（不选默认全课程）</p>
+      <p x-show="chaptersLoading" class="mt-2 text-xs text-slate-400">章节加载中…</p>
+      <div x-show="!chaptersLoading && !chapters.length" x-cloak
+           class="mt-2 text-xs text-slate-400">该课程暂无章节，将按全课程范围生成。</div>
+      <div class="mt-2 flex flex-wrap gap-2">
+        <template x-for="ch in chapters" :key="ch.id">
+          <label class="cursor-pointer rounded-md border px-3 py-1.5 text-sm transition-colors"
+                 :class="selectedChapters.includes(ch.id)
+                         ? 'border-sky-300 bg-sky-50 text-sky-700'
+                         : 'border-slate-200 text-slate-600 hover:text-sky-700'">
+            <input type="checkbox" class="hidden" :value="ch.id"
+                   @change="toggleChapter(ch.id)">
+            <span x-text="ch.label"></span>
+          </label>
+        </template>
+      </div>
+    </div>
+  </div>
+
+  {# 复习大纲 #}
+  <div class="mt-4 rounded-lg border border-slate-200 bg-white p-4">
+    <div class="flex flex-wrap items-center gap-3">
+      <h2 class="text-base font-semibold text-slate-800">复习大纲</h2>
+      <button @click="generateOutline()" :disabled="!courseKey || outlineState === 'loading'"
+              class="ml-auto rounded-lg bg-sky-600 px-4 py-2 text-sm text-white hover:bg-sky-700 disabled:opacity-50"
+              x-text="outlineState === 'loading' ? '生成中…' : '生成复习大纲'"></button>
+    </div>
+
+    <p x-show="outlineState === 'error'" x-text="outlineError" x-cloak
+       class="mt-3 rounded bg-red-50 px-3 py-2 text-sm text-red-600"></p>
+    <p x-show="outlineState === 'idle'" class="mt-3 text-sm text-slate-400">
+      选择课程（可多选章节）后点击生成，产出核心考点 / 易混概念 / 典型题型结构化提纲。
+    </p>
+    <p x-show="outlineState === 'loading'" x-cloak class="mt-3 text-sm text-slate-400">
+      AI 正在梳理章节资料，通常需要十几秒…
+    </p>
+
+    <div x-show="outlineState === 'done'" x-cloak class="mt-3">
+      <!-- Markdown 渲染器由主代理后续统一接入，当前为纯文本占位渲染（请勿改 class 名 md-body） -->
+      <div class="md-body whitespace-pre-wrap rounded-lg bg-slate-50 px-4 py-3 text-sm leading-6 text-slate-700"
+           x-text="outline"></div>
+      <p class="mt-2 text-xs text-slate-400"
+         x-text="outlineUsage ? ('本次消耗 ' + outlineUsage.token_usage + ' tokens · 耗时 ' +
+                (outlineUsage.latency_ms / 1000).toFixed(1) + ' s') : ''"></p>
+    </div>
+  </div>
+
+  {# 考点习题（按章生成） #}
+  <div class="mt-4 rounded-lg border border-slate-200 bg-white p-4">
+    <div class="flex flex-wrap items-center gap-3">
+      <h2 class="text-base font-semibold text-slate-800">考点习题</h2>
+      <div class="ml-auto flex items-center gap-2">
+        <select x-model="quizChapterId"
+                class="rounded border border-slate-300 px-3 py-2 text-sm">
+          <option value="">选择章节</option>
+          <template x-for="ch in chapters" :key="ch.id">
+            <option :value="ch.id" x-text="ch.label"></option>
+          </template>
+        </select>
+        <input type="number" x-model.number="quizCount" min="1" max="10"
+               class="w-20 rounded border border-slate-300 px-3 py-2 text-sm" title="题数 1~10">
+        <button @click="generateQuiz()"
+                :disabled="!courseKey || !quizChapterId || quizState === 'loading'"
+                class="rounded-lg bg-sky-600 px-4 py-2 text-sm text-white hover:bg-sky-700 disabled:opacity-50"
+                x-text="quizState === 'loading' ? '出题中…' : '生成习题'"></button>
+      </div>
+    </div>
+
+    <p x-show="quizState === 'error'" x-text="quizError" x-cloak
+       class="mt-3 rounded bg-red-50 px-3 py-2 text-sm text-red-600"></p>
+    <p x-show="quizState === 'idle'" class="mt-3 text-sm text-slate-400">
+      选择章节与题数（1~10），AI 按章节资料出单选 / 简答题，答案与解析默认折叠。
+    </p>
+    <p x-show="quizState === 'loading'" x-cloak class="mt-3 text-sm text-slate-400">
+      AI 正在出题，请稍候…
+    </p>
+
+    <div x-show="quizState === 'done'" x-cloak class="mt-3 space-y-3">
+      <template x-for="(q, i) in questions" :key="i">
+        <div x-data="{open: false}" class="rounded-lg border border-slate-200 bg-white p-4">
+          <div class="flex items-start gap-2">
+            <span class="shrink-0 rounded bg-sky-50 px-2 py-0.5 text-xs text-sky-700"
+                  x-text="q.type === 'single_choice' ? '单选' : (q.type === 'calculation' ? '计算' : '简答')"></span>
+            <p class="text-sm font-medium text-slate-800" x-text="(i + 1) + '. ' + q.question"></p>
+          </div>
+          <ul x-show="q.options && q.options.length" class="mt-2 space-y-1 pl-1 text-sm text-slate-600">
+            <template x-for="(opt, j) in q.options" :key="j">
+              <li x-text="opt"></li>
+            </template>
+          </ul>
+          {# 答案 / 解析默认折叠（Alpine 折叠卡） #}
+          <button @click="open = !open" class="mt-2 text-xs text-sky-600 hover:underline"
+                  x-text="open ? '收起答案' : '查看答案与解析'"></button>
+          <div x-show="open" x-cloak
+               class="mt-2 rounded bg-slate-50 px-3 py-2 text-sm leading-6 text-slate-700">
+            <p><span class="font-medium">答案：</span><span x-text="q.answer || '（未给出）'"></span></p>
+            <p x-show="q.explanation" class="mt-1">
+              <span class="font-medium">解析：</span><span x-text="q.explanation"></span>
+            </p>
+            <p x-show="q.chunk_id" class="mt-1 text-xs text-slate-400"
+               x-text="'依据资料块：' + q.chunk_id"></p>
+          </div>
+        </div>
+      </template>
+      <p x-show="!questions.length" class="text-sm text-slate-400">本次未生成有效习题，请重试。</p>
+    </div>
+  </div>
+</div>
+
+<script>
+function reviewPage(presetCourseId) {
+  return {
+    // 课程与章节选择
+    courseKey: '', personalCourses: [], publicCourses: [],
+    coursesLoading: false, coursesError: '',
+    chapters: [], chaptersLoading: false, selectedChapters: [],
+    // 大纲三态：idle / loading / done / error
+    outlineState: 'idle', outline: '', outlineError: '', outlineUsage: null,
+    // 习题三态
+    quizChapterId: '', quizCount: 5,
+    quizState: 'idle', quizError: '', questions: [],
+
+    httpErrorHint(status, detail) {
+      if (detail) return detail;
+      if (status === 401) return '登录已过期，请重新登录后再试';
+      if (status === 404) return '课程不存在或无权限访问';
+      if (status === 429) return '今日 AI 额度已用完，请明天再试（或在个人中心配置自定义 Key）';
+      if (status === 502) return 'AI 服务暂时不可用，请稍后重试';
+      return '请求失败（HTTP ' + status + '）';
+    },
+
+    async init() {
+      this.coursesLoading = true;
+      try {
+        // 个人课程（含章节树）+ 公共课程空间（模块 A4：复习工具对双库均可用）
+        const [libResp, pubResp] = await Promise.all([
+          fetch('/api/library/'),
+          fetch('/api/courses?size=100'),
+        ]);
+        const lib = await libResp.json().catch(() => ({}));
+        if (!libResp.ok) throw new Error(lib.detail || ('加载个人课程失败 ' + libResp.status));
+        const mine = [];
+        for (const s of lib.semesters || []) mine.push(...(s.courses || []));
+        mine.push(...(lib.uncategorized_courses || []));
+        this.personalCourses = mine;
+        if (pubResp.ok) {
+          const pub = await pubResp.json().catch(() => ({}));
+          this.publicCourses = pub.items || [];
+        }
+        if (presetCourseId != null) this.preset(presetCourseId);
+      } catch (e) {
+        this.coursesError = e.message;
+      } finally {
+        this.coursesLoading = false;
+      }
+    },
+
+    preset(courseId) {
+      const key = this.personalCourses.some(c => c.id === courseId)
+        ? 'personal:' + courseId
+        : (this.publicCourses.some(c => c.id === courseId) ? 'public:' + courseId : '');
+      if (key) { this.courseKey = key; this.onCourseChange(); }
+    },
+
+    courseId() {
+      return this.courseKey ? Number(this.courseKey.split(':')[1]) : null;
+    },
+
+    toggleChapter(id) {
+      const i = this.selectedChapters.indexOf(id);
+      if (i >= 0) this.selectedChapters.splice(i, 1);
+      else this.selectedChapters.push(id);
+    },
+
+    async onCourseChange() {
+      this.chapters = []; this.selectedChapters = [];
+      this.quizChapterId = ''; this.questions = []; this.quizState = 'idle';
+      this.outlineState = 'idle'; this.outline = ''; this.outlineError = '';
+      if (!this.courseKey) return;
+      const [scope, id] = this.courseKey.split(':');
+      const url = scope === 'personal'
+        ? '/api/library/courses/' + id + '/chapters'
+        : '/api/courses/' + id + '/chapters';
+      this.chaptersLoading = true;
+      try {
+        const resp = await fetch(url);
+        const data = await resp.json().catch(() => ({}));
+        if (!resp.ok) throw new Error(data.detail || ('加载章节失败 ' + resp.status));
+        // 章节树扁平化，用全角空格缩进体现层级（与 library.html 同一约定）
+        const flat = [];
+        const walk = (nodes, depth) => {
+          for (const n of nodes || []) {
+            flat.push({id: n.id, label: '　'.repeat(depth) + n.title});
+            walk(n.children, depth + 1);
+          }
+        };
+        walk(data.items, 0);
+        this.chapters = flat;
+      } catch (e) {
+        this.coursesError = e.message;
+      } finally {
+        this.chaptersLoading = false;
+      }
+    },
+
+    async post(url, body) {
+      const resp = await fetch(url, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(body),
+      });
+      const data = await resp.json().catch(() => ({}));
+      if (!resp.ok) throw new Error(this.httpErrorHint(resp.status, data.detail));
+      return data;
+    },
+
+    async generateOutline() {
+      const courseId = this.courseId();
+      if (!courseId || this.outlineState === 'loading') return;
+      this.outlineState = 'loading'; this.outlineError = ''; this.outline = '';
+      try {
+        const data = await this.post('/api/review/outline', {
+          course_id: courseId,
+          chapter_ids: this.selectedChapters.length ? this.selectedChapters : null,
+        });
+        this.outline = data.outline || '';
+        this.outlineUsage = {token_usage: data.token_usage, latency_ms: data.latency_ms};
+        this.outlineState = 'done';
+      } catch (e) {
+        this.outlineError = e.message;
+        this.outlineState = 'error';
+      }
+    },
+
+    async generateQuiz() {
+      const courseId = this.courseId();
+      if (!courseId || !this.quizChapterId || this.quizState === 'loading') return;
+      this.quizState = 'loading'; this.quizError = ''; this.questions = [];
+      try {
+        const data = await this.post('/api/review/quiz', {
+          course_id: courseId,
+          chapter_id: Number(this.quizChapterId),
+          count: this.quizCount,
+        });
+        this.questions = data.questions || [];
+        this.quizState = 'done';
+      } catch (e) {
+        this.quizError = e.message;
+        this.quizState = 'error';
+      }
+    },
+  };
+}
+</script>
+{% endblock %}

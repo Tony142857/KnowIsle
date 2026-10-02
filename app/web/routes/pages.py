@@ -8,6 +8,7 @@ v0.5 落地：社区板块（问答/讨论列表、发帖、帖子详情含 AI �
 v0.6 落地：管理后台主页（/admin：空间管理 / 用户治理 / 平台配置）、
 课程关注与资源/帖子收藏按钮的状态注入。
 v0.8 落地：全站搜索页（/search，骨架 SSR + 客户端 fetch 结果）。
+复习工具页（/library/review，模块 A4）：大纲 / 习题生成，数据由前端 fetch。
 """
 
 import logging
@@ -334,6 +335,23 @@ async def library_chat(
     return templates.TemplateResponse(
         request, "library_chat.html",
         _ctx(user, active="library", course=course),
+    )
+
+
+@router.get("/library/review")
+async def library_review(
+    request: Request,
+    user: Annotated[User | None, Depends(get_current_user_optional)],
+    course_id: int | None = None,
+):
+    """复习工具页（模块 A4，§13）：大纲 / 习题生成；课程与章节由前端 fetch
+    （/api/library/ 个人课程 + /api/courses 公共课程），生成走 /api/review/*。
+    course_id 仅作客户端预选，权限由 API 层校验，本路由不做服务端校验。"""
+    if (resp := _login_redirect(user)) is not None:
+        return resp
+    return templates.TemplateResponse(
+        request, "library_review.html",
+        _ctx(user, active="library", course_id=course_id),
     )
 
 
