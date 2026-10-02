@@ -6,7 +6,10 @@ FROM python:3.12-slim@sha256:2f17fc044b579bab302c2e8054d3a686e2cb9a83de48e70534b
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     PIP_NO_CACHE_DIR=1 \
-    PYTHONPATH=/srv/knowisle
+    PYTHONPATH=/srv/knowisle \
+    # v1.0 非 root 运行：HF 模型缓存与 HOME 统一定位到工作目录（LibreOffice 需要可写 HOME）
+    HF_HOME=/srv/knowisle/.cache/huggingface \
+    HOME=/srv/knowisle
 
 WORKDIR /srv/knowisle
 
@@ -31,11 +34,18 @@ RUN pip install -r requirements.txt \
  && pip install -r requirements-ml.txt
 
 # 预下载本地 Embedding 模型 bge-small-zh-v1.5（构建期经 hf-mirror 镜像站拉取，
-# 烘焙进镜像后运行时可完全离线加载，见 compose 中 HF_HUB_OFFLINE=1）
+# 烘焙进镜像后运行时可完全离线加载，见 compose 中 HF_HUB_OFFLINE=1；
+# 落盘到 HF_HOME=/srv/knowisle/.cache/huggingface，非 root 用户可直接读取）
 RUN HF_ENDPOINT=https://hf-mirror.com python -c \
     "from sentence_transformers import SentenceTransformer; SentenceTransformer('BAAI/bge-small-zh-v1.5')"
 
 COPY . .
+
+# v1.0 安全收尾：应用以非 root 用户运行（app/worker 共用）；/srv/knowisle 整体归属 app
+RUN groupadd --system app \
+ && useradd --system --gid app --home-dir /srv/knowisle app \
+ && chown -R app:app /srv/knowisle
+USER app
 
 EXPOSE 8000
 CMD ["gunicorn", "app.main:app", "-k", "uvicorn.workers.UvicornWorker", "-w", "4", "-b", "0.0.0.0:8000"]
