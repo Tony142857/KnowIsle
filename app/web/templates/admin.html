@@ -105,7 +105,7 @@
                   <td class="py-2 pr-3 text-xs text-slate-400"
                       x-text="(c.created_at || '').slice(0, 10)"></td>
                   <td class="py-2">
-                    <div class="flex gap-2">
+                    <div class="flex flex-wrap gap-2">
                       <button x-show="c.status !== 'active'" @click="setStatus(c, 'active')" :disabled="loading"
                               class="rounded bg-sky-600 px-2 py-1 text-xs text-white hover:bg-sky-700 disabled:opacity-50">
                         审批通过
@@ -401,7 +401,7 @@
                   <td class="py-2 pr-3 text-xs text-slate-400"
                       x-text="(r.created_at || '').slice(0, 16).replace('T', ' ')"></td>
                   <td class="py-2">
-                    <div class="flex gap-2">
+                    <div class="flex flex-wrap gap-2">
                       <button x-show="r.status === 'open'" @click="handle(r, 'processing')" :disabled="loading"
                               class="rounded border border-slate-300 px-2 py-1 text-xs text-slate-600 hover:bg-slate-50 disabled:opacity-50">
                         开始处理
@@ -436,8 +436,8 @@
     </div>
 
     {# ===== 运营看板（v0.8）：指标卡组 + 近 7 天趋势折线图（ECharts，切 Tab 后才初始化） ===== #}
-    {# ECharts 5 CDN：与 base.html 三件套同风格（jsdelivr 钉版本） #}
-    <script src="https://cdn.jsdelivr.net/npm/echarts@5.6.0/dist/echarts.min.js"></script>
+    {# ECharts 5 本地化：与 base.html 其余依赖同置于 static/vendor #}
+    <script src="/static/vendor/echarts-5.6.0.min.js"></script>
     <div x-show="tab === 'dashboard'" x-cloak>
       <div class="rounded-lg border border-slate-200 bg-white p-4" x-data="adminDashboard()"
            @admin:dashboard.window="onShow()">

@@ -6,10 +6,10 @@
     <a href="/library" class="text-sm text-sky-600 hover:underline">← 返回个人知识库</a>
     <div class="mt-2 flex flex-wrap items-center gap-4">
       <h1 class="text-2xl font-bold text-slate-800">{{ course.name }} · AI 问答</h1>
-      {# 检索范围三态（§4.3：个人库 / 公共库 / 混合） #}
-      <div class="flex items-center gap-1 rounded-lg border border-slate-200 bg-white p-1 text-sm">
+      {# 检索范围三态（§4.3：个人库 / 公共库 / 混合）；窄屏横向滚动 #}
+      <div class="flex max-w-full items-center gap-1 overflow-x-auto rounded-lg border border-slate-200 bg-white p-1 text-sm">
         {% for key, label in [('personal', '个人库'), ('public', '公共库'), ('mixed', '混合')] %}
-        <label class="cursor-pointer rounded-md px-3 py-1 transition-colors"
+        <label class="shrink-0 cursor-pointer rounded-md px-3 py-1 transition-colors"
                :class="scope === '{{ key }}' ? 'bg-sky-50 text-sky-700 font-medium' : 'text-slate-500 hover:text-sky-700'">
           <input type="radio" name="scope" value="{{ key }}" x-model="scope" class="hidden">
           {{ label }}

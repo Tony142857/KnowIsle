@@ -53,11 +53,11 @@
 
 {% block content %}
 <div class="mb-6 flex flex-wrap items-center gap-3">
-  {# 板块切换 Tab（§4.2 四板块，v0.7 全部开放） #}
-  <div class="flex gap-1 rounded-lg border border-slate-200 bg-white p-1 text-sm">
+  {# 板块切换 Tab（§4.2 四板块，v0.7 全部开放）；窄屏横向滚动 #}
+  <div class="flex max-w-full gap-1 overflow-x-auto rounded-lg border border-slate-200 bg-white p-1 text-sm">
     {% for key, label in [('qa', '知屿问答'), ('discuss', '讨论区'), ('experience', '经验长廊'), ('bounty', '资料求援')] %}
     <a href="/boards/{{ key }}"
-       class="rounded-md px-4 py-1.5 transition-colors
+       class="shrink-0 rounded-md px-4 py-1.5 transition-colors
               {{ 'bg-sky-600 text-white font-medium' if board == key
                  else 'text-slate-600 hover:bg-slate-100' }}">{{ label }}</a>
     {% endfor %}

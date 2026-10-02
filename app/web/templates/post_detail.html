@@ -127,9 +127,9 @@
             class="rounded-md border px-3 py-1.5 transition-colors disabled:opacity-50">
       ▼ 点踩
     </button>
-    {# 收藏帖子（v0.6）：POST/DELETE /api/favorites（target_type=post），未登录跳 /login #}
-    <span x-data="postFav({{ post.id }}, {{ 'true' if is_favorited else 'false' }},
-                          {{ 'true' if user else 'false' }})">
+    {# 收藏帖子（v0.6）：共享组件 favBox（components.js），未登录跳 /login #}
+    <span x-data="favBox('post', {{ post.id }}, {{ 'true' if is_favorited else 'false' }},
+                         {{ 'true' if user else 'false' }})">
       <button @click="toggle()" :disabled="loading"
               :class="favorited
                 ? 'border-amber-400 bg-amber-50 text-amber-700'
@@ -137,7 +137,7 @@
               class="rounded-md border px-3 py-1.5 transition-colors disabled:opacity-50">
         <span x-text="favorited ? '★ 已收藏' : '☆ 收藏'"></span>
       </button>
-      <span x-show="favError" x-text="favError" x-cloak class="ml-2 text-xs text-red-600"></span>
+      <span x-show="error" x-text="error" x-cloak class="ml-2 text-xs text-red-600"></span>
     </span>
     {# 精华标记（v0.7）：管理员/共建者可标记经验帖，作者 +30 #}
     {% if can_feature %}
@@ -302,50 +302,7 @@
 </section>
 
 <script>
-// 收藏帖子开关（v0.6）：POST/DELETE /api/favorites（target_type=post），未登录跳 /login
-function postFav(postId, favorited, loggedIn) {
-  return {
-    favorited: favorited, loading: false, favError: '',
-    async toggle() {
-      if (!loggedIn) { window.location.href = '/login'; return; }
-      this.loading = true; this.favError = '';
-      try {
-        const resp = await fetch('/api/favorites', {
-          method: this.favorited ? 'DELETE' : 'POST',
-          headers: {'Content-Type': 'application/json'},
-          body: JSON.stringify({target_type: 'post', target_id: postId}),
-        });
-        if (resp.status !== 204) {
-          const data = await resp.json().catch(() => ({}));
-          if (!resp.ok) throw new Error(data.detail || ('操作失败 ' + resp.status));
-        }
-        this.favorited = !this.favorited;
-      } catch (e) { this.favError = e.message; }
-      finally { this.loading = false; }
-    },
-  };
-}
-
-// 帖子点赞 / 点踩（开关语义：同值取消，异值改值）
-function voteBox(targetType, targetId, score, myVote, loggedIn) {
-  return {
-    score: score, myVote: myVote, loading: false, error: '',
-    async vote(value) {
-      if (!loggedIn) { window.location.href = '/login'; return; }
-      this.loading = true; this.error = '';
-      try {
-        const resp = await fetch('/api/votes', {
-          method: 'POST', headers: {'Content-Type': 'application/json'},
-          body: JSON.stringify({target_type: targetType, target_id: targetId, value: value}),
-        });
-        const data = await resp.json().catch(() => ({}));
-        if (!resp.ok) throw new Error(data.detail || ('操作失败 ' + resp.status));
-        this.score = data.score; this.myVote = data.my_vote;
-      } catch (e) { this.error = e.message; }
-      finally { this.loading = false; }
-    },
-  };
-}
+{# voteBox / favBox 已迁移至 /static/js/components.js（Alpine.data 全局注册，行为等价） #}
 
 // 单条评论：点赞 + 楼内回复 + 采纳
 function commentBox(commentId, score, myVote, loggedIn, canAccept) {

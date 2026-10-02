@@ -39,7 +39,7 @@
     </span>
     {% endif %}
     <span class="text-xs text-slate-400">{{ item.documents|length }} 份资料</span>
-    <div class="ml-auto flex items-center gap-3 text-sm">
+    <div class="ml-auto flex flex-wrap items-center gap-3 text-sm">
       <a href="/library/chat?course_id={{ c.id }}" class="text-sky-600 hover:underline">AI 问答</a>
       <a href="/library/review?course_id={{ c.id }}" class="text-sky-600 hover:underline">复习工具</a>
       <button @click="chapterFormFor = chapterFormFor === {{ c.id }} ? null : {{ c.id }}; chapterTitle = ''"
@@ -93,7 +93,7 @@
   <ul class="mt-3 divide-y divide-slate-100">
     {% for d in item.documents %}
     {% set res = resource_map.get(d.id) %}
-    <li class="flex items-center gap-3 py-2 text-sm">
+    <li class="flex flex-wrap items-center gap-x-3 gap-y-1 py-2 text-sm">
       <span class="min-w-0 flex-1 truncate text-slate-700" title="{{ d.file_name }}">{{ d.file_name }}</span>
       <span class="shrink-0 text-xs text-slate-400">{{ type_labels.get(d.file_type, d.file_type) }}</span>
       {{ status_badge(d.status) }}
@@ -111,7 +111,7 @@
     </li>
     {% endfor %}
     <template x-for="d in (pending[{{ c.id }}] || [])" :key="d.id">
-      <li class="flex items-center gap-3 py-2 text-sm">
+      <li class="flex flex-wrap items-center gap-x-3 gap-y-1 py-2 text-sm">
         <span class="min-w-0 flex-1 truncate text-slate-700" x-text="d.file_name"></span>
         <span class="shrink-0 rounded px-2 py-0.5 text-xs"
               :class="d.status === 'parsed' ? 'bg-emerald-50 text-emerald-700'
@@ -126,7 +126,7 @@
   {% else %}
   <ul class="mt-3">
     <template x-for="d in (pending[{{ c.id }}] || [])" :key="d.id">
-      <li class="flex items-center gap-3 py-2 text-sm">
+      <li class="flex flex-wrap items-center gap-x-3 gap-y-1 py-2 text-sm">
         <span class="min-w-0 flex-1 truncate text-slate-700" x-text="d.file_name"></span>
         <span class="shrink-0 rounded px-2 py-0.5 text-xs"
               :class="d.status === 'parsed' ? 'bg-emerald-50 text-emerald-700'

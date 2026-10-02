@@ -11,14 +11,14 @@
     <div class="flex flex-wrap items-center gap-2">
       <input type="search" name="q" value="{{ q }}" required
              placeholder="搜索帖子标题 / 正文、资料标题…"
-             class="min-w-0 flex-1 rounded border border-slate-300 px-3 py-2 text-sm">
-      <select name="type" class="rounded border border-slate-300 px-3 py-2 text-sm">
+             class="min-w-0 w-full flex-1 rounded border border-slate-300 px-3 py-2 text-sm sm:w-auto">
+      <select name="type" class="flex-1 rounded border border-slate-300 px-3 py-2 text-sm sm:flex-none">
         <option value="all" {{ 'selected' if search_type == 'all' }}>全部</option>
         <option value="post" {{ 'selected' if search_type == 'post' }}>帖子</option>
         <option value="resource" {{ 'selected' if search_type == 'resource' }}>资源</option>
       </select>
       {# 板块过滤仅对帖子结果生效（§4.2 四板块） #}
-      <select name="board" class="rounded border border-slate-300 px-3 py-2 text-sm">
+      <select name="board" class="flex-1 rounded border border-slate-300 px-3 py-2 text-sm sm:flex-none">
         <option value="">全部板块</option>
         {% for key, (label, _) in boards.items() %}
         <option value="{{ key }}" {{ 'selected' if board == key }}>{{ label }}</option>
@@ -27,9 +27,9 @@
       <input type="number" name="course_id" min="1"
              value="{{ course_id if course_id is not none else '' }}"
              placeholder="课程 ID（选填）"
-             class="w-32 rounded border border-slate-300 px-3 py-2 text-sm">
+             class="w-full rounded border border-slate-300 px-3 py-2 text-sm sm:w-32">
       <button type="submit"
-              class="rounded bg-sky-600 px-4 py-2 text-sm text-white hover:bg-sky-700">搜索</button>
+              class="w-full rounded bg-sky-600 px-4 py-2 text-sm text-white hover:bg-sky-700 sm:w-auto">搜索</button>
     </div>
     <p class="mt-2 text-xs text-slate-400">板块过滤仅对帖子结果生效；资源按课程 ID 过滤。</p>
   </form>

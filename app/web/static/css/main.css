@@ -1,7 +1,48 @@
 /* 知屿自定义样式（Tailwind 原子类之外的少量补充）。
-   TODO(v0.9 前端): 改用 Tailwind CLI 本地构建产物，替换 CDN。 */
+   TODO(v0.9 前端): 改用 Tailwind CLI 本地构建产物，替换 Play 脚本的运行时编译。 */
+
+/* 系统字体栈：优先各平台中文渲染效果最好的系统字体 */
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+    "Hiragino Sans GB", "Microsoft YaHei", "Helvetica Neue", Arial, sans-serif;
+}
 
 /* Alpine.js x-cloak：初始化完成前隐藏，避免闪烁 */
 [x-cloak] {
   display: none !important;
+}
+
+/* 键盘导航焦点环：主色 sky-600，鼠标点击不触发 */
+:focus-visible {
+  outline: 2px solid #0284c7;
+  outline-offset: 2px;
+}
+
+/* 细滚动条美化（WebKit + Firefox） */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #cbd5e1 transparent;
+}
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+
+/* 打印：隐藏导航 / 提示条 / 页脚，仅输出正文 */
+@media print {
+  header,
+  footer,
+  #flash {
+    display: none !important;
+  }
 }

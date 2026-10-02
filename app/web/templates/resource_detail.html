@@ -81,8 +81,10 @@
               class="mt-2 block w-full rounded border border-sky-600 py-2 text-center text-sm text-sky-700 hover:bg-sky-50">
         克隆到个人库
       </button>
-      {# 收藏开关（v0.6）：POST/DELETE /api/favorites，同步刷新收藏数 #}
-      <div x-data="favBox({{ resource.id }}, {{ 'true' if is_favorited else 'false' }})">
+      {# 收藏开关（v0.6）：共享组件 favBox（components.js），同步刷新收藏数 #}
+      <div x-data="favBox('resource', {{ resource.id }},
+                          {{ 'true' if is_favorited else 'false' }},
+                          {{ 'true' if user else 'false' }}, 'fav-count')">
         <button @click="toggle()" :disabled="loading"
                 :class="favorited
                   ? 'border-amber-400 bg-amber-50 text-amber-700'
@@ -165,30 +167,7 @@
 </div>
 
 <script>
-// 收藏开关（v0.6）：POST/DELETE /api/favorites（target_type=resource），同步刷新侧栏收藏数
-function favBox(resourceId, favorited) {
-  return {
-    favorited: favorited, loading: false, error: '',
-    async toggle() {
-      this.loading = true; this.error = '';
-      try {
-        const resp = await fetch('/api/favorites', {
-          method: this.favorited ? 'DELETE' : 'POST',
-          headers: {'Content-Type': 'application/json'},
-          body: JSON.stringify({target_type: 'resource', target_id: resourceId}),
-        });
-        if (resp.status !== 204) {
-          const data = await resp.json().catch(() => ({}));
-          if (!resp.ok) throw new Error(data.detail || ('操作失败 ' + resp.status));
-        }
-        this.favorited = !this.favorited;
-        const el = document.getElementById('fav-count');
-        if (el) el.textContent = Math.max(0, parseInt(el.textContent, 10) + (this.favorited ? 1 : -1));
-      } catch (e) { this.error = e.message; }
-      finally { this.loading = false; }
-    },
-  };
-}
+{# favBox 已迁移至 /static/js/components.js（Alpine.data 全局注册，行为等价） #}
 
 // 克隆到个人库：modal 打开时懒加载本人个人课程列表
 function cloneBox(resourceId) {
