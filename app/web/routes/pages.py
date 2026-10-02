@@ -90,8 +90,45 @@ def _login_redirect(user: User | None) -> RedirectResponse | None:
 
 
 @router.get("/")
-async def index(request: Request, user: Annotated[User | None, Depends(get_current_user_optional)]):
-    return templates.TemplateResponse(request, "index.html", _ctx(user, active=""))
+async def index(
+    request: Request,
+    user: Annotated[User | None, Depends(get_current_user_optional)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    """首页（§13）：Hero + 板块导览 + 平台数据概览（SSR 注入）+ 动态流骨架
+    （登录/匿名两态均由客户端 fetch /api/feed 渲染）。
+    平台统计查询失败（如 DB 不可用）时降级为不展示统计行，页面其余照常渲染。"""
+    stats = None
+    try:
+        stats = {
+            "courses": (
+                await db.execute(
+                    select(func.count()).select_from(Course).where(
+                        Course.scope == "public", Course.status == "active"
+                    )
+                )
+            ).scalar_one(),
+            "resources": (
+                await db.execute(
+                    select(func.count()).select_from(Resource).where(
+                        Resource.review_status == "approved"
+                    )
+                )
+            ).scalar_one(),
+            "posts": (
+                await db.execute(
+                    select(func.count()).select_from(Post).where(
+                        Post.status.in_(["normal", "featured"])
+                    )
+                )
+            ).scalar_one(),
+        }
+    except Exception:
+        # DB 不可用（如 CI 冒烟环境）：降级为不展示统计行（与板块列表降级惯例一致）
+        logger.warning("首页平台统计查询失败，降级为不展示统计", exc_info=True)
+    return templates.TemplateResponse(
+        request, "index.html", _ctx(user, active="", stats=stats)
+    )
 
 
 @router.get("/login")

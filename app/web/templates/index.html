@@ -1,32 +1,183 @@
 {% extends "base.html" %}
 {% block title %}首页 · 知屿 KnowIsle{% endblock %}
 {% block content %}
-<div class="text-center py-14">
+{# ===== Hero：项目标语 + 主 CTA（按登录态分路）+ 平台数据概览（SSR 注入，可降级） ===== #}
+<section class="rounded-xl border border-slate-200 bg-gradient-to-br from-sky-50 to-white px-6 py-14 text-center">
   <h1 class="text-3xl font-bold text-slate-800">每门课程是一座知识岛屿</h1>
-  <p class="mt-3 text-slate-500">学生社区驱动 · 结构化 RAG-AI 学习引擎</p>
-</div>
-
-{# 功能板块总览（§4.2），卡片链接到各板块（未就绪的进入占位页） #}
-<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-  {% set cards = [
-    ('课程空间', '/majors', '专业 → 课程 → 资料库 + AI 问答 + 讨论 + 贡献榜', 'v0.2'),
-    ('个人知识库', '/library', '私有资料上传 → 结构化 → 问答 / 溯源 / 大纲 / 习题', 'v0.3'),
-    ('知屿问答', '/boards/qa', '提问 → AI 基于公共库先答 → 学生补充 → 采纳沉淀', 'v0.5'),
-    ('经验长廊', '/boards/experience', '保研 / 竞赛 / 实习 / 选课 / 转专业经验沉淀', 'v0.7'),
-    ('资料求援', '/boards/bounty', '悬赏贡献分求资料，响应者上传获赏金', 'v0.7'),
-    ('个人中心', '/me', '成长看板 / 收藏关注 / 通知 / AI 额度与 Key 配置', 'v0.6'),
-  ] %}
-  {% for name, href, desc, version in cards %}
-  <a href="{{ href }}"
-     class="block rounded-lg border border-slate-200 bg-white p-5 hover:border-sky-300 hover:shadow-sm transition">
-    <div class="flex items-center justify-between">
-      <h2 class="font-semibold text-slate-700">{{ name }}</h2>
-      <span class="text-xs text-slate-400">{{ version }}</span>
+  <p class="mt-3 text-slate-500">学生社区驱动 · 结构化 RAG-AI 学习引擎 —— 让资料、问答与经验沉淀为可检索的知识</p>
+  <div class="mt-8 flex items-center justify-center gap-3">
+    {% if user %}
+    <a href="/library"
+       class="rounded-md bg-sky-600 px-5 py-2.5 text-sm font-medium text-white hover:bg-sky-700">进入个人知识库</a>
+    <a href="/majors"
+       class="rounded-md border border-slate-300 bg-white px-5 py-2.5 text-sm text-slate-600 hover:border-sky-300 hover:text-sky-700">逛逛课程空间</a>
+    {% else %}
+    <a href="/login"
+       class="rounded-md bg-sky-600 px-5 py-2.5 text-sm font-medium text-white hover:bg-sky-700">登录，开始沉淀</a>
+    <a href="#boards"
+       class="rounded-md border border-slate-300 bg-white px-5 py-2.5 text-sm text-slate-600 hover:border-sky-300 hover:text-sky-700">了解平台</a>
+    {% endif %}
+  </div>
+  {% if stats %}
+  <div class="mt-10 flex items-center justify-center gap-10">
+    {% for value, label in [(stats.courses, '门公共课程'), (stats.resources, '份上架资料'), (stats.posts, '篇社区帖子')] %}
+    <div>
+      <p class="text-2xl font-bold text-sky-700">{{ value }}</p>
+      <p class="mt-1 text-xs text-slate-400">{{ label }}</p>
     </div>
-    <p class="mt-2 text-sm text-slate-500">{{ desc }}</p>
-  </a>
-  {% endfor %}
-</div>
+    {% endfor %}
+  </div>
+  {% endif %}
+</section>
 
-{# TODO(v0.9): 登录后展示动态流（关注课程的新资料/热帖）；搜索框已在导航栏落地（v0.8） #}
+{# ===== 板块导览（§4.2）：功能描述导向，图标为内联 SVG 简笔画 ===== #}
+<section id="boards" class="mt-12 scroll-mt-20">
+  <h2 class="text-lg font-semibold text-slate-800">板块导览</h2>
+  <p class="mt-1 text-sm text-slate-400">从资料到问答再到经验，一条完整的学习沉淀链路。</p>
+  <div class="mt-5 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+    {% set cards = [
+      ('课程空间', '/majors',
+       '按专业组织课程空间：结构化资料库、AI 问答溯源与课程讨论一站直达。',
+       '<path stroke-linecap="round" stroke-linejoin="round" d="M12 3 2 8l10 5 10-5-10-5z"/><path stroke-linecap="round" stroke-linejoin="round" d="M6 10.5V15c0 1.7 2.7 3 6 3s6-1.3 6-3v-4.5"/>'),
+      ('个人知识库', '/library',
+       '上传私有资料，自动结构化解析，支持问答、原文溯源、大纲与习题生成。',
+       '<path stroke-linecap="round" stroke-linejoin="round" d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z"/>'),
+      ('知屿问答', '/boards/qa',
+       '提问先由 AI 基于公共库作答并给出引用，同学补充，最佳答案被采纳沉淀。',
+       '<path stroke-linecap="round" stroke-linejoin="round" d="M22 12A10 10 0 1 1 12 2a10 10 0 0 1 10 10z"/><path stroke-linecap="round" stroke-linejoin="round" d="M9.1 9a3 3 0 0 1 5.8 1c0 2-3 3-3 3"/><path stroke-linecap="round" d="M12 17h.01"/>'),
+      ('经验长廊', '/boards/experience',
+       '保研、竞赛、实习、选课、转专业——前辈经验结构化沉淀，AI 自动生成摘要。',
+       '<path stroke-linecap="round" stroke-linejoin="round" d="M9 20l-5-2V6l5 2 6-2 5 2v12l-5-2-6 2z"/><path stroke-linecap="round" stroke-linejoin="round" d="M9 8v12M15 6v12"/>'),
+      ('资料求援', '/boards/bounty',
+       '悬赏贡献分求资料，响应者上传并通过审核后获得赏金，各取所需。',
+       '<path stroke-linecap="round" stroke-linejoin="round" d="M20 12v8H4v-8M2 7h20v5H2zM12 7v13"/><path stroke-linecap="round" stroke-linejoin="round" d="M12 7c-1.6 0-4-.6-4-2.7S10.6 2 12 7zM12 7c1.6 0 4-.6 4-2.7S13.4 2 12 7z"/>'),
+      ('个人中心', '/me',
+       '成长看板、收藏与关注、站内通知、AI 额度与自定义模型 Key 配置。',
+       '<path stroke-linecap="round" stroke-linejoin="round" d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><path stroke-linecap="round" stroke-linejoin="round" d="M16 7a4 4 0 1 1-8 0 4 4 0 0 1 8 0z"/>'),
+    ] %}
+    {% for name, href, desc, icon in cards %}
+    <a href="{{ href }}"
+       class="group block rounded-lg border border-slate-200 bg-white p-5 transition hover:border-sky-300 hover:shadow-sm">
+      <div class="flex items-center gap-3">
+        <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-sky-50 text-sky-600 transition group-hover:bg-sky-100">
+          <svg class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="1.8"
+               viewBox="0 0 24 24" aria-hidden="true">{{ icon|safe }}</svg>
+        </span>
+        <h3 class="font-semibold text-slate-700 transition group-hover:text-sky-700">{{ name }}</h3>
+      </div>
+      <p class="mt-3 text-sm leading-relaxed text-slate-500">{{ desc }}</p>
+    </a>
+    {% endfor %}
+  </div>
+</section>
+
+{# ===== 动态流（§13）：登录态「我的动态 + 社区热帖」双栏；匿名「热帖 + 登录引导卡」 ===== #}
+<section id="feed" class="mt-12" x-data="homeFeed()" x-init="init()">
+  <div class="grid grid-cols-1 gap-6 lg:grid-cols-2">
+    <p x-show="loading" x-cloak class="py-10 text-center text-sm text-slate-400 lg:col-span-2">动态加载中…</p>
+    <div x-show="error" x-cloak
+         class="rounded-lg bg-red-50 px-4 py-3 text-sm text-red-600 lg:col-span-2">
+      <span x-text="error"></span>
+      <button @click="init()" class="ml-2 underline hover:text-red-700">重试</button>
+    </div>
+
+    {% if user %}
+    {# 我的动态：关注课程的新上架资料 #}
+    <div x-show="!loading && !error" x-cloak
+         class="rounded-lg border border-slate-200 bg-white p-5">
+      <div class="flex items-center justify-between">
+        <h2 class="font-semibold text-slate-700">我的动态</h2>
+        <a href="/me" class="text-xs text-slate-400 hover:text-sky-700">我的关注 →</a>
+      </div>
+      <ul x-show="newResources.length" class="mt-4 divide-y divide-slate-100">
+        <template x-for="r in newResources" :key="r.id">
+          <li class="py-3 first:pt-0 last:pb-0">
+            <a :href="r.url" class="block text-sm font-medium text-slate-700 hover:text-sky-700"
+               x-text="r.title"></a>
+            <p class="mt-1 text-xs text-slate-400">
+              <a :href="'/courses/' + r.course_id" class="text-sky-600 hover:text-sky-700"
+                 x-text="r.course_name"></a>
+              <span class="mx-1">·</span><span x-text="fmt(r.created_at)"></span>
+            </p>
+          </li>
+        </template>
+      </ul>
+      <div x-show="!newResources.length" x-cloak
+           class="mt-4 rounded-md border border-dashed border-slate-300 py-8 text-center">
+        <p class="text-sm text-slate-500">关注的课程还没有新资料</p>
+        <a href="/majors" class="mt-2 inline-block text-sm text-sky-600 hover:text-sky-700">去课程空间逛逛 →</a>
+      </div>
+    </div>
+    {% endif %}
+
+    {# 社区热帖：登录/匿名共用 #}
+    <div x-show="!loading && !error" x-cloak
+         class="rounded-lg border border-slate-200 bg-white p-5">
+      <div class="flex items-center justify-between">
+        <h2 class="font-semibold text-slate-700">社区热帖</h2>
+        <span class="text-xs text-slate-400">近 7 天</span>
+      </div>
+      <ul x-show="hotPosts.length" class="mt-4 divide-y divide-slate-100">
+        <template x-for="p in hotPosts" :key="p.id">
+          <li class="py-3 first:pt-0 last:pb-0">
+            <div class="flex items-center gap-2">
+              <span class="shrink-0 rounded bg-sky-50 px-2 py-0.5 text-xs text-sky-700"
+                    x-text="p.board_name"></span>
+              <a :href="p.url" class="min-w-0 truncate text-sm font-medium text-slate-700 hover:text-sky-700"
+                 x-text="p.title"></a>
+            </div>
+            <p class="mt-1 flex items-center gap-3 text-xs text-slate-400">
+              <span class="text-emerald-600" x-text="'▲ ' + p.score"></span>
+              <span x-text="p.comment_count + ' 评论'"></span>
+              <span x-text="fmt(p.created_at)"></span>
+            </p>
+          </li>
+        </template>
+      </ul>
+      <div x-show="!hotPosts.length" x-cloak
+           class="mt-4 rounded-md border border-dashed border-slate-300 py-8 text-center">
+        <p class="text-sm text-slate-500">最近一周还没有热帖</p>
+        {% if user %}
+        <a href="/posts/new" class="mt-2 inline-block text-sm text-sky-600 hover:text-sky-700">来发第一帖 →</a>
+        {% else %}
+        <a href="/boards/qa" class="mt-2 inline-block text-sm text-sky-600 hover:text-sky-700">去板块逛逛 →</a>
+        {% endif %}
+      </div>
+    </div>
+
+    {% if not user %}
+    {# 匿名登录引导卡（静态 SSR，不依赖接口） #}
+    <div class="flex flex-col justify-center rounded-lg border border-sky-100 bg-sky-50 p-5">
+      <h2 class="font-semibold text-slate-700">登录后解锁你的专属动态</h2>
+      <p class="mt-2 text-sm leading-relaxed text-slate-500">
+        关注课程后，新上架的资料会第一时间出现在「我的动态」；
+        还能使用个人知识库、AI 问答溯源与发帖互动。
+      </p>
+      <a href="/login"
+         class="mt-4 w-fit rounded-md bg-sky-600 px-4 py-2 text-sm font-medium text-white hover:bg-sky-700">立即登录</a>
+    </div>
+    {% endif %}
+  </div>
+</section>
+
+<script>
+// 首页动态流（§13）：GET /api/feed → {new_resources: [...], hot_posts: [...]}
+// 匿名调用同样返回 200（new_resources 恒为空），两种登录态共用一条加载路径
+function homeFeed() {
+  return {
+    loading: true, error: '',
+    newResources: [], hotPosts: [],
+    fmt(iso) { return (iso || '').slice(0, 10); },
+    async init() {
+      this.loading = true; this.error = '';
+      try {
+        const data = await ZY.api.get('/api/feed');
+        this.newResources = data.new_resources || [];
+        this.hotPosts = data.hot_posts || [];
+      } catch (e) { this.error = e.message || '动态加载失败'; }
+      finally { this.loading = false; }
+    },
+  };
+}
+</script>
 {% endblock %}

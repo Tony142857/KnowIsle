@@ -66,6 +66,43 @@ def test_unknown_single_segment_is_404():
 
 
 # ---------------------------------------------------------------------------
+# 首页（v0.9 改版：Hero + 平台统计 + 动态流骨架）
+# ---------------------------------------------------------------------------
+
+
+def test_index_page_renders_stats_and_feed_skeleton():
+    # 登录态：平台统计 SSR 注入 + 「我的动态 / 社区热帖」双栏骨架
+    session = FakeSession(results=[
+        FakeResult(scalar=12),  # 公共课程数
+        FakeResult(scalar=34),  # 上架资源数
+        FakeResult(scalar=56),  # 帖子数
+    ])
+    with http_client(session, USER) as client:
+        resp = client.get("/")
+    assert resp.status_code == 200
+    assert "我的动态" in resp.text and "社区热帖" in resp.text
+    assert "/api/feed" in resp.text
+    assert "v0." not in resp.text  # 版本角标属开发痕迹，首页不再外露
+    # 匿名态：无「我的动态」，渲染登录引导卡
+    session = FakeSession(results=[
+        FakeResult(scalar=1), FakeResult(scalar=2), FakeResult(scalar=3),
+    ])
+    with http_client(session) as client:
+        resp = client.get("/")
+    assert resp.status_code == 200
+    assert ">我的动态</h2>" not in resp.text  # 登录引导卡文案提及该词，故锚定面板标题
+    assert "登录后解锁你的专属动态" in resp.text
+
+
+def test_index_page_db_failure_degrades_stats():
+    # DB 不可用：统计行降级为不展示，页面其余照常渲染（与板块列表降级惯例一致）
+    with http_client(FakeSession(boom=True)) as client:
+        resp = client.get("/")
+    assert resp.status_code == 200
+    assert "每门课程是一座知识岛屿" in resp.text
+
+
+# ---------------------------------------------------------------------------
 # 课程空间板块
 # ---------------------------------------------------------------------------
 
