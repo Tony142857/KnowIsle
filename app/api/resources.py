@@ -14,7 +14,7 @@ from urllib.parse import quote
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
-from sqlalchemy import func, select
+from sqlalchemy import any_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.embeddings import get_embedding
@@ -191,7 +191,7 @@ async def preview_resource(
                 .where(
                     ReviewTask.resource_id == resource.id,
                     ReviewTask.stage.in_(["co_review", "final"]),
-                    ReviewTask.assignee_ids.any(user.id),
+                    user.id == any_(ReviewTask.assignee_ids),
                 )
                 .limit(1)
             )

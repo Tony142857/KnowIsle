@@ -18,7 +18,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import RedirectResponse
 from fastapi.templating import Jinja2Templates
-from sqlalchemy import func, select
+from sqlalchemy import any_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.community.experience import can_feature
@@ -496,7 +496,7 @@ async def review_workbench(
             .join(Course, Course.id == Resource.course_id)
             .where(
                 ReviewTask.stage == "co_review",
-                ReviewTask.assignee_ids.any(user.id),
+                user.id == any_(ReviewTask.assignee_ids),
             )
             .order_by(ReviewTask.created_at)
         )

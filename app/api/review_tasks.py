@@ -4,7 +4,7 @@ from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
-from sqlalchemy import select
+from sqlalchemy import any_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.identity.rbac import require_reviewer
@@ -35,7 +35,7 @@ async def list_co_tasks(
             .join(Course, Course.id == Resource.course_id)
             .where(
                 ReviewTask.stage == "co_review",
-                ReviewTask.assignee_ids.any(user.id),
+                user.id == any_(ReviewTask.assignee_ids),
             )
             .order_by(ReviewTask.created_at)
         )
