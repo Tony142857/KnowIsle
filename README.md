@@ -1,14 +1,15 @@
 # 知屿 KnowIsle · 智能课程知识社区
 
 > 以学生社区为驱动、以结构化 RAG-AI 为学习引擎的大学课程知识平台。
-> 详细设计见《知屿-智能课程知识社区-项目文档.md》（v3.4.0）。
+> 详细设计见《知屿-智能课程知识社区-项目文档.md》（v3.5.0）。
 > 进度跟踪见 [docs/开发进度与目标.md](docs/开发进度与目标.md)（每迭代更新）。
 
 技术栈：FastAPI + Jinja2/HTMX/Tailwind · PostgreSQL 16 · Redis 7 · SeaweedFS（S3） · Chroma · ARQ · Docker Compose
 
 ## 当前状态
 
-**v0.9 已完成**（2026-10-01）：测试加固（pytest-cov 入工具链，测试 189→469 例全绿；核心模块检索/审核/积分行覆盖率 100%，整体 43%→83%，超额达成 §18.1「核心 ≥80%、整体 ≥60%」）✅ · 安全审计（SECRET_KEY 弱默认值拒绝启动、验证码回显默认关闭 + 日志脱敏 + 连续 5 次错码作废 + 发码 IP 限流、自定义 Key base_url SSRF 防护、Session Cookie Secure 配置项、JWT TTL 默认收紧 7 天→2 小时、兑换/下载积分加行锁、ILIKE 通配符转义、nginx 安全响应头 + /api/auth 与 /api/chat 限流）✅ · 性能优化（第 6 个迁移 e5f2b8c41d09 补 8 个索引、BM25 索引按课程缓存 + 打分卸载事件循环、platform_config 30s TTL 缓存、Chroma 集合 ID 缓存 + 连接复用、预览/下载改真流式 StreamingResponse、帖子列表聚合限定本页、会话续期 GETEX 单往返）✅ · 桌面客户端打包资产就绪（PyInstaller spec + NSIS 完整脚本 + 打包文档，实际打包留 v1.0）
+**v0.9 交付完善**（2026-10-02）：复习工具落地（`POST /api/review/outline` 复习大纲 + `POST /api/review/quiz` 考点习题，复用问答双通道/额度/落库口径，新页面 `/library/review`；期末串讲留二期）· 章节树 AI 校验落地（解析后附加层，结论写 worker 日志、异常降级不阻塞主流程）· 协审口径修正（多数决只计当前有效指派人、预览授权收紧 co_review 单阶段）· seed_demo.py 演示种子脚本（4 演示账号 + 3 门公共课程章节树，幂等 + --reset 保护）· 前端体系化改版（CDN 全部本地化钉版本断网可演示、Markdown 渲染统一 + DOMPurify 白名单、移动端汉堡导航与响应式补齐、首页改版 + GET /api/feed）· 合规修复（悬挂 tag 重打、SQLAlchemy `.any()`→`any_()`、死代码/死依赖清理），测试 469→503 例全绿，镜像 knowisle-app:0.9.1
+（此前 v0.9，2026-10-01）：测试加固（pytest-cov 入工具链，测试 189→469 例全绿；核心模块检索/审核/积分行覆盖率 100%，整体 43%→83%，超额达成 §18.1「核心 ≥80%、整体 ≥60%」）✅ · 安全审计（SECRET_KEY 弱默认值拒绝启动、验证码回显默认关闭 + 日志脱敏 + 连续 5 次错码作废 + 发码 IP 限流、自定义 Key base_url SSRF 防护、Session Cookie Secure 配置项、JWT TTL 默认收紧 7 天→2 小时、兑换/下载积分加行锁、ILIKE 通配符转义、nginx 安全响应头 + /api/auth 与 /api/chat 限流）✅ · 性能优化（第 6 个迁移 e5f2b8c41d09 补 8 个索引、BM25 索引按课程缓存 + 打分卸载事件循环、platform_config 30s TTL 缓存、Chroma 集合 ID 缓存 + 连接复用、预览/下载改真流式 StreamingResponse、帖子列表聚合限定本页、会话续期 GETEX 单往返）✅ · 桌面客户端打包资产就绪（PyInstaller spec + NSIS 完整脚本 + 打包文档，实际打包留 v1.0）
 （此前 v0.8：全站搜索（帖子/资源 ILIKE、标题命中优先于正文再按时间排序、板块/课程/专业过滤、/search 页 + 导航搜索框）· 信用阶梯处罚自动执行（<80 行为冷却 429 含剩余秒数 / <60 禁言 403 含截止时间 / <40 冻结 401，回升自动解除 + 禁言到期惰性解除，users.muted_until 新列迁移 d1e5f7a29c03）· 举报处理（四类目标幂等举报 + 管理端 open→processing→resolved/dismissed 状态机 + report_result 通知 + report_handle 审计）· 运营看板（/api/admin/dashboard 四分组 + ECharts 7 天趋势））
 （此前 v0.7：经验长廊（结构化模板发帖 + AI 摘要异步生成、标签云/届别过滤/精华区、精华标记作者 +30 每帖一次）· 资料求援（悬赏托管/评论响应/采纳结算，禁自采纳与结算后改采）· 四板块全部开放、posts.ai_summary 新列 · 检查加固：采纳/精华/悬赏三处读-判-写加行锁封堵并发透支与重复结算）
 （此前 v0.6：收藏/关注（资源/帖子收藏含 fav_count 同步、课程/用户关注，幂等开关语义）· 订阅类通知（终审上架自动通知课程关注者 new_resource）· 管理后台完整版 `/admin`（用户治理：角色任命/信用裁决限幅 0~100 + credit_logs 留痕；空间管理：专业导入/课程审批停用；平台配置：新增第 26 表 platform_config，AI 日额度/兑换汇率/协审时限在线调整 + 审计）· 个人中心新增「我的收藏/我的关注」卡片、课程页关注按钮、资源/帖子页收藏按钮）
@@ -38,6 +39,9 @@ curl http://localhost:8080/healthz        # {"status":"ok"}
 docker compose -f deploy/docker-compose.yml exec app python scripts/create_admin.py \
   --student-no 20230001 --nickname 管理员 --email admin@stu.example.edu.cn
 docker compose -f deploy/docker-compose.yml exec app python scripts/init_majors.py scripts/majors.example.csv
+
+# 4.5 灌演示数据（可选，v0.9 交付完善起）：4 演示账号 + 3 门公共课程章节树，幂等可重复执行
+docker compose -f deploy/docker-compose.yml exec app python scripts/seed_demo.py
 
 # 5. 登录：浏览器打开 http://localhost:8080/login ，输入学号 + 上一步绑定的邮箱；
 #    开发期为假通道，验证码直接显示在页面上（EMAIL_CODE_ECHO=true），也可在
@@ -96,7 +100,8 @@ tests/          pytest（unit / integration / e2e）
 - Commit 规范：Conventional Commits（`feat:` / `fix:` / `refactor:` / `test:` / `docs:`）
 - 本地检查：`pip install -r requirements-dev.txt && ruff check app tests scripts && pytest -q`
 - 依赖分层：`requirements.txt` 为应用与 CI 共用；`requirements-ml.txt`（torch CPU + sentence-transformers）仅由 Dockerfile 装入镜像，应用代码对其一律惰性导入
-- 镜像版本全部钉死：自建镜像按版本号命名（`knowisle-app:0.9.0`，发版时手动递增，禁止 latest）；五个第三方镜像与 Dockerfile 基础镜像均以 `@sha256` digest 固定，团队构建逐字节一致
+- 镜像版本全部钉死：自建镜像按版本号命名（`knowisle-app:0.9.1`，发版时手动递增，禁止 latest）；五个第三方镜像与 Dockerfile 基础镜像均以 `@sha256` digest 固定，团队构建逐字节一致
+- 前端 CDN 依赖全部本地化到 `app/web/static/vendor/`（tailwind/htmx/alpine/echarts/marked/purify 六库钉版本，断网环境可完整演示）
 - Embedding 模型 bge-small-zh-v1.5 在镜像构建时预下载（经 hf-mirror），运行时 `HF_HUB_OFFLINE=1` 离线加载
 - 数据库迁移：`alembic revision --autogenerate -m "..."`，迁移随 app 容器启动自动执行
 
