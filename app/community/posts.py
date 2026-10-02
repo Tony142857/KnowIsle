@@ -55,8 +55,13 @@ def validate_tags(tags: list[str] | None) -> list[str]:
 
 
 def make_excerpt(content: str) -> str:
-    """列表摘要（纯函数）：正文前 120 字。"""
-    return content[:EXCERPT_LENGTH]
+    """列表摘要（纯函数）：剥离 Markdown 标记后取前 120 字（v1.0：经验帖四节模板
+    的 `## 小节` 标记不再出现在板块列表摘要里）。"""
+    text = re.sub(r"^#{1,6}\s*", "", content, flags=re.MULTILINE)  # 标题标记
+    text = re.sub(r"[*_`>#]", "", text)  # 强调/代码/引用/残留井号
+    text = re.sub(r"\[([^\]]*)\]\([^)]*\)", r"\1", text)  # 链接保留文字
+    text = re.sub(r"\s+", " ", text).strip()
+    return text[:EXCERPT_LENGTH]
 
 
 def derive_ai_answer_status(

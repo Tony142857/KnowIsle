@@ -76,6 +76,15 @@ def test_make_excerpt():
     assert len(make_excerpt("字" * 200)) == 120
 
 
+def test_make_excerpt_strips_markdown():
+    """v1.0：列表摘要剥离 Markdown 标记（经验帖四节模板的 ## 不再外露）。"""
+    md = "## 背景\n2023 级**计算机**专业，排名 9/102。\n## 时间线\n大三上稳住 GPA。"
+    excerpt = make_excerpt(md)
+    assert "##" not in excerpt and "**" not in excerpt
+    assert excerpt.startswith("背景 2023 级计算机专业")
+    assert make_excerpt("参见[文档](https://example.com)第 3 节") == "参见文档第 3 节"
+
+
 def test_ai_answer_key():
     assert ai_answer_key(42) == "knowisle:ai_answer:42"
 
