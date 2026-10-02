@@ -8,24 +8,33 @@
   <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
   {# 前端依赖已全部本地化到 static/vendor（断网可演示） #}
   <script src="/static/vendor/tailwind-3.4.16.js"></script>
+  {# 设计令牌（v1.0 设计体系统一）：须在 tailwind Play CDN 之后、页面渲染前 #}
+  <script src="/static/js/tailwind-config.js"></script>
   <script src="/static/vendor/htmx-1.9.12.min.js"></script>
   {# api.js / components.js 须在 Alpine 之前加载（components 经 alpine:init 注册全局组件） #}
   <script defer src="/static/js/api.js"></script>
   <script defer src="/static/js/components.js"></script>
-  {# Markdown 渲染三件套（体积小全站引入）：marked 解析 + DOMPurify 消毒 + ZY.md 封装 #}
+  {# Markdown 渲染 + 代码高亮：marked 解析 + DOMPurify 消毒 + highlight.js（v1.0）+ ZY.md 封装 #}
   <script defer src="/static/vendor/marked-12.0.2.min.js"></script>
   <script defer src="/static/vendor/purify-3.1.6.min.js"></script>
+  <script defer src="/static/vendor/highlight-11.9.0.min.js"></script>
+  <link rel="stylesheet" href="/static/vendor/highlight-github-11.9.0.min.css">
   <script defer src="/static/js/markdown.js"></script>
+  <script defer src="/static/js/base.js"></script>
   <script defer src="/static/vendor/alpine-3.14.1.min.js"></script>
   <link rel="stylesheet" href="/static/css/main.css">
   {% block head %}{% endblock %}
 </head>
 <body class="bg-slate-50 text-slate-800 min-h-screen flex flex-col">
   {# ===== 导航栏（§13 通用交互规范：含通知未读角标，30s 轮询） ===== #}
-  <header class="bg-white border-b border-slate-200 sticky top-0 z-40"
+  <header class="bg-white/90 backdrop-blur border-b border-slate-200/80 sticky top-0 z-40 shadow-[0_1px_2px_0_rgb(15_23_42/0.04)]"
           x-data="{ mobileOpen: false }" @keydown.escape.window="mobileOpen = false">
     <nav class="max-w-6xl mx-auto px-4 h-14 flex items-center gap-6">
-      <a href="/" class="text-lg font-bold text-sky-700 shrink-0">
+      <a href="/" class="flex items-center gap-1.5 text-lg font-bold text-sky-700 shrink-0">
+        <svg class="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M12 3 2 8l10 5 10-5-10-5z"/>
+          <path stroke-linecap="round" stroke-linejoin="round" d="M6 10.5V15c0 1.7 2.7 3 6 3s6-1.3 6-3v-4.5"/>
+        </svg>
         知屿 <span class="text-sm font-normal text-slate-400">KnowIsle</span>
       </a>
 
@@ -109,7 +118,9 @@
             <span class="text-[10px] rounded bg-amber-100 text-amber-700 px-1 py-0.5">管理员</span>
             {% endif %}
           </span>
-          <a href="/logout" class="text-sm text-slate-400 hover:text-sky-700">退出</a>
+          <form method="post" action="/logout" class="inline">
+            <button type="submit" class="text-sm text-slate-400 hover:text-sky-700">退出</button>
+          </form>
           {% else %}
           <a href="/login" class="text-sm rounded-md bg-sky-600 text-white px-3 py-1.5 hover:bg-sky-700">登录</a>
           {% endif %}
@@ -183,8 +194,10 @@
             <span class="text-[10px] rounded bg-amber-100 text-amber-700 px-1 py-0.5">管理员</span>
             {% endif %}
           </a>
-          <a href="/logout"
-             class="block rounded-md px-3 py-2 text-sm text-slate-400 hover:bg-slate-100 hover:text-sky-700">退出登录</a>
+          <form method="post" action="/logout">
+            <button type="submit"
+                    class="block w-full text-left rounded-md px-3 py-2 text-sm text-slate-400 hover:bg-slate-100 hover:text-sky-700">退出登录</button>
+          </form>
           {% else %}
           <a href="/login"
              class="block rounded-md bg-sky-600 px-3 py-2 text-center text-sm text-white hover:bg-sky-700">登录</a>
@@ -203,12 +216,13 @@
     {% block content %}{% endblock %}
   </main>
 
-  <footer class="border-t border-slate-200 py-4 text-center text-xs text-slate-400">
+  <footer class="border-t border-slate-200 bg-white py-5 text-center text-xs text-slate-400">
     <p>知屿 KnowIsle · 每门课程是一座知识岛屿 · 学习通管理"教"，知屿沉淀"学"</p>
     <nav class="mt-2 flex items-center justify-center gap-4 border-t border-slate-100 pt-2">
-      <a href="/" class="hover:text-sky-700">项目文档</a>
+      <a href="/" class="hover:text-sky-700">首页</a>
       <a href="/search" class="hover:text-sky-700">全站搜索</a>
-      <a href="/" class="hover:text-sky-700">关于</a>
+      <a href="/boards/experience" class="hover:text-sky-700">经验长廊</a>
+      <a href="/me" class="hover:text-sky-700">个人中心</a>
     </nav>
   </footer>
 
@@ -237,18 +251,9 @@
     </div>
   </div>
 
-  {# 未读角标更新：服务端返回 {"unread": n}，>0 时显示数字 #}
-  <script>
-    document.body.addEventListener('htmx:ajaxRequest', function () { /* 保持静默 */ });
-    document.body.addEventListener('htmx:afterRequest', function (evt) {
-      if (!evt.detail.pathInfo || evt.detail.pathInfo.requestPath !== '/api/notifications/unread-count') return;
-      try {
-        var data = JSON.parse(evt.detail.xhr.responseText);
-        var badge = document.getElementById('notif-badge');
-        badge.textContent = data.unread > 99 ? '99+' : data.unread;
-        badge.classList.toggle('hidden', !data.unread);
-      } catch (e) { /* 接口未就绪时忽略 */ }
-    });
-  </script>
+  {# 全局轻提示容器（ZY.toast，components.js） #}
+  <div id="zy-toasts" class="pointer-events-none fixed right-4 top-16 z-[60] flex flex-col items-end gap-2"></div>
+
+  {# 未读角标更新逻辑已外置到 /static/js/base.js（CSP 兼容，v1.0） #}
 </body>
 </html>

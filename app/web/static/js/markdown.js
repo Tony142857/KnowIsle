@@ -6,7 +6,9 @@
  *   ZY.md.render(text)      → 安全 HTML 字符串（GFM，单换行折行）；
  *                             入参为空串 / null 返回 ''；marked 或 DOMPurify
  *                             缺失时降级为转义纯文本 + <br> 折行（不抛异常）。
- *   ZY.md.renderInto(el, t) → el.innerHTML = render(t)。
+ *   ZY.md.renderInto(el, t) → el.innerHTML = render(t)，并对其中 pre code
+ *                             代码块执行 highlight.js 高亮（hljs 缺失时跳过）；
+ *   ZY.md.highlight(el)     → 仅对 el 内代码块做高亮（SSR 既有内容可用）。
  * 消毒白名单：仅排版标签（标题/列表/代码/引用/表格/链接等），禁 img/script/
  * 事件属性；所有链接强制 target=_blank rel=noopener。
  */
@@ -51,8 +53,21 @@ window.ZY = window.ZY || {};
     });
   }
 
+  /* 代码块高亮（v1.0，highlight.js）：在消毒之后的 DOM 上执行，
+   * hljs 自身转义内容，语言类名被白名单剥离时自动检测，缺失 hljs 时静默跳过。 */
+  function highlight(el) {
+    if (!el || typeof hljs === 'undefined') return;
+    el.querySelectorAll('pre code').forEach(function (block) {
+      try { hljs.highlightElement(block); } catch (e) { /* 单个块失败不影响其余 */ }
+    });
+  }
+
   ZY.md = {
     render: render,
-    renderInto: function (el, text) { el.innerHTML = render(text); },
+    highlight: highlight,
+    renderInto: function (el, text) {
+      el.innerHTML = render(text);
+      highlight(el);
+    },
   };
 })();

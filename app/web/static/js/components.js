@@ -36,7 +36,33 @@
  *      </div>
  *    ask(options) 选项：title / message / confirmText / withInput / placeholder /
  *    requireInput（非空才可确认）/ onConfirm(input)（异步函数，resolve 后自动关闭）。
+ * 4) ZY.toast(message, type) —— 全局轻提示（v1.0，替代部分 alert/角落报错）
+ *      ZY.toast('已收藏') / ZY.toast('操作失败', 'error')；type: success|error|info。
+ *      容器在 base.html（#zy-toasts），本文件在 alpine:init 之外直接注册 ZY.toast。
  */
+window.ZY = window.ZY || {};
+(function () {
+  'use strict';
+  var TOAST_STYLE = {
+    success: 'border-emerald-200 bg-emerald-50 text-emerald-700',
+    error: 'border-red-200 bg-red-50 text-red-700',
+    info: 'border-slate-200 bg-white text-slate-700',
+  };
+  window.ZY.toast = function (message, type) {
+    type = TOAST_STYLE[type] ? type : 'info';
+    var host = document.getElementById('zy-toasts');
+    if (!host) return;
+    var el = document.createElement('div');
+    el.className = 'pointer-events-auto rounded-lg border px-4 py-2.5 text-sm shadow-lift ' +
+      'animate-fade-up transition-opacity duration-300 ' + TOAST_STYLE[type];
+    el.setAttribute('role', 'status');
+    el.textContent = message;
+    host.appendChild(el);
+    setTimeout(function () { el.classList.add('opacity-0'); }, 2600);
+    setTimeout(function () { el.remove(); }, 3000);
+  };
+})();
+
 document.addEventListener('alpine:init', function () {
   'use strict';
 

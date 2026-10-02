@@ -1,5 +1,51 @@
 /* 知屿自定义样式（Tailwind 原子类之外的少量补充）。
-   TODO(v0.9 前端): 改用 Tailwind CLI 本地构建产物，替换 Play 脚本的运行时编译。 */
+   v1.0 拍板：保留 Tailwind Play CDN（本地化 vendor 版）+ tailwind-config.js 设计令牌，
+   不引入 CLI 构建链（演示项目无构建步骤，记录在案）。 */
+
+/* 骨架屏 shimmer：配合 animate-shimmer 的渐变扫光（设计令牌 keyframes 驱动） */
+.skeleton {
+  position: relative;
+  overflow: hidden;
+  background: #f1f5f9; /* slate-100 */
+}
+.skeleton::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(90deg, transparent, rgb(255 255 255 / 0.65), transparent);
+  animation: shimmer 1.4s infinite;
+}
+
+/* 卡片悬浮统一语义：静态 shadow-card，hover 抬升为 shadow-lift */
+.card-hover {
+  transition: box-shadow 0.2s ease, transform 0.2s ease, border-color 0.2s ease;
+}
+.card-hover:hover {
+  transform: translateY(-2px);
+}
+
+/* AI 问答「正在输入」三点指示器（配合 animate-pulse-dot，模板内三个 span 延迟错开） */
+.typing-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 9999px;
+  background: #94a3b8; /* slate-400 */
+}
+
+/* 动画关键帧统一定义在 CSS（Play CDN 按需生成不可靠，令牌 animation 仅引用此处名字） */
+@keyframes fade-up {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes shimmer {
+  100% { transform: translateX(100%); }
+}
+@keyframes pulse-dot {
+  0%, 80%, 100% { opacity: 0.25; transform: scale(0.85); }
+  40% { opacity: 1; transform: scale(1); }
+}
 
 /* 系统字体栈：优先各平台中文渲染效果最好的系统字体 */
 body {

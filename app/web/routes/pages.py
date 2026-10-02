@@ -144,9 +144,13 @@ async def login(request: Request, user: Annotated[User | None, Depends(get_curre
     )
 
 
-@router.get("/logout")
+@router.post("/logout")
 async def logout(request: Request):
-    """页面端退出：销毁 Redis 会话、清 Cookie、回首页。"""
+    """页面端退出：销毁 Redis 会话、清 Cookie、回首页。
+
+    v1.0 安全收尾：仅接受 POST（base.html 退出按钮为内联表单），
+    GET 不再可用——防止跨站 <img src=/logout> 强制登出（CSRF 纵深）。
+    """
     settings = get_settings()
     await destroy_session(get_redis(), request.cookies.get(settings.session_cookie_name, ""))
     resp = RedirectResponse("/", status_code=303)

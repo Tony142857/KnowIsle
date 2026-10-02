@@ -52,10 +52,20 @@ def test_logout_destroys_session_and_clears_cookie(monkeypatch):
 
     monkeypatch.setattr(pages, "destroy_session", _destroy)
     with http_client() as client:
-        resp = client.get("/logout", follow_redirects=False)
+        resp = client.post("/logout", follow_redirects=False)
     assert resp.status_code == 303
     assert resp.headers["location"] == "/"
     assert len(destroyed) == 1
+
+
+def test_logout_get_is_not_allowed():
+    """v1.0 安全收尾：GET /logout 不可用（防跨站强制登出），仅 POST。
+
+    语义：pages 路由只注册 POST /logout，GET 落入 /{page} 通配 → 404 HTML 页。
+    """
+    with http_client() as client:
+        resp = client.get("/logout", follow_redirects=False)
+    assert resp.status_code in (404, 405)
 
 
 def test_unknown_single_segment_is_404():
