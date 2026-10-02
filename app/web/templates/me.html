@@ -1,36 +1,54 @@
 {% extends "base.html" %}
 {% block title %}个人中心 · 知屿 KnowIsle{% endblock %}
 
+{% block head %}
+{# 页面脚本须在 Alpine（defer）启动前执行：head 块内同步加载，勿加 defer #}
+<script src="/static/js/pages/me.js"></script>
+{% endblock %}
+
 {% block content %}
-<div x-data="mePage()" x-init="loadAll()">
+<div x-data="mePage()" x-init="loadAll()" class="animate-fade-up">
   <h1 class="mb-6 text-2xl font-bold text-slate-800">个人中心</h1>
 
   <div class="grid gap-6 lg:grid-cols-2">
     {# ===== 成长看板卡（SSR 注入等级进度，积分明细 fetch 渲染） ===== #}
-    <div class="rounded-lg border border-slate-200 bg-white p-4 sm:p-6 lg:col-span-2">
+    <div class="rounded-card border border-slate-200 bg-white p-4 shadow-card sm:p-6 lg:col-span-2">
       <div class="flex flex-wrap items-center gap-4">
         {% if user.avatar_url %}
         <img src="{{ user.avatar_url }}" alt="" class="w-14 h-14 rounded-full object-cover">
         {% else %}
-        <span class="w-14 h-14 rounded-full bg-sky-100 text-sky-700 flex items-center justify-center text-xl font-medium">
+        <span class="w-14 h-14 rounded-full bg-brand-100 text-brand-700 flex items-center justify-center text-xl font-medium">
           {{ user.nickname[:1] }}
         </span>
         {% endif %}
         <div>
           <p class="flex items-center gap-2 text-lg font-semibold text-slate-800">
             {{ user.nickname }}
-            <span class="rounded bg-sky-600 px-2 py-0.5 text-xs text-white">Lv{{ growth.level }}</span>
+            <span class="rounded bg-brand-600 px-2 py-0.5 text-xs text-white">Lv{{ growth.level }}</span>
             {% if user.role == 'admin' %}
             <span class="rounded bg-amber-100 px-1.5 py-0.5 text-[10px] text-amber-700">管理员</span>
             {% endif %}
           </p>
           <p class="mt-0.5 text-sm text-slate-500">
             {% if user.grade %}{{ user.grade }} · {% endif %}
-            {% if major %}{{ major.name }} · {% endif %}
-            贡献分 <span class="font-medium text-sky-700">{{ user.score }}</span>
-            · 信用分 <span class="font-medium text-slate-700">{{ user.credit }}</span>
+            {% if major %}{{ major.name }}{% endif %}
           </p>
         </div>
+        {# 成长看板数字卡：等级 / 贡献分 / 信用分（大号数字 + 小标签） #}
+        <dl class="ml-auto grid grid-cols-3 gap-3">
+          <div class="rounded-card border border-slate-100 bg-slate-50 px-4 py-3 text-center">
+            <dd class="text-2xl font-bold text-brand-700">Lv{{ growth.level }}</dd>
+            <dt class="mt-0.5 text-xs text-slate-400">等级</dt>
+          </div>
+          <div class="rounded-card border border-slate-100 bg-slate-50 px-4 py-3 text-center">
+            <dd class="text-2xl font-bold text-slate-800">{{ user.score }}</dd>
+            <dt class="mt-0.5 text-xs text-slate-400">贡献分</dt>
+          </div>
+          <div class="rounded-card border border-slate-100 bg-slate-50 px-4 py-3 text-center">
+            <dd class="text-2xl font-bold {{ 'text-emerald-600' if user.credit >= 80 else 'text-red-600' }}">{{ user.credit }}</dd>
+            <dt class="mt-0.5 text-xs text-slate-400">信用分</dt>
+          </div>
+        </dl>
       </div>
       {# 处罚状态提示（v0.8）：禁言中显示解除时间；信用偏低显示冷却限制提醒 #}
       {% if user.status == 'muted' and user.muted_until %}
@@ -51,7 +69,7 @@
           <span>距 Lv{{ growth.level + 1 }} 还差 {{ growth.remaining }} 分（{{ growth.next_threshold }} 分升级）</span>
         </div>
         <div class="mt-1 h-2 overflow-hidden rounded-full bg-slate-100">
-          <div class="h-full rounded-full bg-sky-500 transition-all" style="width: {{ growth.progress }}%"></div>
+          <div class="h-full rounded-full bg-brand-500 transition-all" style="width: {{ growth.progress }}%"></div>
         </div>
         {% else %}
         <p class="text-xs text-slate-400">已达最高等级 Lv{{ growth.level }} 🎉</p>
@@ -84,7 +102,7 @@
     </div>
 
     {# ===== AI 额度卡 ===== #}
-    <div class="rounded-lg border border-slate-200 bg-white p-4 sm:p-6">
+    <div class="rounded-card border border-slate-200 bg-white p-4 shadow-card sm:p-6">
       <h2 class="text-sm font-semibold text-slate-700">AI 额度</h2>
       <p x-show="quotaError" x-text="quotaError" x-cloak
          class="mt-3 rounded bg-red-50 px-3 py-2 text-sm text-red-600"></p>
@@ -126,7 +144,7 @@
     </div>
 
     {# ===== 自定义 Key 卡（Key 加密存储，永不回显） ===== #}
-    <div class="rounded-lg border border-slate-200 bg-white p-4 sm:p-6">
+    <div class="rounded-card border border-slate-200 bg-white p-4 shadow-card sm:p-6">
       <h2 class="text-sm font-semibold text-slate-700">自定义模型 Key</h2>
       <p class="mt-1 text-xs text-slate-400">配置后 AI 问答走你自己的通道，不占用平台额度。Key 加密存储，永不回显。</p>
       <p x-show="keyError" x-text="keyError" x-cloak
@@ -194,7 +212,7 @@
     </div>
 
     {# ===== 通知卡 ===== #}
-    <div class="rounded-lg border border-slate-200 bg-white p-4 sm:p-6 lg:col-span-2">
+    <div class="rounded-card border border-slate-200 bg-white p-4 shadow-card sm:p-6 lg:col-span-2">
       <div class="flex items-center gap-3">
         <h2 class="text-sm font-semibold text-slate-700">站内通知</h2>
         <button x-show="notifs.some(n => !n.is_read)" x-cloak @click="markAllRead()" :disabled="loading"
@@ -211,7 +229,7 @@
           <li @click="openNotif(n)"
               class="flex cursor-pointer items-start gap-2 py-2.5 hover:bg-slate-50">
             <span class="mt-1.5 h-2 w-2 shrink-0 rounded-full"
-                  :class="n.is_read ? 'bg-transparent' : 'bg-sky-500'"></span>
+                  :class="n.is_read ? 'bg-transparent' : 'bg-brand-500'"></span>
             <div class="min-w-0 flex-1">
               <p class="text-sm truncate"
                  :class="n.is_read ? 'text-slate-500' : 'font-medium text-slate-800'"
@@ -227,14 +245,25 @@
     </div>
 
     {# ===== 我的收藏卡（v0.6）：资源 / 帖子分组，可取消收藏 ===== #}
-    <div class="rounded-lg border border-slate-200 bg-white p-4 sm:p-6 lg:col-span-2">
+    <div class="rounded-card border border-slate-200 bg-white p-4 shadow-card sm:p-6 lg:col-span-2">
       <h2 class="text-sm font-semibold text-slate-700">我的收藏</h2>
       <p x-show="favsLoading" x-cloak class="mt-3 text-sm text-slate-400">加载中…</p>
       <p x-show="favsError" x-text="favsError" x-cloak
          class="mt-3 rounded bg-red-50 px-3 py-2 text-sm text-red-600"></p>
-      <p x-show="favsLoaded && !favs.length" x-cloak class="mt-3 text-sm text-slate-400">
-        暂无收藏。在资源详情页 / 帖子详情页点击「收藏」即可加入。
-      </p>
+      <div x-show="favsLoaded && !favs.length" x-cloak class="mt-4 flex flex-col items-center py-6 text-center">
+        <svg class="h-10 w-10 text-slate-300" fill="none" stroke="currentColor" stroke-width="1.5"
+             viewBox="0 0 24 24" aria-hidden="true">
+          <path stroke-linecap="round" stroke-linejoin="round"
+                d="M17.6 3.6c1.8 0 3.4 1.5 3.4 3.4v12.2a.6.6 0 0 1-.96.48L12 14.9l-8.04 4.78A.6.6 0 0 1 3 19.2V7c0-1.9 1.6-3.4 3.4-3.4h11.2z"/>
+        </svg>
+        <p class="mt-3 text-sm text-slate-500">
+          暂无收藏。在资源详情页 / 帖子详情页点击「收藏」即可加入。
+        </p>
+        <a href="/majors"
+           class="mt-3 rounded-md bg-brand-600 px-4 py-1.5 text-sm text-white transition-colors hover:bg-brand-700">
+          去课程空间逛逛
+        </a>
+      </div>
       <div x-show="favResources.length" x-cloak class="mt-3">
         <h3 class="text-xs font-medium text-slate-500">资料</h3>
         <ul class="mt-1 divide-y divide-slate-100 text-sm">
@@ -278,14 +307,25 @@
     </div>
 
     {# ===== 我的关注卡（v0.6）：课程 / 用户分组，可取消关注 ===== #}
-    <div class="rounded-lg border border-slate-200 bg-white p-4 sm:p-6 lg:col-span-2">
+    <div class="rounded-card border border-slate-200 bg-white p-4 shadow-card sm:p-6 lg:col-span-2">
       <h2 class="text-sm font-semibold text-slate-700">我的关注</h2>
       <p x-show="followsLoading" x-cloak class="mt-3 text-sm text-slate-400">加载中…</p>
       <p x-show="followsError" x-text="followsError" x-cloak
          class="mt-3 rounded bg-red-50 px-3 py-2 text-sm text-red-600"></p>
-      <p x-show="followsLoaded && !follows.length" x-cloak class="mt-3 text-sm text-slate-400">
-        暂无关注。在课程空间页点击「关注课程」即可订阅动态。
-      </p>
+      <div x-show="followsLoaded && !follows.length" x-cloak class="mt-4 flex flex-col items-center py-6 text-center">
+        <svg class="h-10 w-10 text-slate-300" fill="none" stroke="currentColor" stroke-width="1.5"
+             viewBox="0 0 24 24" aria-hidden="true">
+          <path stroke-linecap="round" stroke-linejoin="round"
+                d="M12 3 2 8l10 5 10-5-10-5zM6 10.5V15c0 1.7 2.7 3 6 3s6-1.3 6-3v-4.5M19 12v6m-3-3h6"/>
+        </svg>
+        <p class="mt-3 text-sm text-slate-500">
+          暂无关注。在课程空间页点击「关注课程」即可订阅动态。
+        </p>
+        <a href="/majors"
+           class="mt-3 rounded-md border border-brand-200 px-4 py-1.5 text-sm text-brand-700 transition-colors hover:bg-brand-50">
+          去找感兴趣的课程
+        </a>
+      </div>
       <div x-show="followCourses.length" x-cloak class="mt-3">
         <h3 class="text-xs font-medium text-slate-500">课程</h3>
         <ul class="mt-1 divide-y divide-slate-100 text-sm">
@@ -329,222 +369,4 @@
   </div>
 </div>
 
-<script>
-function mePage() {
-  return {
-    loading: false,
-    // 积分明细
-    logs: [], logsLoading: false, logsLoaded: false, logsError: '',
-    // AI 额度
-    quota: null, quotaError: '', exchangeCount: 1, exchangeMsg: '',
-    // 自定义 Key
-    keyInfo: null, keyEditing: false, keyError: '',
-    keyForm: {base_url: '', api_key: '', model_short: '', model_medium: '', model_long: ''},
-    // 通知
-    notifs: [], notifsLoading: false, notifsLoaded: false, notifsError: '',
-    // 我的收藏（v0.6）
-    favs: [], favsLoading: false, favsLoaded: false, favsError: '',
-    // 我的关注（v0.6）
-    follows: [], followsLoading: false, followsLoaded: false, followsError: '',
-
-    REASON_LABELS: {
-      upload_approved: '资料过审',
-      answer_accepted: '回答被采纳',
-      download_cost: '下载支出',
-      download_share: '下载分成',
-      download_reward: '被下载奖励',
-      quota_exchange: '额度兑换',
-    },
-    reasonLabel(r) { return this.REASON_LABELS[r] || r; },
-    boardLabel(b) { return {qa: '知屿问答', discuss: '讨论区'}[b] || b; },
-    get favResources() { return this.favs.filter(f => f.target_type === 'resource'); },
-    get favPosts() { return this.favs.filter(f => f.target_type === 'post'); },
-    get followCourses() { return this.follows.filter(f => f.target_type === 'course'); },
-    get followUsers() { return this.follows.filter(f => f.target_type === 'user'); },
-
-    loadAll() {
-      this.loadLogs(); this.loadQuota(); this.loadKey(); this.loadNotifs();
-      this.loadFavs(); this.loadFollows();
-    },
-
-    async api(url, options) {
-      const resp = await fetch(url, options);
-      const data = resp.status === 204 ? {} : await resp.json().catch(() => ({}));
-      if (!resp.ok && resp.status !== 204) throw new Error(data.detail || ('请求失败 ' + resp.status));
-      return data;
-    },
-
-    async loadLogs() {
-      this.logsLoading = true; this.logsError = '';
-      try {
-        const data = await this.api('/api/users/me/score-logs?page=1&size=20');
-        this.logs = data.items || [];
-        this.logsLoaded = true;
-      } catch (e) { this.logsError = e.message; }
-      finally { this.logsLoading = false; }
-    },
-
-    async loadQuota() {
-      this.quotaError = '';
-      try {
-        this.quota = await this.api('/api/users/me/quota');
-      } catch (e) { this.quotaError = e.message; }
-    },
-
-    async exchange() {
-      if (!(this.exchangeCount >= 1)) { this.quotaError = '兑换次数须 ≥ 1'; return; }
-      this.loading = true; this.quotaError = ''; this.exchangeMsg = '';
-      try {
-        const data = await this.api('/api/users/me/quota/exchange', {
-          method: 'POST', headers: {'Content-Type': 'application/json'},
-          body: JSON.stringify({count: this.exchangeCount}),
-        });
-        this.exchangeMsg = '兑换成功：+' + (data.bonus_balance - (this.quota ? this.quota.bonus_balance : 0)) + ' 次额度';
-        await this.loadQuota();
-      } catch (e) { this.quotaError = e.message; }
-      finally { this.loading = false; }
-    },
-
-    async loadKey() {
-      this.keyError = '';
-      try {
-        this.keyInfo = await this.api('/api/users/me/llm-key');
-      } catch (e) { this.keyError = e.message; }
-    },
-
-    startEdit() {
-      this.keyEditing = true; this.keyError = '';
-      this.keyForm = {
-        base_url: this.keyInfo.base_url || '', api_key: '',
-        model_short: this.keyInfo.model_short || '',
-        model_medium: this.keyInfo.model_medium || '',
-        model_long: this.keyInfo.model_long || '',
-      };
-    },
-
-    async saveKey() {
-      this.keyError = '';
-      if (!this.keyForm.base_url.trim()) { this.keyError = '请填写 Base URL'; return; }
-      if (!this.keyForm.api_key.trim()) { this.keyError = '请填写 API Key'; return; }
-      this.loading = true;
-      try {
-        await this.api('/api/users/me/llm-key', {
-          method: 'PUT', headers: {'Content-Type': 'application/json'},
-          body: JSON.stringify({
-            base_url: this.keyForm.base_url.trim(),
-            api_key: this.keyForm.api_key.trim(),
-            model_short: this.keyForm.model_short.trim() || null,
-            model_medium: this.keyForm.model_medium.trim() || null,
-            model_long: this.keyForm.model_long.trim() || null,
-          }),
-        });
-        this.keyEditing = false;
-        this.keyForm.api_key = '';
-        await this.loadKey();
-        await this.loadQuota();
-      } catch (e) { this.keyError = e.message; }
-      finally { this.loading = false; }
-    },
-
-    deleteKey() {
-      // 破坏性操作：全局 confirmModal 确认后执行
-      this.$dispatch('zy-ask', {
-        title: '删除自定义 Key',
-        message: '确定删除自定义 Key？删除后 AI 问答将回到平台额度通道。',
-        confirmText: '删除',
-        onConfirm: () => this.doDeleteKey(),
-      });
-    },
-
-    async doDeleteKey() {
-      this.loading = true; this.keyError = '';
-      try {
-        await this.api('/api/users/me/llm-key', {method: 'DELETE'});
-        this.keyEditing = false;
-        await this.loadKey();
-        await this.loadQuota();
-      } catch (e) { this.keyError = e.message; }
-      finally { this.loading = false; }
-    },
-
-    async loadNotifs() {
-      this.notifsLoading = true; this.notifsError = '';
-      try {
-        const data = await this.api('/api/notifications?page=1&size=20');
-        this.notifs = data.items || [];
-        this.notifsLoaded = true;
-      } catch (e) { this.notifsError = e.message; }
-      finally { this.notifsLoading = false; }
-    },
-
-    async markAllRead() {
-      this.loading = true;
-      try {
-        await this.api('/api/notifications/read', {
-          method: 'POST', headers: {'Content-Type': 'application/json'}, body: '{}',
-        });
-        for (const n of this.notifs) n.is_read = true;
-      } catch (e) { this.notifsError = e.message; }
-      finally { this.loading = false; }
-    },
-
-    async openNotif(n) {
-      if (!n.is_read) {
-        try {
-          await this.api('/api/notifications/read', {
-            method: 'POST', headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({ids: [n.id]}),
-          });
-          n.is_read = true;
-        } catch (e) { /* 已读标记失败不阻塞跳转 */ }
-      }
-      if (n.link) window.location.href = n.link;
-    },
-
-    async loadFavs() {
-      this.favsLoading = true; this.favsError = '';
-      try {
-        const data = await this.api('/api/favorites?page=1&size=50');
-        this.favs = data.items || [];
-        this.favsLoaded = true;
-      } catch (e) { this.favsError = e.message; }
-      finally { this.favsLoading = false; }
-    },
-
-    async unfavorite(f) {
-      this.loading = true; this.favsError = '';
-      try {
-        await this.api('/api/favorites', {
-          method: 'DELETE', headers: {'Content-Type': 'application/json'},
-          body: JSON.stringify({target_type: f.target_type, target_id: f.target_id}),
-        });
-        this.favs = this.favs.filter(x => x !== f);
-      } catch (e) { this.favsError = e.message; }
-      finally { this.loading = false; }
-    },
-
-    async loadFollows() {
-      this.followsLoading = true; this.followsError = '';
-      try {
-        const data = await this.api('/api/follows?page=1&size=50');
-        this.follows = data.items || [];
-        this.followsLoaded = true;
-      } catch (e) { this.followsError = e.message; }
-      finally { this.followsLoading = false; }
-    },
-
-    async unfollow(f) {
-      this.loading = true; this.followsError = '';
-      try {
-        await this.api('/api/follows', {
-          method: 'DELETE', headers: {'Content-Type': 'application/json'},
-          body: JSON.stringify({target_type: f.target_type, target_id: f.target_id}),
-        });
-        this.follows = this.follows.filter(x => x !== f);
-      } catch (e) { this.followsError = e.message; }
-      finally { this.loading = false; }
-    },
-  };
-}
-</script>
 {% endblock %}

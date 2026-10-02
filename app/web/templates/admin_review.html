@@ -2,8 +2,13 @@
 {% from "_precheck.html" import precheck_panel %}
 {% block title %}管理员终审 · 知屿 KnowIsle{% endblock %}
 
+{% block head %}
+{# 页面脚本须在 Alpine（defer）启动前执行：head 块内同步加载，勿加 defer #}
+<script src="/static/js/pages/admin_review.js"></script>
+{% endblock %}
+
 {% block content %}
-<div class="mb-6">
+<div class="mb-6 animate-fade-up">
   <h1 class="text-2xl font-bold text-slate-800">管理员终审</h1>
   <p class="mt-1 text-sm text-slate-400">三级审核终审：通过后资源上架并结算贡献分，驳回需填写理由</p>
 </div>
@@ -16,7 +21,7 @@
   {% if final_tasks %}
   <div class="space-y-6">
     {% for t in final_tasks %}
-    <div class="rounded-lg border border-slate-200 bg-white p-4" x-data="finalVerdict({{ t.task_id }})">
+    <div class="rounded-card border border-slate-200 bg-white p-4 shadow-card" x-data="finalVerdict({{ t.task_id }})">
       <div class="flex flex-wrap items-center gap-3">
         <h3 class="text-base font-semibold text-slate-800">{{ t.resource.title }}</h3>
         <span class="rounded bg-violet-50 px-2 py-0.5 text-xs text-violet-700">待终审</span>
@@ -33,13 +38,16 @@
       <div class="mt-4 grid gap-4 lg:grid-cols-2">
         {{ precheck_panel(t.precheck) }}
 
-        {# 协审意见聚合 #}
-        <div class="rounded-lg border border-slate-200 bg-white p-4">
+        {# 协审意见聚合（时间线样式：左侧竖线 + 裁决色圆点） #}
+        <div class="rounded-card border border-slate-200 bg-white p-4 shadow-card">
           <h4 class="text-sm font-semibold text-slate-700">协审意见</h4>
           {% if t.records %}
-          <ul class="mt-2 space-y-2">
+          <ol class="mt-3 space-y-3 border-l-2 border-slate-100 pl-4">
             {% for r in t.records %}
-            <li class="text-xs text-slate-600">
+            <li class="relative text-xs text-slate-600">
+              <span class="absolute -left-[23px] top-1 h-2.5 w-2.5 rounded-full ring-4 ring-white
+                           {{ 'bg-emerald-500' if r.verdict == 'approve' else 'bg-red-500' }}"
+                    aria-hidden="true"></span>
               <span class="rounded px-1.5 py-0.5
                            {{ 'bg-emerald-50 text-emerald-700' if r.verdict == 'approve' else 'bg-red-50 text-red-600' }}">
                 {{ '通过' if r.verdict == 'approve' else '驳回' }}
@@ -49,7 +57,7 @@
               {% if r.comment %}<p class="mt-1 pl-1 text-slate-600">{{ r.comment }}</p>{% endif %}
             </li>
             {% endfor %}
-          </ul>
+          </ol>
           {% else %}
           <p class="mt-2 text-xs text-slate-400">暂无协审意见记录。</p>
           {% endif %}
@@ -79,11 +87,11 @@
                   class="w-full rounded border border-slate-300 px-3 py-2 text-sm"></textarea>
         <div class="mt-2 flex gap-2">
           <button @click="submit('approve')" :disabled="loading"
-                  class="rounded bg-sky-600 px-4 py-2 text-sm text-white hover:bg-sky-700 disabled:opacity-50">
+                  class="rounded bg-emerald-600 px-4 py-2 text-sm text-white transition-colors hover:bg-emerald-700 disabled:opacity-50">
             终审通过
           </button>
           <button @click="submit('reject')" :disabled="loading"
-                  class="rounded border border-red-300 px-4 py-2 text-sm text-red-600 hover:bg-red-50 disabled:opacity-50">
+                  class="rounded bg-red-600 px-4 py-2 text-sm text-white transition-colors hover:bg-red-700 disabled:opacity-50">
             终审驳回
           </button>
         </div>
@@ -92,8 +100,12 @@
     {% endfor %}
   </div>
   {% else %}
-  <div class="rounded-lg border border-dashed border-slate-300 bg-white py-16 text-center">
-    <p class="text-4xl">✅</p>
+  <div class="rounded-card border border-dashed border-slate-300 bg-white py-16 text-center">
+    <svg class="mx-auto h-12 w-12 text-emerald-400" fill="none" stroke="currentColor" stroke-width="1.5"
+         viewBox="0 0 24 24" aria-hidden="true">
+      <path stroke-linecap="round" stroke-linejoin="round"
+            d="M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0z"/>
+    </svg>
     <p class="mt-4 text-slate-600">终审队列已清空</p>
   </div>
   {% endif %}
@@ -105,7 +117,7 @@
   <h2 class="mb-3 text-lg font-semibold text-slate-700">
     等待协审 <span class="text-xs font-normal text-slate-400">{{ co_tasks|length }} 条</span>
   </h2>
-  <div class="rounded-lg border border-slate-200 bg-white">
+  <div class="rounded-card border border-slate-200 bg-white shadow-card">
     <ul class="divide-y divide-slate-100">
       {% for t in co_tasks %}
       <li class="flex flex-wrap items-center gap-3 px-4 py-3 text-sm">
@@ -114,15 +126,15 @@
         <span class="text-xs text-slate-400">{{ t.created_at.strftime('%m-%d %H:%M') }}</span>
         <span class="rounded bg-violet-50 px-2 py-0.5 text-xs text-violet-700">等待协审</span>
         <button @click="openReassign({{ t.task_id }})" :disabled="loading"
-                class="rounded border border-slate-300 px-2 py-1 text-xs text-slate-600 hover:bg-slate-50 disabled:opacity-50">
+                class="rounded border border-slate-300 px-2 py-1 text-xs text-slate-600 transition-colors hover:bg-slate-50 disabled:opacity-50">
           改派
         </button>
         <button @click="askDirect({{ t.task_id }}, 'approve')" :disabled="loading"
-                class="rounded bg-sky-600 px-2 py-1 text-xs text-white hover:bg-sky-700 disabled:opacity-50">
+                class="rounded bg-emerald-600 px-2 py-1 text-xs text-white transition-colors hover:bg-emerald-700 disabled:opacity-50">
           直审通过
         </button>
         <button @click="askDirect({{ t.task_id }}, 'reject')" :disabled="loading"
-                class="rounded border border-red-300 px-2 py-1 text-xs text-red-600 hover:bg-red-50 disabled:opacity-50">
+                class="rounded bg-red-600 px-2 py-1 text-xs text-white transition-colors hover:bg-red-700 disabled:opacity-50">
           直审驳回
         </button>
       </li>
@@ -134,7 +146,7 @@
      不选人直接确认 = 自动重指派 #}
   <div x-show="reassignOpen" x-cloak @keydown.escape.window="closeReassign()"
        class="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4">
-    <div class="w-full max-w-md rounded-lg bg-white p-5 shadow-xl" @click.outside="closeReassign()">
+    <div class="w-full max-w-md rounded-card bg-white p-5 shadow-lift" @click.outside="closeReassign()">
       <h2 class="text-base font-semibold text-slate-800">改派协审员</h2>
       <p class="mt-1 text-xs text-slate-400">搜索并点击选择新协审员（可多选）；不选择直接确认则自动重指派。</p>
       <div class="mt-3 flex gap-2">
@@ -190,7 +202,7 @@
 {% if done_tasks %}
 <section class="mt-10">
   <h2 class="mb-3 text-lg font-semibold text-slate-700">最近完成</h2>
-  <div class="rounded-lg border border-slate-200 bg-white">
+  <div class="rounded-card border border-slate-200 bg-white shadow-card">
     <ul class="divide-y divide-slate-100">
       {% for t in done_tasks %}
       <li class="flex flex-wrap items-center gap-3 px-4 py-3 text-sm">
@@ -210,137 +222,4 @@
 </section>
 {% endif %}
 
-<script>
-function finalVerdict(taskId) {
-  return {
-    loading: false, error: '', result: '', comment: '', previewFailed: false,
-
-    checkPreview(event) {
-      try {
-        const doc = event.target.contentDocument;
-        if (doc && doc.contentType === 'application/json') this.previewFailed = true;
-      } catch (e) { /* 跨域或尚未加载时忽略 */ }
-    },
-
-    async submit(verdict) {
-      if (verdict === 'reject' && !this.comment.trim()) {
-        this.error = '驳回必须填写理由'; return;
-      }
-      this.loading = true; this.error = ''; this.result = '';
-      try {
-        const resp = await fetch('/api/admin/review/final', {
-          method: 'POST',
-          headers: {'Content-Type': 'application/json'},
-          body: JSON.stringify({task_id: taskId, verdict: verdict,
-                                comment: this.comment.trim() || null}),
-        });
-        const data = await resp.json().catch(() => ({}));
-        if (!resp.ok) throw new Error(data.detail || ('提交失败 ' + resp.status));
-        this.result = verdict === 'approve'
-          ? '已通过终审并上架，投稿人获得 ' + data.score_granted + ' 贡献分'
-          : '已驳回该投稿';
-        setTimeout(() => window.location.reload(), 1200);
-      } catch (e) { this.error = e.message; }
-      finally { this.loading = false; }
-    },
-  };
-}
-function coReviewBoard() {
-  return {
-    loading: false,
-    // 改派弹窗：搜索 → 选择两步
-    reassignOpen: false, reassignTaskId: null,
-    rq: '', candidates: null, searching: false, searchError: '',
-    selected: [], opError: '',
-
-    roleLabel(r) { return {student: '学生', reviewer: '协审员', builder: '共建者', admin: '管理员'}[r] || r; },
-    isPicked(u) { return this.selected.some(x => x.id === u.id); },
-    togglePick(u) {
-      if (u.role !== 'reviewer') return;  // 服务端仅接受协审员，前端直接禁选
-      const i = this.selected.findIndex(x => x.id === u.id);
-      if (i >= 0) this.selected.splice(i, 1);
-      else this.selected.push(u);
-    },
-
-    async postAction(url, body) {
-      const resp = await fetch(url, {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify(body),
-      });
-      const data = await resp.json().catch(() => ({}));
-      if (!resp.ok) throw new Error(data.detail || ('操作失败 ' + resp.status));
-    },
-
-    // 操作失败时经全局 confirmModal 弹出错误提示（setTimeout 避开 ask 与 confirm 的竞态）
-    fail(e) {
-      setTimeout(() => this.$dispatch('zy-ask', {
-        title: '操作失败', message: e.message, confirmText: '知道了',
-      }), 0);
-    },
-
-    openReassign(taskId) {
-      this.reassignTaskId = taskId; this.reassignOpen = true;
-      this.rq = ''; this.candidates = null; this.selected = [];
-      this.searchError = ''; this.opError = '';
-      this.$nextTick(() => { if (this.$refs.reassignInput) this.$refs.reassignInput.focus(); });
-    },
-    closeReassign() {
-      if (this.loading) return;
-      this.reassignOpen = false;
-    },
-    async searchReviewers() {
-      this.searching = true; this.searchError = '';
-      try {
-        const q = this.rq.trim();
-        const resp = await fetch('/api/admin/users?size=20'
-          + (q ? '&q=' + encodeURIComponent(q) : ''));
-        const data = await resp.json().catch(() => ({}));
-        if (!resp.ok) throw new Error(data.detail || ('搜索失败 ' + resp.status));
-        this.candidates = data.items || [];
-      } catch (e) { this.searchError = e.message; }
-      finally { this.searching = false; }
-    },
-    async confirmReassign() {
-      const body = {task_id: this.reassignTaskId};
-      if (this.selected.length) body.reviewer_ids = this.selected.map(u => u.id);
-      this.loading = true; this.opError = '';
-      try {
-        await this.postAction('/api/admin/review/reassign', body);
-        setTimeout(() => window.location.reload(), 800);
-      } catch (e) { this.opError = e.message; }
-      finally { this.loading = false; }
-    },
-
-    // 直审：approve 走确认弹窗，reject 走必填理由弹窗（全局 confirmModal）
-    askDirect(taskId, verdict) {
-      if (verdict === 'approve') {
-        this.$dispatch('zy-ask', {
-          title: '直审通过',
-          message: '确认直审通过该投稿？将直接上架并结算贡献分。',
-          confirmText: '直审通过',
-          onConfirm: () => this.direct(taskId, 'approve', null),
-        });
-      } else {
-        this.$dispatch('zy-ask', {
-          title: '直审驳回',
-          withInput: true, requireInput: true,
-          placeholder: '请输入驳回理由（必填）',
-          confirmText: '直审驳回',
-          onConfirm: (comment) => this.direct(taskId, 'reject', comment),
-        });
-      }
-    },
-    async direct(taskId, verdict, comment) {
-      this.loading = true;
-      try {
-        await this.postAction('/api/admin/review/direct',
-                              {task_id: taskId, verdict: verdict, comment: comment});
-        setTimeout(() => window.location.reload(), 800);
-      } catch (e) { this.fail(e); }
-      finally { this.loading = false; }
-    },
-  };
-}
-</script>
 {% endblock %}

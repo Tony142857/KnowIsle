@@ -1,24 +1,35 @@
 {% extends "base.html" %}
 {% block title %}搜索 · 知屿 KnowIsle{% endblock %}
+{% block head %}
+{# 页面交互外置（CSP 兼容）；非 defer 以保证在 Alpine 启动前完成组件注册 #}
+<script src="/static/js/pages/search.js"></script>
+{% endblock %}
 
 {% block content %}
-<div x-data='searchPage({{ q|tojson }}, {{ search_type|tojson }}, {{ board|tojson }}, {{ course_id|tojson }})'
-     x-init="init()">
-  <h1 class="mb-6 text-2xl font-bold text-slate-800">全站搜索</h1>
+{# SSR 查询条件注入：application/json 惰性数据块（不执行、不受 CSP script-src 限制），
+   由 pages/search.js 读取；键与服务端路由参数一致 #}
+<script type="application/json" id="page-data">{{ {"q": q, "type": search_type, "board": board, "course_id": course_id} | tojson }}</script>
+
+<div x-data="searchPage()" x-init="init()">
+  <header class="text-center">
+    <h1 class="text-2xl font-bold text-slate-800">全站搜索</h1>
+    <p class="mt-1 text-sm text-slate-400">检索全站帖子与上架资料，支持按类型、板块、课程过滤</p>
+  </header>
 
   {# 过滤表单（GET 回 /search，条件 SSR 回显；结果由客户端 fetch /api/search 渲染） #}
-  <form action="/search" method="get" class="rounded-lg border border-slate-200 bg-white p-4">
+  <form action="/search" method="get"
+        class="mx-auto mt-6 max-w-3xl rounded-card border border-slate-200 bg-white p-4 shadow-card sm:p-5">
     <div class="flex flex-wrap items-center gap-2">
       <input type="search" name="q" value="{{ q }}" required
              placeholder="搜索帖子标题 / 正文、资料标题…"
-             class="min-w-0 w-full flex-1 rounded border border-slate-300 px-3 py-2 text-sm sm:w-auto">
-      <select name="type" class="flex-1 rounded border border-slate-300 px-3 py-2 text-sm sm:flex-none">
+             class="min-w-0 w-full flex-1 rounded border border-slate-300 px-3 py-2.5 text-sm transition-colors focus:border-sky-400 focus:outline-none sm:w-auto">
+      <select name="type" class="flex-1 rounded border border-slate-300 px-3 py-2.5 text-sm transition-colors focus:border-sky-400 focus:outline-none sm:flex-none">
         <option value="all" {{ 'selected' if search_type == 'all' }}>全部</option>
         <option value="post" {{ 'selected' if search_type == 'post' }}>帖子</option>
         <option value="resource" {{ 'selected' if search_type == 'resource' }}>资源</option>
       </select>
       {# 板块过滤仅对帖子结果生效（§4.2 四板块） #}
-      <select name="board" class="flex-1 rounded border border-slate-300 px-3 py-2 text-sm sm:flex-none">
+      <select name="board" class="flex-1 rounded border border-slate-300 px-3 py-2.5 text-sm transition-colors focus:border-sky-400 focus:outline-none sm:flex-none">
         <option value="">全部板块</option>
         {% for key, (label, _) in boards.items() %}
         <option value="{{ key }}" {{ 'selected' if board == key }}>{{ label }}</option>
@@ -26,14 +37,14 @@
       </select>
       {# 课程过滤：下拉选择公共课程（客户端拉取 /api/courses 填充，SSR course_id 回显） #}
       <select name="course_id"
-              class="w-full rounded border border-slate-300 px-3 py-2 text-sm sm:w-48">
+              class="w-full rounded border border-slate-300 px-3 py-2.5 text-sm transition-colors focus:border-sky-400 focus:outline-none sm:w-48">
         <option value="">全部课程</option>
         <template x-for="c in courseOptions" :key="c.id">
           <option :value="c.id" x-text="c.name" :selected="courseId === c.id"></option>
         </template>
       </select>
       <button type="submit"
-              class="w-full rounded bg-sky-600 px-4 py-2 text-sm text-white hover:bg-sky-700 sm:w-auto">搜索</button>
+              class="w-full rounded bg-sky-600 px-5 py-2.5 text-sm font-medium text-white transition-colors hover:bg-sky-700 sm:w-auto">搜索</button>
     </div>
     <p class="mt-2 text-xs text-slate-400">板块过滤仅对帖子结果生效；课程过滤下拉仅含公共课程。</p>
   </form>
@@ -44,32 +55,43 @@
 
   {# 未输入关键词的引导态 #}
   <div x-show="!searched && !loading && !error" x-cloak
-       class="mt-6 rounded-lg border border-dashed border-slate-300 bg-white py-16 text-center">
-    <p class="text-4xl">🔍</p>
+       class="mt-6 rounded-card border border-dashed border-slate-300 bg-white px-4 py-16 text-center">
+    <svg class="mx-auto h-12 w-12 text-slate-300" fill="none" stroke="currentColor" stroke-width="1.5"
+         viewBox="0 0 24 24" aria-hidden="true">
+      <circle cx="11" cy="11" r="7"/>
+      <path stroke-linecap="round" d="M21 21l-4.35-4.35"/>
+    </svg>
     <p class="mt-4 text-slate-600">输入关键词，检索全站帖子与资料</p>
     <p class="mt-1 text-sm text-slate-400">可按类型、板块或课程缩小范围。</p>
   </div>
 
   {# 空结果态 #}
   <div x-show="searched && !loading && !error && !posts.length && !resources.length" x-cloak
-       class="mt-6 rounded-lg border border-dashed border-slate-300 bg-white py-16 text-center">
-    <p class="text-4xl">🍃</p>
+       class="mt-6 rounded-card border border-dashed border-slate-300 bg-white px-4 py-16 text-center">
+    <svg class="mx-auto h-12 w-12 text-slate-300" fill="none" stroke="currentColor" stroke-width="1.5"
+         viewBox="0 0 24 24" aria-hidden="true">
+      <path stroke-linecap="round" stroke-linejoin="round" d="M20 13V7a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v6"/>
+      <path stroke-linecap="round" stroke-linejoin="round" d="M4 13h4l1.5 2.5h5L16 13h4v5a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-5z"/>
+    </svg>
     <p class="mt-4 text-slate-600">没有找到与「<span x-text="q"></span>」相关的内容</p>
     <p class="mt-1 text-sm text-slate-400">换个关键词试试，或放宽类型 / 板块过滤。</p>
+    <a href="/boards/qa"
+       class="mt-4 inline-block rounded-md border border-slate-300 bg-white px-4 py-2 text-sm text-slate-600 transition-colors hover:border-sky-300 hover:text-sky-700">去知屿问答逛逛 →</a>
   </div>
 
   {# 帖子结果组 #}
-  <div x-show="posts.length" x-cloak class="mt-6">
+  <div x-show="posts.length" x-cloak
+       class="mt-6 rounded-card border border-slate-200 bg-white p-5 shadow-card">
     <h2 class="text-sm font-semibold text-slate-700">
       帖子 <span class="font-normal text-slate-400" x-text="'共 ' + postsTotal + ' 条'"></span>
     </h2>
-    <div class="mt-3 space-y-3">
+    <div class="mt-3 divide-y divide-slate-100">
       <template x-for="p in posts" :key="'p' + p.id">
-        <div class="rounded-lg border border-slate-200 bg-white p-4 transition-shadow hover:shadow-sm">
+        <div class="py-4 first:pt-1 last:pb-0">
           <div class="flex flex-wrap items-center gap-2">
             <span class="rounded bg-sky-50 px-2 py-0.5 text-xs text-sky-700"
                   x-text="boardLabel(p.board)"></span>
-            <a :href="'/posts/' + p.id" class="text-base font-medium text-slate-800 hover:text-sky-700"
+            <a :href="'/posts/' + p.id" class="text-base font-medium text-slate-800 transition-colors hover:text-sky-700"
                x-text="p.title"></a>
           </div>
           <p class="mt-1 line-clamp-2 text-sm text-slate-500" x-text="p.excerpt"></p>
@@ -84,15 +106,16 @@
   </div>
 
   {# 资源结果组 #}
-  <div x-show="resources.length" x-cloak class="mt-6">
+  <div x-show="resources.length" x-cloak
+       class="mt-6 rounded-card border border-slate-200 bg-white p-5 shadow-card">
     <h2 class="text-sm font-semibold text-slate-700">
       资源 <span class="font-normal text-slate-400" x-text="'共 ' + resourcesTotal + ' 条'"></span>
     </h2>
-    <div class="mt-3 space-y-3">
+    <div class="mt-3 divide-y divide-slate-100">
       <template x-for="r in resources" :key="'r' + r.id">
-        <div class="rounded-lg border border-slate-200 bg-white p-4 transition-shadow hover:shadow-sm">
+        <div class="py-4 first:pt-1 last:pb-0">
           <div class="flex flex-wrap items-center gap-2">
-            <a :href="'/resources/' + r.id" class="text-base font-medium text-slate-800 hover:text-sky-700"
+            <a :href="'/resources/' + r.id" class="text-base font-medium text-slate-800 transition-colors hover:text-sky-700"
                x-text="r.title"></a>
             <span x-show="r.course_name" x-text="r.course_name" x-cloak
                   class="rounded bg-slate-100 px-2 py-0.5 text-xs text-slate-500"></span>
@@ -112,73 +135,9 @@
   {# 加载更多（page 参数对两组结果同时生效，从简） #}
   <div x-show="searched && hasMore" x-cloak class="mt-6 text-center">
     <button @click="load(page + 1)" :disabled="loading"
-            class="rounded-md border border-slate-300 px-4 py-2 text-sm text-slate-600 hover:bg-slate-100 disabled:opacity-50">
+            class="rounded-md border border-slate-300 px-4 py-2 text-sm text-slate-600 transition-colors hover:bg-slate-100 disabled:opacity-50">
       加载更多
     </button>
   </div>
 </div>
-
-<script>
-// 全站搜索（v0.8）：GET /api/search?q=&type=&board=&course_id=&page=&size=
-// 响应分组返回：{posts: {total, items: [...]}, resources: {total, items: [...]}}
-function searchPage(q, type, board, courseId) {
-  return {
-    q: q, type: type, board: board, courseId: courseId,
-    posts: [], postsTotal: 0, resources: [], resourcesTotal: 0,
-    page: 1, size: 10,
-    loading: false, searched: false, error: '',
-    courseOptions: [],
-
-    boardLabel(b) {
-      return {qa: '知屿问答', discuss: '讨论区', experience: '经验长廊', bounty: '资料求援'}[b] || b;
-    },
-    get hasMore() {
-      return this.posts.length < this.postsTotal || this.resources.length < this.resourcesTotal;
-    },
-    buildUrl(page) {
-      const params = new URLSearchParams({
-        q: this.q.trim(), type: this.type, page: String(page), size: String(this.size),
-      });
-      if (this.board) params.set('board', this.board);
-      if (this.courseId) params.set('course_id', String(this.courseId));
-      return '/api/search?' + params.toString();
-    },
-    // 课程下拉选项（GET /api/courses 公共课程列表）；失败静默降级为「全部课程」
-    async loadCourses() {
-      try {
-        const resp = await fetch('/api/courses?size=100');
-        const data = await resp.json().catch(() => ({}));
-        if (!resp.ok) return;
-        this.courseOptions = data.items || [];
-      } catch (e) { /* 课程下拉加载失败不阻塞搜索 */ }
-    },
-    async init() {
-      this.loadCourses();
-      if (this.q.trim()) await this.load(1);
-    },
-    async load(page) {
-      this.loading = true; this.error = '';
-      try {
-        const resp = await fetch(this.buildUrl(page));
-        const data = await resp.json().catch(() => ({}));
-        if (!resp.ok) throw new Error(data.detail || ('搜索失败 ' + resp.status));
-        const posts = data.posts || {};
-        const resources = data.resources || {};
-        if (page === 1) {
-          this.posts = posts.items || [];
-          this.resources = resources.items || [];
-        } else {
-          this.posts = this.posts.concat(posts.items || []);
-          this.resources = this.resources.concat(resources.items || []);
-        }
-        this.postsTotal = posts.total || 0;
-        this.resourcesTotal = resources.total || 0;
-        this.page = page;
-        this.searched = true;
-      } catch (e) { this.error = e.message; }
-      finally { this.loading = false; }
-    },
-  };
-}
-</script>
 {% endblock %}

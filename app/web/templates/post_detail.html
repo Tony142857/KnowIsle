@@ -1,10 +1,14 @@
 {% extends "base.html" %}
 {% block title %}{{ post.title }} · 知屿 KnowIsle{% endblock %}
+{% block head %}
+{# 页面交互外置（CSP）：同步加载，须先于 defer 的 Alpine 启动（x-data 引用全局函数） #}
+<script src="/static/js/pages/post_detail.js"></script>
+{% endblock %}
 
-{# 评论树递归渲染（楼中楼，仿 course_detail.html 章节树） #}
+{# 评论树递归渲染（楼中楼，仿 course_detail.html 章节树）；采纳卡以 emerald 边框标识 #}
 {% macro comment_node(node, post, is_author, logged_in) %}
 {% set c = node.comment %}
-<div class="rounded-lg border bg-white p-4
+<div class="rounded-card border bg-white p-4 shadow-card
             {{ 'border-emerald-300 ring-1 ring-emerald-200' if c.is_accepted else 'border-slate-200' }}"
      x-data="commentBox({{ c.id }}, {{ node.score }}, {{ node.my_vote }},
                         {{ 'true' if logged_in else 'false' }},
@@ -33,36 +37,38 @@
     {# 点赞 / 点踩（未登录点击跳 /login） #}
     <button @click="vote(1)" :disabled="loading"
             :class="myVote === 1 ? 'text-sky-700 font-medium' : 'text-slate-400 hover:text-sky-700'"
-            class="disabled:opacity-50">▲ <span x-text="score"></span></button>
+            class="transition-colors disabled:opacity-50">▲ <span x-text="score"></span></button>
     <button @click="vote(-1)" :disabled="loading"
             :class="myVote === -1 ? 'text-red-600 font-medium' : 'text-slate-400 hover:text-red-600'"
-            class="disabled:opacity-50">▼</button>
+            class="transition-colors disabled:opacity-50">▼</button>
     {% if logged_in %}
     <button @click="replyOpen = !replyOpen; replyError = ''"
-            class="text-slate-400 hover:text-sky-700">回复</button>
+            class="text-slate-400 transition-colors hover:text-sky-700">回复</button>
     {% endif %}
     <button x-show="canAccept" x-cloak @click="accept()" :disabled="loading"
-            class="rounded bg-emerald-600 px-2 py-0.5 text-white hover:bg-emerald-700 disabled:opacity-50">
+            class="rounded bg-emerald-600 px-2 py-0.5 text-white transition-colors hover:bg-emerald-700 disabled:opacity-50">
       采纳
     </button>
     <span x-show="error" x-text="error" x-cloak class="text-red-600"></span>
   </div>
 
   {# 楼内回复框（parent_id = 本评论） #}
-  <div x-show="replyOpen" x-cloak class="mt-3 rounded border border-slate-100 bg-slate-50 p-3">
+  <div x-show="replyOpen" x-cloak class="mt-3 rounded-lg border border-slate-100 bg-slate-50 p-3">
     <textarea x-model="replyContent" rows="2" placeholder="写下你的回复…"
-              class="w-full rounded border border-slate-300 px-3 py-2 text-sm"></textarea>
+              class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm
+                     focus:border-sky-500 focus:outline-none"></textarea>
     <div class="mt-2 flex items-center gap-2">
       <button @click="reply()" :disabled="loading"
-              class="rounded bg-sky-600 px-3 py-1.5 text-sm text-white hover:bg-sky-700 disabled:opacity-50">
+              class="rounded-md bg-sky-600 px-3 py-1.5 text-sm text-white transition-colors hover:bg-sky-700 disabled:opacity-50">
         发表回复
       </button>
       <span x-show="replyError" x-text="replyError" x-cloak class="text-xs text-red-600"></span>
     </div>
   </div>
 
+  {# 子评论层级线：左边框 + pl-4 缩进 #}
   {% if node.children %}
-  <div class="mt-3 ml-4 space-y-3 border-l-2 border-slate-100 pl-4">
+  <div class="mt-3 ml-4 space-y-3 border-l-2 border-slate-200 pl-4">
     {% for child in node.children %}{{ comment_node(child, post, is_author, logged_in) }}{% endfor %}
   </div>
   {% endif %}
@@ -113,7 +119,7 @@
 </div>
 
 {# 帖子正文 + 点赞组件（Markdown 客户端渲染：ZY.md.render，服务端转义 + DOMPurify 双保险） #}
-<div class="rounded-lg border border-slate-200 bg-white p-6"
+<div class="rounded-card border border-slate-200 bg-white p-6 shadow-card animate-fade-up"
      x-data="voteBox('post', {{ post.id }}, {{ vote_score }}, {{ my_vote }},
                      {{ 'true' if user else 'false' }})">
   <div class="md-body text-sm text-slate-700"
@@ -158,12 +164,13 @@
   </div>
 </div>
 
-{# AI 首答卡（仅 qa 帖）：pending 轮询 / done 渲染引用 / failed 友好提示 #}
+{# AI 首答卡（仅 qa 帖）：brand-50 底 + AI 徽章；pending 轮询 / done 渲染引用 / failed 友好提示 #}
 {% if post.board == 'qa' %}
 {% if ai_status == 'done' %}
-<div class="mt-6 rounded-lg border border-sky-200 bg-sky-50/50 p-6">
+<div class="mt-6 rounded-card border border-brand-200 bg-brand-50/50 p-6 shadow-card animate-fade-up">
   <div class="flex items-center gap-2">
-    <h2 class="text-sm font-semibold text-sky-800">AI 助教首答</h2>
+    <span class="rounded bg-brand-600 px-1.5 py-0.5 text-[10px] font-semibold tracking-wide text-white">AI</span>
+    <h2 class="text-sm font-semibold text-brand-800">AI 助教首答</h2>
     <span class="rounded bg-amber-100 px-2 py-0.5 text-xs text-amber-700">AI 生成，仅供参考</span>
   </div>
   {# 文本段 + 引用锚点拼成整段 Markdown，客户端一次性渲染（引用转为溯源链接） #}
@@ -178,12 +185,12 @@
   <div class="md-body mt-3 text-sm text-slate-700"
        x-data x-init='ZY.md.renderInto($el, {{ md_ns.text|tojson }})'></div>
   {% if ai_citations %}
-  <div class="mt-4 border-t border-sky-100 pt-3">
+  <div class="mt-4 border-t border-brand-100 pt-3">
     <p class="text-xs font-medium text-slate-500">引用来源</p>
     <div class="mt-2 grid gap-2 sm:grid-cols-2">
       {% for c in ai_citations %}
       <a href="/documents/{{ c.document_id }}/source#{{ c.chunk_id }}"
-         class="block rounded border border-slate-200 bg-white p-3 text-xs transition-shadow hover:shadow-sm">
+         class="block rounded-lg border border-slate-200 bg-white p-3 text-xs card-hover">
         <span class="font-mono text-slate-400">{{ c.chunk_id }}</span>
         <p class="mt-1 text-slate-600">
           {% if c.chapter %}{{ c.chapter }}{% endif %}
@@ -198,19 +205,20 @@
   {% endif %}
 </div>
 {% elif ai_status == 'pending' %}
-<div class="mt-6 rounded-lg border border-sky-200 bg-sky-50/50 p-6"
+<div class="mt-6 rounded-card border border-brand-200 bg-brand-50/50 p-6 shadow-card"
      x-data="aiPoll({{ post.id }})" x-init="start()">
   <div class="flex items-center gap-2">
-    <h2 class="text-sm font-semibold text-sky-800">AI 助教首答</h2>
+    <span class="rounded bg-brand-600 px-1.5 py-0.5 text-[10px] font-semibold tracking-wide text-white">AI</span>
+    <h2 class="text-sm font-semibold text-brand-800">AI 助教首答</h2>
     <span class="rounded bg-amber-100 px-2 py-0.5 text-xs text-amber-700">AI 生成，仅供参考</span>
   </div>
   <p class="mt-3 flex items-center gap-2 text-sm text-slate-500">
-    <span class="inline-block h-4 w-4 animate-spin rounded-full border-2 border-sky-300 border-t-sky-600"></span>
+    <span class="inline-block h-4 w-4 animate-spin rounded-full border-2 border-brand-300 border-t-brand-600"></span>
     AI 助教正在思考，回答生成后页面会自动刷新…
   </p>
 </div>
 {% elif ai_status == 'failed' %}
-<div class="mt-6 rounded-lg border border-slate-200 bg-white p-6">
+<div class="mt-6 rounded-card border border-slate-200 bg-white p-6 shadow-card">
   <h2 class="text-sm font-semibold text-slate-700">AI 助教首答</h2>
   <p class="mt-3 text-sm text-slate-500">AI 首答生成失败，等待同学回答。你也可以稍后在「AI 问答」中检索本课程资料。</p>
 </div>
@@ -220,8 +228,9 @@
 {# 经验帖 AI 摘要卡（v0.7）：done 渲染摘要 / pending 轮询 / failed 友好提示 #}
 {% if post.board == 'experience' %}
 {% if summary_status == 'done' %}
-<div class="mt-6 rounded-lg border border-amber-200 bg-amber-50/50 p-6">
+<div class="mt-6 rounded-card border border-amber-200 bg-amber-50/50 p-6 shadow-card animate-fade-up">
   <div class="flex items-center gap-2">
+    <span class="rounded bg-amber-500 px-1.5 py-0.5 text-[10px] font-semibold tracking-wide text-white">AI</span>
     <h2 class="text-sm font-semibold text-amber-800">AI 摘要</h2>
     <span class="rounded bg-amber-100 px-2 py-0.5 text-xs text-amber-700">AI 生成，仅供参考</span>
   </div>
@@ -229,7 +238,7 @@
        x-data x-init='ZY.md.renderInto($el, {{ post.ai_summary|tojson }})'></div>
 </div>
 {% elif summary_status == 'pending' %}
-<div class="mt-6 rounded-lg border border-amber-200 bg-amber-50/50 p-6"
+<div class="mt-6 rounded-card border border-amber-200 bg-amber-50/50 p-6 shadow-card"
      x-data="summaryPoll({{ post.id }})" x-init="start()">
   <div class="flex items-center gap-2">
     <h2 class="text-sm font-semibold text-amber-800">AI 摘要</h2>
@@ -241,7 +250,7 @@
   </p>
 </div>
 {% elif summary_status == 'failed' %}
-<div class="mt-6 rounded-lg border border-slate-200 bg-white p-6">
+<div class="mt-6 rounded-card border border-slate-200 bg-white p-6 shadow-card">
   <h2 class="text-sm font-semibold text-slate-700">AI 摘要</h2>
   <p class="mt-3 text-sm text-slate-500">AI 摘要生成失败，可直接阅读正文。</p>
 </div>
@@ -253,10 +262,11 @@
   <h2 class="text-lg font-semibold text-slate-700">
     评论 <span class="text-sm font-normal text-slate-400">{{ comment_count }}</span>
   </h2>
+  <p class="mt-1 text-xs text-slate-400">评论内容支持 Markdown 与代码高亮。</p>
 
   {% if user %}
   {% if post.status != 'closed' %}
-  <div class="mt-4 rounded-lg border border-slate-200 bg-white p-4"
+  <div class="mt-4 rounded-card border border-slate-200 bg-white p-4 shadow-card"
        x-data="{ content: '', loading: false, error: '',
          async submit() {
            if (!this.content.trim()) { this.error = '评论内容不能为空'; return; }
@@ -273,22 +283,23 @@
            finally { this.loading = false; }
          } }">
     <textarea x-model="content" rows="3" placeholder="写下你的回答 / 看法…"
-              class="w-full rounded border border-slate-300 px-3 py-2 text-sm"></textarea>
+              class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm
+                     focus:border-sky-500 focus:outline-none"></textarea>
     <div class="mt-2 flex items-center gap-2">
       <button @click="submit()" :disabled="loading"
-              class="rounded bg-sky-600 px-4 py-2 text-sm text-white hover:bg-sky-700 disabled:opacity-50">
+              class="rounded-md bg-sky-600 px-4 py-2 text-sm text-white transition-colors hover:bg-sky-700 disabled:opacity-50">
         发表评论
       </button>
       <span x-show="error" x-text="error" x-cloak class="text-xs text-red-600"></span>
     </div>
   </div>
   {% else %}
-  <p class="mt-4 rounded-lg border border-slate-200 bg-white p-4 text-sm text-slate-400">
+  <p class="mt-4 rounded-card border border-slate-200 bg-white p-4 text-sm text-slate-400 shadow-card">
     帖子已关闭，无法发表评论。
   </p>
   {% endif %}
   {% else %}
-  <p class="mt-4 rounded-lg border border-slate-200 bg-white p-4 text-sm text-slate-500">
+  <p class="mt-4 rounded-card border border-slate-200 bg-white p-4 text-sm text-slate-500 shadow-card">
     <a href="/login" class="text-sky-600 hover:underline">登录</a> 后参与评论与点赞。
   </p>
   {% endif %}
@@ -300,120 +311,14 @@
     {% endfor %}
   </div>
   {% else %}
-  <p class="mt-4 rounded-lg border border-dashed border-slate-300 bg-white py-10 text-center text-sm text-slate-400">
-    暂无评论。
-  </p>
+  <div class="mt-4 rounded-card border border-dashed border-slate-300 bg-white py-10 text-center">
+    <svg class="mx-auto h-8 w-8 text-slate-300" fill="none" stroke="currentColor" stroke-width="1.5"
+         viewBox="0 0 24 24" aria-hidden="true">
+      <path stroke-linecap="round" stroke-linejoin="round"
+            d="M8 10h8m-8 4h5M7 20l-3 3V5a2 2 0 012-2h12a2 2 0 012 2v12a2 2 0 01-2 2H7z"/>
+    </svg>
+    <p class="mt-2 text-sm text-slate-400">暂无评论。</p>
+  </div>
   {% endif %}
 </section>
-
-<script>
-{# voteBox / favBox 已迁移至 /static/js/components.js（Alpine.data 全局注册，行为等价） #}
-
-// 单条评论：点赞 + 楼内回复 + 采纳
-function commentBox(commentId, score, myVote, loggedIn, canAccept) {
-  return {
-    score: score, myVote: myVote, loading: false, error: '',
-    canAccept: canAccept,
-    replyOpen: false, replyContent: '', replyError: '',
-    async vote(value) {
-      if (!loggedIn) { window.location.href = '/login'; return; }
-      this.loading = true; this.error = '';
-      try {
-        const resp = await fetch('/api/votes', {
-          method: 'POST', headers: {'Content-Type': 'application/json'},
-          body: JSON.stringify({target_type: 'comment', target_id: commentId, value: value}),
-        });
-        const data = await resp.json().catch(() => ({}));
-        if (!resp.ok) throw new Error(data.detail || ('操作失败 ' + resp.status));
-        this.score = data.score; this.myVote = data.my_vote;
-      } catch (e) { this.error = e.message; }
-      finally { this.loading = false; }
-    },
-    async reply() {
-      if (!this.replyContent.trim()) { this.replyError = '回复内容不能为空'; return; }
-      this.loading = true; this.replyError = '';
-      try {
-        const resp = await fetch(window.location.pathname.replace('/posts/', '/api/posts/') + '/comments', {
-          method: 'POST', headers: {'Content-Type': 'application/json'},
-          body: JSON.stringify({content: this.replyContent.trim(), parent_id: commentId}),
-        });
-        const data = await resp.json().catch(() => ({}));
-        if (!resp.ok) throw new Error(data.detail || ('回复失败 ' + resp.status));
-        window.location.reload();
-      } catch (e) { this.replyError = e.message; }
-      finally { this.loading = false; }
-    },
-    async accept() {
-      this.loading = true; this.error = '';
-      try {
-        const resp = await fetch('/api/posts/comments/' + commentId + '/accept', {method: 'POST'});
-        const data = await resp.json().catch(() => ({}));
-        if (!resp.ok) throw new Error(data.detail || ('采纳失败 ' + resp.status));
-        window.location.reload();
-      } catch (e) { this.error = e.message; }
-      finally { this.loading = false; }
-    },
-  };
-}
-
-// AI 首答 pending：每 3s 轮询帖子状态，done/failed 后停轮询并刷新页面
-function aiPoll(postId) {
-  return {
-    timer: null,
-    start() {
-      this.timer = setInterval(async () => {
-        try {
-          const resp = await fetch('/api/posts/' + postId);
-          if (!resp.ok) return;
-          const data = await resp.json();
-          if (data.ai_answer_status !== 'pending') {
-            clearInterval(this.timer);
-            window.location.reload();
-          }
-        } catch (e) { /* 网络抖动时下轮重试 */ }
-      }, 3000);
-    },
-  };
-}
-
-// 经验帖 AI 摘要 pending：每 3s 轮询，摘要生成后刷新页面（v0.7）
-function summaryPoll(postId) {
-  return {
-    timer: null,
-    start() {
-      this.timer = setInterval(async () => {
-        try {
-          const resp = await fetch('/api/posts/' + postId);
-          if (!resp.ok) return;
-          const data = await resp.json();
-          if (data.ai_summary_status !== 'pending') {
-            clearInterval(this.timer);
-            window.location.reload();
-          }
-        } catch (e) { /* 网络抖动时下轮重试 */ }
-      }, 3000);
-    },
-  };
-}
-
-// 精华标记开关（v0.7）：POST /api/admin/posts/{id}/feature（管理员/共建者）
-function featureBox(postId, featured) {
-  return {
-    featured: featured, loading: false, error: '',
-    async toggle() {
-      this.loading = true; this.error = '';
-      try {
-        const resp = await fetch('/api/admin/posts/' + postId + '/feature', {
-          method: 'POST', headers: {'Content-Type': 'application/json'},
-          body: JSON.stringify({featured: !this.featured}),
-        });
-        const data = await resp.json().catch(() => ({}));
-        if (!resp.ok) throw new Error(data.detail || ('操作失败 ' + resp.status));
-        this.featured = data.featured;
-      } catch (e) { this.error = e.message; }
-      finally { this.loading = false; }
-    },
-  };
-}
-</script>
 {% endblock %}
