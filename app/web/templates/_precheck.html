@@ -3,7 +3,7 @@
    ai_review:{relevance,completeness,quality,issues:[],suggested_chapter}|{error},
    hard_fail, reason}；为 None 时表示预检仍在进行。 #}
 {% macro precheck_panel(p) %}
-<div class="rounded-lg border border-slate-200 bg-white p-4">
+<div class="rounded-card border border-slate-200 bg-white p-4 shadow-card">
   <h3 class="text-sm font-semibold text-slate-700">自动预检结果</h3>
   {% if not p %}
   <p class="mt-2 text-xs text-slate-400">预检进行中，稍后刷新查看。</p>
@@ -48,10 +48,19 @@
     {% if p.ai_review.error %}
     <p class="mt-1 text-xs text-slate-400">AI 初评暂不可用：{{ p.ai_review.error }}</p>
     {% else %}
-    <dl class="mt-1.5 space-y-1 text-xs text-slate-600">
-      <div class="flex justify-between"><dt>与课程相关性</dt><dd>{{ p.ai_review.relevance }}</dd></div>
-      <div class="flex justify-between"><dt>内容完整性</dt><dd>{{ p.ai_review.completeness }}</dd></div>
-      <div class="flex justify-between"><dt>资料质量</dt><dd>{{ p.ai_review.quality }}</dd></div>
+    {# 三分数字卡：≥70 绿、<50 红、其余中性；质量分按同一阈值着色 #}
+    <dl class="mt-2 grid grid-cols-3 gap-2 text-center">
+      {% for label, score in [('相关性', p.ai_review.relevance),
+                              ('完整性', p.ai_review.completeness),
+                              ('质量', p.ai_review.quality)] %}
+      <div class="rounded-lg border border-slate-100 bg-slate-50 px-2 py-2">
+        <dd class="text-xl font-bold
+                   {{ 'text-emerald-600' if score >= 70 else ('text-red-600' if score < 50 else 'text-slate-700') }}">
+          {{ score }}
+        </dd>
+        <dt class="mt-0.5 text-xs text-slate-400">{{ label }}</dt>
+      </div>
+      {% endfor %}
     </dl>
     {% if p.ai_review.issues %}
     <ul class="mt-2 list-disc pl-4 text-xs text-amber-700">

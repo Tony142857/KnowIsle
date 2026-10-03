@@ -3,19 +3,38 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="知屿 KnowIsle —— 智能课程知识社区：课程资料库、AI 问答溯源、知屿问答与经验长廊，让每门课程沉淀为一座知识岛屿。">
   <title>{% block title %}知屿 KnowIsle{% endblock %}</title>
-  {# TODO(v0.9 前端): 答辩前将 CDN 依赖本地化到 static/vendor，保证断网兜底演示 #}
-  <script src="https://cdn.tailwindcss.com"></script>
-  <script src="https://unpkg.com/htmx.org@1.9.12"></script>
-  <script defer src="https://unpkg.com/alpinejs@3.14.1/dist/cdn.min.js"></script>
+  <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+  {# 前端依赖已全部本地化到 static/vendor（断网可演示） #}
+  <script src="/static/vendor/tailwind-3.4.16.js"></script>
+  {# 设计令牌（v1.0 设计体系统一）：须在 tailwind Play CDN 之后、页面渲染前 #}
+  <script src="/static/js/tailwind-config.js"></script>
+  <script src="/static/vendor/htmx-1.9.12.min.js"></script>
+  {# api.js / components.js 须在 Alpine 之前加载（components 经 alpine:init 注册全局组件） #}
+  <script defer src="/static/js/api.js"></script>
+  <script defer src="/static/js/components.js"></script>
+  {# Markdown 渲染 + 代码高亮：marked 解析 + DOMPurify 消毒 + highlight.js（v1.0）+ ZY.md 封装 #}
+  <script defer src="/static/vendor/marked-12.0.2.min.js"></script>
+  <script defer src="/static/vendor/purify-3.1.6.min.js"></script>
+  <script defer src="/static/vendor/highlight-11.9.0.min.js"></script>
+  <link rel="stylesheet" href="/static/vendor/highlight-github-11.9.0.min.css">
+  <script defer src="/static/js/markdown.js"></script>
+  <script defer src="/static/js/base.js"></script>
+  <script defer src="/static/vendor/alpine-3.14.1.min.js"></script>
   <link rel="stylesheet" href="/static/css/main.css">
   {% block head %}{% endblock %}
 </head>
 <body class="bg-slate-50 text-slate-800 min-h-screen flex flex-col">
   {# ===== 导航栏（§13 通用交互规范：含通知未读角标，30s 轮询） ===== #}
-  <header class="bg-white border-b border-slate-200 sticky top-0 z-40">
+  <header class="bg-white/90 backdrop-blur border-b border-slate-200/80 sticky top-0 z-40 shadow-[0_1px_2px_0_rgb(15_23_42/0.04)]"
+          x-data="{ mobileOpen: false }" @keydown.escape.window="mobileOpen = false">
     <nav class="max-w-6xl mx-auto px-4 h-14 flex items-center gap-6">
-      <a href="/" class="text-lg font-bold text-sky-700 shrink-0">
+      <a href="/" class="flex items-center gap-1.5 text-lg font-bold text-sky-700 shrink-0">
+        <svg class="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M12 3 2 8l10 5 10-5-10-5z"/>
+          <path stroke-linecap="round" stroke-linejoin="round" d="M6 10.5V15c0 1.7 2.7 3 6 3s6-1.3 6-3v-4.5"/>
+        </svg>
         知屿 <span class="text-sm font-normal text-slate-400">KnowIsle</span>
       </a>
 
@@ -63,7 +82,13 @@
       </div>
 
       <div class="ml-auto flex items-center gap-4">
-        {# 通知未读角标（模块 B5）：HTMX 加载时 + 每 30s 轮询 #}
+        {# 全站搜索框（v0.8）：GET /search，未登录将被 303 引导至登录页 #}
+        <form action="/search" method="get" class="hidden md:block">
+          <input type="search" name="q" placeholder="搜索帖子 / 资料…" required
+                 class="w-40 rounded-md border border-slate-200 bg-slate-50 px-3 py-1.5 text-sm
+                        transition-all focus:w-56 focus:border-sky-400 focus:bg-white focus:outline-none">
+        </form>
+        {# 通知未读角标（模块 B5）：HTMX 加载时 + 每 30s 轮询；移动端保留在汉堡按钮左侧 #}
         <a href="/me" class="relative text-slate-500 hover:text-sky-700" title="站内通知"
            hx-get="/api/notifications/unread-count" hx-trigger="load, every 30s" hx-swap="none">
           <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2"
@@ -75,28 +100,111 @@
                 class="absolute -top-1 -right-1 hidden min-w-4 h-4 px-1 rounded-full
                        bg-red-500 text-white text-[10px] leading-4 text-center">0</span>
         </a>
-        <a href="/me" class="text-sm text-slate-600 hover:text-sky-700">个人中心</a>
-        {# 登录态：已登录显示昵称 + 退出，未登录显示登录按钮（§13） #}
-        {% if user %}
-        <span class="flex items-center gap-2 text-sm">
-          {% if user.avatar_url %}
-          <img src="{{ user.avatar_url }}" alt="" class="w-7 h-7 rounded-full object-cover">
-          {% else %}
-          <span class="w-7 h-7 rounded-full bg-sky-100 text-sky-700 flex items-center justify-center text-xs font-medium">
-            {{ user.nickname[:1] }}
+        {# 桌面端登录态区（移动端收纳进汉堡面板） #}
+        <div class="hidden md:flex items-center gap-4">
+          <a href="/me" class="text-sm text-slate-600 hover:text-sky-700">个人中心</a>
+          {# 登录态：已登录显示昵称 + 退出，未登录显示登录按钮（§13） #}
+          {% if user %}
+          <span class="flex items-center gap-2 text-sm">
+            {% if user.avatar_url %}
+            <img src="{{ user.avatar_url }}" alt="" class="w-7 h-7 rounded-full object-cover">
+            {% else %}
+            <span class="w-7 h-7 rounded-full bg-sky-100 text-sky-700 flex items-center justify-center text-xs font-medium">
+              {{ user.nickname[:1] }}
+            </span>
+            {% endif %}
+            <span class="text-slate-700">{{ user.nickname }}</span>
+            {% if user.role == 'admin' %}
+            <span class="text-[10px] rounded bg-amber-100 text-amber-700 px-1 py-0.5">管理员</span>
+            {% endif %}
           </span>
+          <form method="post" action="/logout" class="inline">
+            <button type="submit" class="text-sm text-slate-400 hover:text-sky-700">退出</button>
+          </form>
+          {% else %}
+          <a href="/login" class="text-sm rounded-md bg-sky-600 text-white px-3 py-1.5 hover:bg-sky-700">登录</a>
           {% endif %}
-          <span class="text-slate-700">{{ user.nickname }}</span>
-          {% if user.role == 'admin' %}
-          <span class="text-[10px] rounded bg-amber-100 text-amber-700 px-1 py-0.5">管理员</span>
-          {% endif %}
-        </span>
-        <a href="/logout" class="text-sm text-slate-400 hover:text-sky-700">退出</a>
-        {% else %}
-        <a href="/login" class="text-sm rounded-md bg-sky-600 text-white px-3 py-1.5 hover:bg-sky-700">登录</a>
-        {% endif %}
+        </div>
+        {# 汉堡按钮：仅 md 以下显示，切换移动端导航面板 #}
+        <button @click="mobileOpen = !mobileOpen" :aria-expanded="mobileOpen" aria-label="打开导航菜单"
+                class="md:hidden -mr-1 rounded-md p-1.5 text-slate-600 hover:bg-slate-100 hover:text-sky-700">
+          <svg x-show="!mobileOpen" class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2"
+               viewBox="0 0 24 24" aria-hidden="true">
+            <path stroke-linecap="round" d="M4 6h16M4 12h16M4 18h16"/>
+          </svg>
+          <svg x-show="mobileOpen" x-cloak class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2"
+               viewBox="0 0 24 24" aria-hidden="true">
+            <path stroke-linecap="round" d="M6 6l12 12M18 6L6 18"/>
+          </svg>
+        </button>
       </div>
     </nav>
+
+    {# ===== 移动端导航面板（md 以下）：板块入口 + 搜索 + 协审/管理 + 登录态 ===== #}
+    <div x-show="mobileOpen" x-cloak class="md:hidden border-t border-slate-200">
+      <div class="max-w-6xl mx-auto px-4 py-3 space-y-1">
+        <form action="/search" method="get" class="pb-2">
+          <input type="search" name="q" placeholder="搜索帖子 / 资料…" required
+                 class="w-full rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm
+                        focus:border-sky-400 focus:bg-white focus:outline-none">
+        </form>
+        {% for key, href, label in nav_items %}
+        <a href="{{ href }}" @click="mobileOpen = false"
+           class="block rounded-md px-3 py-2 text-sm transition-colors
+                  {{ 'bg-sky-50 text-sky-700 font-medium' if active == key
+                     else 'text-slate-600 hover:text-sky-700 hover:bg-slate-100' }}">
+          {{ label }}
+        </a>
+        {% endfor %}
+        {% if user and user.role in ('reviewer', 'admin') %}
+        <a href="/review" @click="mobileOpen = false"
+           class="block rounded-md px-3 py-2 text-sm transition-colors
+                  {{ 'bg-sky-50 text-sky-700 font-medium' if active == 'review'
+                     else 'text-slate-600 hover:text-sky-700 hover:bg-slate-100' }}">
+          协审
+        </a>
+        {% endif %}
+        {% if user and user.role == 'admin' %}
+        <a href="/admin" @click="mobileOpen = false"
+           class="block rounded-md px-3 py-2 text-sm transition-colors
+                  {{ 'bg-sky-50 text-sky-700 font-medium' if active == 'admin'
+                     else 'text-slate-600 hover:text-sky-700 hover:bg-slate-100' }}">
+          管理后台
+        </a>
+        <a href="/admin/review" @click="mobileOpen = false"
+           class="block rounded-md px-3 py-2 text-sm transition-colors
+                  {{ 'bg-sky-50 text-sky-700 font-medium' if active == 'admin_review'
+                     else 'text-slate-600 hover:text-sky-700 hover:bg-slate-100' }}">
+          终审
+        </a>
+        {% endif %}
+        <div class="border-t border-slate-100 pt-2 mt-2">
+          {% if user %}
+          <a href="/me" @click="mobileOpen = false"
+             class="flex items-center gap-2 rounded-md px-3 py-2 text-sm text-slate-600 hover:bg-slate-100 hover:text-sky-700">
+            {% if user.avatar_url %}
+            <img src="{{ user.avatar_url }}" alt="" class="w-6 h-6 rounded-full object-cover">
+            {% else %}
+            <span class="w-6 h-6 rounded-full bg-sky-100 text-sky-700 flex items-center justify-center text-xs font-medium">
+              {{ user.nickname[:1] }}
+            </span>
+            {% endif %}
+            <span>{{ user.nickname }} · 个人中心</span>
+            {% if user.role == 'admin' %}
+            <span class="text-[10px] rounded bg-amber-100 text-amber-700 px-1 py-0.5">管理员</span>
+            {% endif %}
+          </a>
+          <form method="post" action="/logout">
+            <button type="submit"
+                    class="block w-full text-left rounded-md px-3 py-2 text-sm text-slate-400 hover:bg-slate-100 hover:text-sky-700">退出登录</button>
+          </form>
+          {% else %}
+          <a href="/login"
+             class="block rounded-md bg-sky-600 px-3 py-2 text-center text-sm text-white hover:bg-sky-700">登录</a>
+          {% endif %}
+        </div>
+      </div>
+    </div>
   </header>
 
   {# ===== 全局提示（表单提交 / 操作结果的 flash 区域，HTMX 可局部替换） ===== #}
@@ -108,22 +216,44 @@
     {% block content %}{% endblock %}
   </main>
 
-  <footer class="border-t border-slate-200 py-4 text-center text-xs text-slate-400">
-    知屿 KnowIsle · 每门课程是一座知识岛屿 · 学习通管理"教"，知屿沉淀"学"
+  <footer class="border-t border-slate-200 bg-white py-5 text-center text-xs text-slate-400">
+    <p>知屿 KnowIsle · 每门课程是一座知识岛屿 · 学习通管理"教"，知屿沉淀"学"</p>
+    <nav class="mt-2 flex items-center justify-center gap-4 border-t border-slate-100 pt-2">
+      <a href="/" class="hover:text-sky-700">首页</a>
+      <a href="/search" class="hover:text-sky-700">全站搜索</a>
+      <a href="/boards/experience" class="hover:text-sky-700">经验长廊</a>
+      <a href="/me" class="hover:text-sky-700">个人中心</a>
+    </nav>
   </footer>
 
-  {# 未读角标更新：服务端返回 {"unread": n}，>0 时显示数字 #}
-  <script>
-    document.body.addEventListener('htmx:ajaxRequest', function () { /* 保持静默 */ });
-    document.body.addEventListener('htmx:afterRequest', function (evt) {
-      if (!evt.detail.pathInfo || evt.detail.pathInfo.requestPath !== '/api/notifications/unread-count') return;
-      try {
-        var data = JSON.parse(evt.detail.xhr.responseText);
-        var badge = document.getElementById('notif-badge');
-        badge.textContent = data.unread > 99 ? '99+' : data.unread;
-        badge.classList.toggle('hidden', !data.unread);
-      } catch (e) { /* 接口未就绪时忽略 */ }
-    });
-  </script>
+  {# 全局确认对话框（confirmModal 组件，components.js）：页面内任意组件
+     $dispatch('zy-ask', {title, message, confirmText, withInput, requireInput,
+     placeholder, onConfirm}) 即可弹出，替代原生 confirm/prompt #}
+  <div x-data="confirmModal()" @zy-ask.window="ask($event.detail)">
+    <div x-show="open" x-cloak @keydown.escape.window="close()"
+         class="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4">
+      <div class="w-full max-w-sm rounded-lg bg-white p-5 shadow-xl" @click.outside="close()">
+        <h2 class="text-base font-semibold text-slate-800" x-text="title"></h2>
+        <p x-show="message" x-text="message" x-cloak class="mt-2 text-sm leading-6 text-slate-600"></p>
+        <input x-show="withInput" x-model="input" type="text" :placeholder="placeholder"
+               @keydown.enter.prevent="confirm()"
+               class="mt-3 w-full rounded border border-slate-300 px-3 py-2 text-sm
+                      focus:border-sky-500 focus:outline-none">
+        <div class="mt-4 flex justify-end gap-2">
+          <button @click="close()" :disabled="loading"
+                  class="rounded border border-slate-300 px-4 py-1.5 text-sm text-slate-600
+                         hover:bg-slate-100 disabled:opacity-50">取消</button>
+          <button @click="confirm()" :disabled="loading || (requireInput && !input.trim())"
+                  class="rounded bg-sky-600 px-4 py-1.5 text-sm text-white
+                         hover:bg-sky-700 disabled:opacity-50" x-text="confirmText"></button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  {# 全局轻提示容器（ZY.toast，components.js） #}
+  <div id="zy-toasts" class="pointer-events-none fixed right-4 top-16 z-[60] flex flex-col items-end gap-2"></div>
+
+  {# 未读角标更新逻辑已外置到 /static/js/base.js（CSP 兼容，v1.0） #}
 </body>
 </html>

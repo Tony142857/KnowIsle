@@ -77,6 +77,7 @@ class User(Base):
     credit: Mapped[int] = mapped_column(Integer, server_default="100", nullable=False)  # 信用分
     gpa_public: Mapped[bool] = mapped_column(server_default="false", nullable=False)  # 学业画像授权
     status: Mapped[str] = mapped_column(Text, server_default="active", nullable=False)
+    muted_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))  # 禁言截止
     created_at: Mapped[datetime] = _created_at()
 
 
@@ -176,6 +177,7 @@ class Document(Base):
         ),
         Index("idx_documents_md5", "md5"),
         Index("idx_documents_owner", "owner_id"),
+        Index("idx_documents_storage_key", "storage_key"),
     )
 
     id: Mapped[int] = _id()
@@ -198,6 +200,7 @@ class Chunk(Base):
     __table_args__ = (
         CheckConstraint("scope IN ('personal','public')", name="ck_chunks_scope"),
         Index("idx_chunks_course_scope", "course_id", "scope"),
+        Index("idx_chunks_document", "document_id"),
         Index(
             "idx_chunks_owner", "owner_id", postgresql_where=text("scope='personal'")
         ),
@@ -278,6 +281,7 @@ class ReviewTask(Base):
         CheckConstraint(
             "stage IN ('precheck','co_review','final','done')", name="ck_review_tasks_stage"
         ),
+        Index("idx_review_tasks_resource", "resource_id"),
     )
 
     id: Mapped[int] = _id()
@@ -298,6 +302,7 @@ class ReviewRecord(Base):
         CheckConstraint(
             "verdict IN ('approve','reject')", name="ck_review_records_verdict"
         ),
+        Index("idx_review_records_task", "task_id"),
     )
 
     id: Mapped[int] = _id()
@@ -339,6 +344,7 @@ class Post(Base):
     tags: Mapped[list[str] | None] = mapped_column(ARRAY(Text))  # 如 {保研, 夏令营}
     bounty_score: Mapped[int] = mapped_column(Integer, server_default="0", nullable=False)
     ai_first_answer: Mapped[str | None] = mapped_column(Text)  # AI 首答（问答贴）
+    ai_summary: Mapped[str | None] = mapped_column(Text)  # AI 摘要（经验长廊帖，v0.7）
     accepted_comment_id: Mapped[int | None] = mapped_column(BigInteger)  # 采纳的评论
     view_count: Mapped[int] = mapped_column(Integer, server_default="0", nullable=False)
     status: Mapped[str] = mapped_column(Text, server_default="normal", nullable=False)
@@ -347,6 +353,7 @@ class Post(Base):
 
 class Comment(Base):
     __tablename__ = "comments"
+    __table_args__ = (Index("idx_comments_post", "post_id"),)
 
     id: Mapped[int] = _id()
     post_id: Mapped[int] = mapped_column(
@@ -367,6 +374,7 @@ class Vote(Base):
         ),
         CheckConstraint("value IN (1,-1)", name="ck_votes_value"),
         UniqueConstraint("user_id", "target_type", "target_id"),
+        Index("idx_votes_target", "target_type", "target_id"),
     )
 
     id: Mapped[int] = _id()
@@ -400,6 +408,7 @@ class Follow(Base):
     __table_args__ = (
         CheckConstraint("target_type IN ('course','user')", name="ck_follows_target"),
         UniqueConstraint("user_id", "target_type", "target_id"),
+        Index("idx_follows_target", "target_type", "target_id"),
     )
 
     id: Mapped[int] = _id()
@@ -438,7 +447,8 @@ class Report(Base):
 
 
 class ScoreLog(Base):
-    """贡献分明细（事件驱动结算，事务 + 唯一约束防重复计分，模块 B4）。"""
+    """贡献分明细（事件驱动结算：明细与 users.score 同事务写入，
+    重复计分由业务层判重 / 行锁防护，模块 B4）。"""
 
     __tablename__ = "score_logs"
     __table_args__ = (Index("idx_score_logs_user", "user_id", text("created_at DESC")),)
@@ -503,6 +513,7 @@ class QaLog(Base):
     """全量问答落库（模块 A5）：检索/生成指标与引用链路，供效果评估与看板。"""
 
     __tablename__ = "qa_logs"
+    __table_args__ = (Index("idx_qa_logs_created_at", "created_at"),)
 
     id: Mapped[int] = _id()
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)

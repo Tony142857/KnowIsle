@@ -1,41 +1,58 @@
 {% extends "base.html" %}
 {% block title %}发帖 · 知屿 KnowIsle{% endblock %}
+{% block head %}
+{# 页面交互外置（CSP）：同步加载，须先于 defer 的 Alpine 启动（x-data 引用全局函数） #}
+<script src="/static/js/pages/post_new.js"></script>
+{% endblock %}
 
 {% block content %}
 <div class="mx-auto max-w-3xl" x-data="postNew('{{ board }}')" x-init="loadCourses()">
-  <div class="mb-6">
+  <div class="mb-6 animate-fade-up">
     <a href="/boards/{{ board }}" class="text-sm text-sky-600 hover:underline">← {{ board_name }}</a>
     <h1 class="mt-2 text-2xl font-bold text-slate-800">发帖</h1>
   </div>
 
-  <div class="space-y-4 rounded-lg border border-slate-200 bg-white p-6">
+  <div class="space-y-4 rounded-card border border-slate-200 bg-white p-4 shadow-card sm:p-6">
     <p x-show="error" x-text="error" x-cloak
-       class="rounded bg-red-50 px-3 py-2 text-sm text-red-600"></p>
+       class="rounded-md bg-red-50 px-3 py-2 text-sm text-red-600"></p>
 
-    {# 板块选择（qa / discuss） #}
+    {# 板块选择（§4.2 四板块，v0.7 全部开放）；板块相关的表单区带 x-transition 过渡 #}
     <div>
       <label class="block text-xs font-medium text-slate-500">板块</label>
-      <div class="mt-1 flex gap-1 rounded-lg border border-slate-200 p-1 text-sm w-fit">
-        <button @click="board = 'qa'" type="button"
+      <div class="mt-1 flex flex-wrap gap-1 rounded-lg border border-slate-200 p-1 text-sm w-fit">
+        <button @click="switchBoard('qa')" type="button"
                 :class="board === 'qa' ? 'bg-sky-600 text-white font-medium' : 'text-slate-600 hover:bg-slate-100'"
                 class="rounded-md px-4 py-1.5 transition-colors">知屿问答</button>
-        <button @click="board = 'discuss'" type="button"
+        <button @click="switchBoard('discuss')" type="button"
                 :class="board === 'discuss' ? 'bg-sky-600 text-white font-medium' : 'text-slate-600 hover:bg-slate-100'"
                 class="rounded-md px-4 py-1.5 transition-colors">讨论区</button>
+        <button @click="switchBoard('experience')" type="button"
+                :class="board === 'experience' ? 'bg-sky-600 text-white font-medium' : 'text-slate-600 hover:bg-slate-100'"
+                class="rounded-md px-4 py-1.5 transition-colors">经验长廊</button>
+        <button @click="switchBoard('bounty')" type="button"
+                :class="board === 'bounty' ? 'bg-sky-600 text-white font-medium' : 'text-slate-600 hover:bg-slate-100'"
+                class="rounded-md px-4 py-1.5 transition-colors">资料求援</button>
       </div>
       <p class="mt-1 text-xs text-slate-400" x-show="board === 'qa'">
         问答帖发布后将由 AI 助教基于课程资料生成首答（标注"AI 生成，仅供参考"）。
       </p>
+      <p class="mt-1 text-xs text-slate-400" x-show="board === 'experience'">
+        按「背景 → 时间线 → 经验要点 → 避坑提示」结构化模板填写，发布后自动生成 AI 摘要。
+      </p>
+      <p class="mt-1 text-xs text-slate-400" x-show="board === 'bounty'">
+        发布时托管悬赏贡献分，采纳响应后赏金转给响应者；未采纳不结算。
+      </p>
     </div>
 
-    {# 课程（qa 必选）与章节（选填） #}
-    <div>
+    {# 课程（qa 必选，其余选填）与章节（选填） #}
+    <div x-show="board !== 'experience'" x-transition>
       <label class="block text-xs font-medium text-slate-500">
         关联课程 <span x-show="board === 'qa'" class="text-red-500">*</span>
-        <span x-show="board === 'discuss'" class="text-slate-400">（选填）</span>
+        <span x-show="board === 'discuss' || board === 'bounty'" class="text-slate-400">（选填）</span>
       </label>
       <select x-model="courseId" @change="loadChapters()"
-              class="mt-1 w-full rounded border border-slate-300 px-3 py-2 text-sm">
+              class="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm
+                     focus:border-sky-500 focus:outline-none">
         <option value="">请选择课程</option>
         <template x-for="g in courseGroups" :key="g.major">
           <optgroup :label="g.major">
@@ -46,10 +63,11 @@
         </template>
       </select>
     </div>
-    <div x-show="courseId" x-cloak>
+    <div x-show="courseId" x-cloak x-transition>
       <label class="block text-xs font-medium text-slate-500">关联章节（选填）</label>
       <select x-model="chapterId"
-              class="mt-1 w-full rounded border border-slate-300 px-3 py-2 text-sm">
+              class="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm
+                     focus:border-sky-500 focus:outline-none">
         <option value="">不指定章节</option>
         <template x-for="ch in chapters" :key="ch.id">
           <option :value="ch.id" x-text="ch.label"></option>
@@ -59,112 +77,65 @@
 
     <div>
       <label class="block text-xs font-medium text-slate-500">标题 <span class="text-red-500">*</span></label>
-      <input type="text" x-model="title" maxlength="128" placeholder="一句话说清楚你的问题或主题"
-             class="mt-1 w-full rounded border border-slate-300 px-3 py-2 text-sm">
+      <input type="text" x-model="title" maxlength="128"
+             placeholder="一句话说清楚你的问题、经验主题或求援需求"
+             class="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm
+                    focus:border-sky-500 focus:outline-none">
     </div>
 
-    <div>
+    {# 经验长廊：结构化模板四栏卡片化（§4.3：背景 → 时间线 → 经验要点 → 避坑提示） #}
+    <div x-show="board === 'experience'" x-cloak x-transition class="space-y-4">
+      <template x-for="sec in experienceSections" :key="sec.key">
+        <div class="rounded-lg border border-slate-200 bg-slate-50/50 p-3">
+          <label class="block text-xs font-medium text-slate-600">
+            <span x-text="sec.label"></span>
+            <span class="text-slate-400" x-text="sec.key === '背景' ? '（必填）' : '（选填）'"></span>
+          </label>
+          <p class="mt-0.5 text-xs text-slate-400" x-text="sec.desc"></p>
+          <textarea x-model="sections[sec.key]" rows="4"
+                    class="mt-2 w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm
+                           focus:border-sky-500 focus:outline-none"
+                    :placeholder="sec.placeholder"></textarea>
+        </div>
+      </template>
+    </div>
+
+    {# 其余板块：普通正文 #}
+    <div x-show="board !== 'experience'" x-transition>
       <label class="block text-xs font-medium text-slate-500">正文 <span class="text-red-500">*</span></label>
       <textarea x-model="content" rows="10"
                 placeholder="问题的背景、你已尝试的思路、希望得到的帮助…"
-                class="mt-1 w-full rounded border border-slate-300 px-3 py-2 text-sm"></textarea>
+                class="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm
+                       focus:border-sky-500 focus:outline-none"></textarea>
+    </div>
+
+    {# 资料求援：悬赏贡献分（发布时托管） #}
+    <div x-show="board === 'bounty'" x-cloak x-transition>
+      <label class="block text-xs font-medium text-slate-500">
+        悬赏贡献分 <span class="text-red-500">*</span>
+        <span class="text-slate-400">（1~1000，发布时从贡献分中托管）</span>
+      </label>
+      <input type="number" x-model.number="bountyScore" min="1" max="1000" step="1"
+             class="mt-1 w-40 rounded-md border border-slate-300 px-3 py-2 text-sm
+                    focus:border-sky-500 focus:outline-none">
     </div>
 
     <div>
       <label class="block text-xs font-medium text-slate-500">标签（选填，逗号分隔，最多 5 个）</label>
-      <input type="text" x-model="tagsInput" placeholder="如：期中复习, 习题课"
-             class="mt-1 w-full rounded border border-slate-300 px-3 py-2 text-sm">
+      <input type="text" x-model="tagsInput"
+             :placeholder="board === 'experience' ? '如：保研, 夏令营（经验帖常用：保研/竞赛/实习/选课/转专业）' : '如：期中复习, 习题课'"
+             class="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm
+                    focus:border-sky-500 focus:outline-none">
     </div>
 
     <div class="flex justify-end gap-2 border-t border-slate-100 pt-4">
       <a :href="'/boards/' + board"
-         class="rounded-md border border-slate-300 px-4 py-2 text-sm text-slate-600 hover:bg-slate-100">取消</a>
+         class="rounded-md border border-slate-300 px-4 py-2 text-sm text-slate-600 transition-colors hover:bg-slate-100">取消</a>
       <button @click="submit()" :disabled="loading"
-              class="rounded-md bg-sky-600 px-4 py-2 text-sm text-white hover:bg-sky-700 disabled:opacity-50">
+              class="rounded-md bg-sky-600 px-4 py-2 text-sm text-white transition-colors hover:bg-sky-700 disabled:opacity-50">
         发布
       </button>
     </div>
   </div>
 </div>
-
-<script>
-function postNew(initialBoard) {
-  return {
-    board: initialBoard,
-    title: '', content: '', tagsInput: '',
-    courseId: '', chapterId: '', courses: [], chapters: [],
-    loading: false, error: '',
-
-    // 课程下拉按专业分组（GET /api/courses 的 items 带 major_name）
-    get courseGroups() {
-      const groups = {};
-      for (const c of this.courses) {
-        const major = c.major_name || '未分专业';
-        if (!groups[major]) groups[major] = {major: major, items: []};
-        groups[major].items.push(c);
-      }
-      return Object.values(groups);
-    },
-
-    async loadCourses() {
-      try {
-        const resp = await fetch('/api/courses?size=100');
-        const data = await resp.json().catch(() => ({}));
-        if (!resp.ok) throw new Error(data.detail || ('加载课程失败 ' + resp.status));
-        this.courses = data.items || [];
-      } catch (e) { this.error = e.message; }
-    },
-
-    async loadChapters() {
-      this.chapterId = ''; this.chapters = [];
-      if (!this.courseId) return;
-      try {
-        const resp = await fetch('/api/courses/' + this.courseId + '/chapters');
-        const data = await resp.json().catch(() => ({}));
-        if (!resp.ok) throw new Error(data.detail || ('加载章节失败 ' + resp.status));
-        // 章节树扁平化，用全角空格缩进体现层级
-        const flat = [];
-        const walk = (nodes, depth) => {
-          for (const n of nodes || []) {
-            flat.push({id: n.id, label: '　'.repeat(depth) + n.title});
-            walk(n.children, depth + 1);
-          }
-        };
-        walk(data.items, 0);
-        this.chapters = flat;
-      } catch (e) { this.error = e.message; }
-    },
-
-    parseTags() {
-      return this.tagsInput.split(/[,，]/)
-        .map(t => t.trim()).filter(t => t).slice(0, 5);
-    },
-
-    async submit() {
-      this.error = '';
-      if (!this.title.trim()) { this.error = '请填写标题'; return; }
-      if (!this.content.trim()) { this.error = '请填写正文'; return; }
-      if (this.board === 'qa' && !this.courseId) { this.error = '问答帖必须选择关联课程'; return; }
-      this.loading = true;
-      try {
-        const resp = await fetch('/api/posts', {
-          method: 'POST', headers: {'Content-Type': 'application/json'},
-          body: JSON.stringify({
-            board: this.board,
-            title: this.title.trim(),
-            content: this.content.trim(),
-            course_id: this.courseId ? Number(this.courseId) : null,
-            chapter_id: this.chapterId ? Number(this.chapterId) : null,
-            tags: this.parseTags(),
-          }),
-        });
-        const data = await resp.json().catch(() => ({}));
-        if (!resp.ok) throw new Error(data.detail || ('发布失败 ' + resp.status));
-        window.location.href = '/posts/' + data.post_id;
-      } catch (e) { this.error = e.message; }
-      finally { this.loading = false; }
-    },
-  };
-}
-</script>
 {% endblock %}

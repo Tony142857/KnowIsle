@@ -1,120 +1,127 @@
 {% extends "base.html" %}
 {% block title %}登录 · 知屿 KnowIsle{% endblock %}
+{% block head %}
+{# 页面交互外置（CSP 兼容）；非 defer 以保证在 Alpine 启动前完成组件注册 #}
+<script src="/static/js/pages/login.js"></script>
+{% endblock %}
 {% block content %}
-<div class="max-w-sm mx-auto py-12" x-data="loginForm()">
-  <h1 class="text-xl font-bold text-center">登录知屿</h1>
-  {% if college_name %}
-  <p class="mt-1 text-center text-xs text-slate-400">{{ college_name }}</p>
-  {% endif %}
-  <p class="mt-1 text-center text-xs text-slate-400">登录即认证 · 不对校外开放注册（§3.1 邮箱降级通道）</p>
+<div class="mx-auto max-w-4xl py-4 md:py-10 animate-fade-up" x-data="loginForm()">
+  <div class="grid overflow-hidden rounded-card border border-slate-200 bg-white shadow-card md:grid-cols-2">
 
-  {# 错误 / 提示信息 #}
-  <p x-show="error" x-text="error" class="mt-4 rounded bg-red-50 px-3 py-2 text-sm text-red-600"></p>
-  <p x-show="hint" x-text="hint" class="mt-4 rounded bg-sky-50 px-3 py-2 text-sm text-sky-700"></p>
+    {# ===== 品牌视觉区（≥md 显示，移动端自动单栏） ===== #}
+    <div class="hidden md:flex flex-col justify-center bg-gradient-to-br from-sky-50 to-white p-10">
+      <p class="text-xs font-medium tracking-widest text-sky-600">知屿 KnowIsle</p>
+      <h2 class="mt-3 text-2xl font-bold leading-snug text-slate-800">每门课程是一座知识岛屿</h2>
+      <p class="mt-3 text-sm leading-relaxed text-slate-500">
+        学生社区驱动 · 结构化 RAG-AI 学习引擎，让资料、问答与经验沉淀为可检索的知识。
+      </p>
+      <ul class="mt-8 space-y-4 text-sm text-slate-600">
+        <li class="flex items-start gap-3">
+          <span class="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-brand-50 text-brand-600">
+            <svg class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24" aria-hidden="true">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 12h10M4 18h7"/>
+            </svg>
+          </span>
+          <span><strong class="font-medium text-slate-700">结构化解析</strong><br>
+            上传资料自动切分章节大纲，沉淀为可检索的知识切片。</span>
+        </li>
+        <li class="flex items-start gap-3">
+          <span class="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-brand-50 text-brand-600">
+            <svg class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24" aria-hidden="true">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M10 14a5 5 0 0 0 7.1 0l3-3a5 5 0 0 0-7.1-7.1l-1.7 1.7"/>
+              <path stroke-linecap="round" stroke-linejoin="round" d="M14 10a5 5 0 0 0-7.1 0l-3 3a5 5 0 0 0 7.1 7.1l1.7-1.7"/>
+            </svg>
+          </span>
+          <span><strong class="font-medium text-slate-700">引用溯源</strong><br>
+            AI 回答逐条标注出处，一键跳回资料原文位置核验。</span>
+        </li>
+        <li class="flex items-start gap-3">
+          <span class="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-brand-50 text-brand-600">
+            <svg class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24" aria-hidden="true">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M12 2l2.9 6.3 6.9.8-5.1 4.7 1.4 6.8L12 17.3 5.9 20.6l1.4-6.8L2.2 9.1l6.9-.8L12 2z"/>
+            </svg>
+          </span>
+          <span><strong class="font-medium text-slate-700">社区激励</strong><br>
+            贡献资料与答案获得成长值，优质内容被采纳沉淀。</span>
+        </li>
+      </ul>
+    </div>
 
-  {# 第一步：学号 + 校园邮箱，发送验证码 #}
-  <div class="mt-6 space-y-4">
-    <input type="text" x-model="student_no" placeholder="学号" :disabled="step > 1"
-           class="w-full rounded border border-slate-300 px-3 py-2 text-sm disabled:bg-slate-50">
-    <input type="email" x-model="email" placeholder="校园邮箱（@edu.cn）" :disabled="step > 1"
-           class="w-full rounded border border-slate-300 px-3 py-2 text-sm disabled:bg-slate-50">
-    <button x-show="step === 1" @click="sendCode()" :disabled="loading"
-            class="w-full rounded bg-sky-600 py-2 text-sm text-white hover:bg-sky-700 disabled:opacity-50">
-      发送验证码
-    </button>
+    {# ===== 表单卡 ===== #}
+    <div class="p-6 sm:p-8">
+      <h1 class="text-xl font-bold text-center">登录知屿</h1>
+      {% if college_name %}
+      <p class="mt-1 text-center text-xs text-slate-400">{{ college_name }}</p>
+      {% endif %}
+      <p class="mt-1 text-center text-xs text-slate-400">登录即认证 · 不对校外开放注册（§3.1 邮箱降级通道）</p>
+
+      {# 步骤指示：1 发送验证码 → 2 验证登录 → 3 补全资料（仅首次） #}
+      <ol class="mt-6 flex items-center gap-2 text-xs">
+        <li class="flex items-center gap-1.5">
+          <span class="flex h-5 w-5 items-center justify-center rounded-full text-[11px] transition-colors"
+                :class="step >= 1 ? 'bg-sky-600 text-white' : 'bg-slate-100 text-slate-400'">1</span>
+          <span :class="step === 1 ? 'font-medium text-sky-700' : 'text-slate-400'">发送验证码</span>
+        </li>
+        <li class="h-px flex-1 bg-slate-200"></li>
+        <li class="flex items-center gap-1.5">
+          <span class="flex h-5 w-5 items-center justify-center rounded-full text-[11px] transition-colors"
+                :class="step >= 2 ? 'bg-sky-600 text-white' : 'bg-slate-100 text-slate-400'">2</span>
+          <span :class="step === 2 ? 'font-medium text-sky-700' : 'text-slate-400'">验证登录</span>
+        </li>
+        <li class="h-px flex-1 bg-slate-200"></li>
+        <li class="flex items-center gap-1.5">
+          <span class="flex h-5 w-5 items-center justify-center rounded-full text-[11px] transition-colors"
+                :class="step >= 3 ? 'bg-sky-600 text-white' : 'bg-slate-100 text-slate-400'">3</span>
+          <span :class="step === 3 ? 'font-medium text-sky-700' : 'text-slate-400'">补全资料</span>
+        </li>
+      </ol>
+
+      {# 错误 / 提示信息 #}
+      <p x-show="error" x-text="error" class="mt-4 rounded bg-red-50 px-3 py-2 text-sm text-red-600"></p>
+      <p x-show="hint" x-text="hint" class="mt-4 rounded bg-sky-50 px-3 py-2 text-sm text-sky-700"></p>
+
+      {# 第一步：学号 + 校园邮箱，发送验证码 #}
+      <div class="mt-6 space-y-4">
+        <input type="text" x-model="student_no" placeholder="学号" :disabled="step > 1"
+               class="w-full rounded border border-slate-300 px-3 py-2.5 text-sm transition-colors focus:border-sky-400 focus:outline-none disabled:bg-slate-50">
+        <input type="email" x-model="email" placeholder="校园邮箱（@edu.cn）" :disabled="step > 1"
+               class="w-full rounded border border-slate-300 px-3 py-2.5 text-sm transition-colors focus:border-sky-400 focus:outline-none disabled:bg-slate-50">
+        <button x-show="step === 1" @click="sendCode()" :disabled="loading"
+                class="w-full rounded bg-sky-600 py-2.5 text-sm text-white transition-colors hover:bg-sky-700 disabled:opacity-50">
+          发送验证码
+        </button>
+      </div>
+
+      {# 第二步：输入验证码 #}
+      <div x-show="step >= 2" class="mt-4 space-y-4">
+        <input type="text" x-model="code" placeholder="6 位验证码" maxlength="6"
+               class="w-full rounded border border-slate-300 px-3 py-2.5 text-sm transition-colors focus:border-sky-400 focus:outline-none">
+      </div>
+
+      {# 第三步（仅首次登录）：补全学籍资料后建档（§3.1） #}
+      <div x-show="step === 3" class="mt-4 space-y-4 rounded border border-slate-200 bg-white p-4">
+        <p class="text-sm font-medium text-slate-700">首次登录，请补全资料建档</p>
+        <input type="text" x-model="real_name" placeholder="真实姓名（仅认证核验用，不公开）"
+               class="w-full rounded border border-slate-300 px-3 py-2.5 text-sm transition-colors focus:border-sky-400 focus:outline-none">
+        <input type="text" x-model="nickname" placeholder="昵称（社区内展示，唯一）"
+               class="w-full rounded border border-slate-300 px-3 py-2.5 text-sm transition-colors focus:border-sky-400 focus:outline-none">
+        <input type="text" x-model="grade" placeholder="年级（如 2023级，选填）"
+               class="w-full rounded border border-slate-300 px-3 py-2.5 text-sm transition-colors focus:border-sky-400 focus:outline-none">
+        <select x-model="major_id" class="w-full rounded border border-slate-300 px-3 py-2.5 text-sm transition-colors focus:border-sky-400 focus:outline-none">
+          <option value="">选择专业（选填）</option>
+          <template x-for="m in majors" :key="m.id">
+            <option :value="m.id" x-text="m.name"></option>
+          </template>
+        </select>
+      </div>
+
+      <button x-show="step >= 2" @click="verify()" :disabled="loading"
+              class="mt-4 w-full rounded bg-sky-600 py-2.5 text-sm text-white transition-colors hover:bg-sky-700 disabled:opacity-50">
+        <span x-text="step === 3 ? '建档并登录' : '登录'"></span>
+      </button>
+      <button x-show="step >= 2" @click="reset()"
+              class="mt-2 w-full text-xs text-slate-400 transition-colors hover:text-sky-700">重新填写学号 / 邮箱</button>
+    </div>
   </div>
-
-  {# 第二步：输入验证码 #}
-  <div x-show="step >= 2" class="mt-4 space-y-4">
-    <input type="text" x-model="code" placeholder="6 位验证码" maxlength="6"
-           class="w-full rounded border border-slate-300 px-3 py-2 text-sm">
-  </div>
-
-  {# 第三步（仅首次登录）：补全学籍资料后建档（§3.1） #}
-  <div x-show="step === 3" class="mt-4 space-y-4 rounded border border-slate-200 bg-white p-4">
-    <p class="text-sm font-medium text-slate-700">首次登录，请补全资料建档</p>
-    <input type="text" x-model="real_name" placeholder="真实姓名（仅认证核验用，不公开）"
-           class="w-full rounded border border-slate-300 px-3 py-2 text-sm">
-    <input type="text" x-model="nickname" placeholder="昵称（社区内展示，唯一）"
-           class="w-full rounded border border-slate-300 px-3 py-2 text-sm">
-    <input type="text" x-model="grade" placeholder="年级（如 2023级，选填）"
-           class="w-full rounded border border-slate-300 px-3 py-2 text-sm">
-    <select x-model="major_id" class="w-full rounded border border-slate-300 px-3 py-2 text-sm">
-      <option value="">选择专业（选填）</option>
-      <template x-for="m in majors" :key="m.id">
-        <option :value="m.id" x-text="m.name"></option>
-      </template>
-    </select>
-  </div>
-
-  <button x-show="step >= 2" @click="verify()" :disabled="loading"
-          class="mt-4 w-full rounded bg-sky-600 py-2 text-sm text-white hover:bg-sky-700 disabled:opacity-50">
-    <span x-text="step === 3 ? '建档并登录' : '登录'"></span>
-  </button>
-  <button x-show="step >= 2" @click="reset()"
-          class="mt-2 w-full text-xs text-slate-400 hover:text-sky-700">重新填写学号 / 邮箱</button>
 </div>
-
-<script>
-function loginForm() {
-  return {
-    step: 1, loading: false, error: '', hint: '',
-    student_no: '', email: '', code: '',
-    real_name: '', nickname: '', grade: '', major_id: '', majors: [],
-
-    async post(url, body) {
-      this.loading = true; this.error = ''; this.hint = '';
-      try {
-        const resp = await fetch(url, {
-          method: 'POST',
-          headers: {'Content-Type': 'application/json'},
-          body: JSON.stringify(body),
-        });
-        const data = await resp.json().catch(() => ({}));
-        if (!resp.ok) throw new Error(data.detail || ('请求失败 ' + resp.status));
-        return data;
-      } finally { this.loading = false; }
-    },
-
-    async sendCode() {
-      if (!this.student_no || !this.email) { this.error = '请填写学号与校园邮箱'; return; }
-      try {
-        const data = await this.post('/api/auth/email/code',
-          {student_no: this.student_no, email: this.email});
-        this.step = 2;
-        // 开发期假通道：接口回显验证码便于联调（email_code_echo，生产关闭）
-        this.hint = data.dev_code
-          ? ('开发模式验证码：' + data.dev_code + '（10 分钟内有效）')
-          : '验证码已发送到邮箱，10 分钟内有效';
-      } catch (e) { this.error = e.message; }
-    },
-
-    async verify() {
-      const body = {student_no: this.student_no, email: this.email, code: this.code};
-      if (this.step === 3) {
-        Object.assign(body, {
-          real_name: this.real_name, nickname: this.nickname,
-          grade: this.grade || null,
-          major_id: this.major_id ? Number(this.major_id) : null,
-        });
-      }
-      try {
-        const data = await this.post('/api/auth/email/verify', body);
-        if (data.need_profile) {
-          this.step = 3;
-          this.hint = '该学号首次登录，请补全资料完成建档';
-          if (!this.majors.length) {
-            const mj = await fetch('/api/majors').then(r => r.json());
-            this.majors = mj.items || [];
-          }
-          return;
-        }
-        window.location.href = '/';
-      } catch (e) { this.error = e.message; }
-    },
-
-    reset() { this.step = 1; this.code = ''; this.error = ''; this.hint = ''; },
-  };
-}
-</script>
 {% endblock %}

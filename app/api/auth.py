@@ -67,6 +67,7 @@ async def _issue_session(response: Response, user_id: int) -> None:
         max_age=settings.session_ttl_seconds,
         httponly=True,
         samesite="lax",
+        secure=settings.session_cookie_secure,  # 云端 https 部署置 true（v0.9）
     )
 
 
@@ -96,11 +97,18 @@ async def cas_callback():
 
 
 @router.post("/email/code")
-async def send_email_code(payload: EmailCodeRequest):
-    """发送校园邮箱验证码（开发期假通道：写日志 + 响应回显 dev_code）。"""
+async def send_email_code(payload: EmailCodeRequest, request: Request):
+    """发送校园邮箱验证码（开发期假通道：写日志 + 响应回显 dev_code）。
+
+    防滥发（v0.9）：IP 维度限流（1 小时 30 次，超限 429），同学号 60s 冷却在
+    email_fallback.send_code 内判定。
+    """
     if not email_fallback.check_email_allowed(payload.email):
         raise HTTPException(status_code=422, detail="仅允许校园邮箱（edu 域名）")
     redis = get_redis()
+    client_ip = request.client.host if request.client else "-"
+    if await email_fallback.hit_send_ip_limit(redis, client_ip):
+        raise HTTPException(status_code=429, detail="验证码发送过于频繁，请稍后再试")
     dev_code, cooldown = await email_fallback.send_code(
         redis, payload.student_no, payload.email
     )

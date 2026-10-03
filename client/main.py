@@ -1,15 +1,18 @@
 """知屿桌面客户端（pywebview 联网薄壳，§6.4 / §15.2.1）。
 
 壳只负责窗口与加载服务端页面，业务逻辑全在服务端。
-打包：pyinstaller --noconfirm --windowed --name 知屿 client/main.py
+打包命令与安装包流程见 client/README.md（PyInstaller spec → NSIS）。
 """
 
 import json
+import sys
 from pathlib import Path
 
 import webview
 
-SETTINGS_PATH = Path(__file__).parent / "settings.json"
+# 冻结（PyInstaller one-folder）时 settings.json 与 exe 同级；源码运行时与 main.py 同级
+_BASE_DIR = Path(sys.executable).parent if getattr(sys, "frozen", False) else Path(__file__).parent
+SETTINGS_PATH = _BASE_DIR / "settings.json"
 
 
 def main() -> None:

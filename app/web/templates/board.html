@@ -1,20 +1,42 @@
 {% extends "base.html" %}
 {% block title %}{{ board_name }} · 知屿 KnowIsle{% endblock %}
+{% block head %}
+{# 页面交互外置（CSP）：同步加载，须先于 defer 的 Alpine 启动（x-data 引用全局函数） #}
+<script src="/static/js/pages/board.js"></script>
+{% endblock %}
 
-{# 帖子卡片（SSR 与客户端补载共用同一信息结构） #}
+{# 帖子卡片（SSR 与客户端补载共用同一信息结构）；精华帖以 amber 左边框标识 #}
 {% macro post_card(p, board) %}
-<div class="rounded-lg border border-slate-200 bg-white p-4 transition-shadow hover:shadow-sm">
+<div class="rounded-card border border-slate-200 bg-white p-4 shadow-card card-hover
+            {{ 'border-l-4 border-l-amber-400' if p.status == 'featured' }}">
   <div class="flex flex-wrap items-center gap-2">
     <a href="/posts/{{ p.id }}" class="text-base font-medium text-slate-800 hover:text-sky-700">
       {{ p.title }}
     </a>
-    {% if p.has_accepted %}
+    {% if p.status == 'featured' %}
+    <span class="rounded bg-amber-50 px-2 py-0.5 text-xs text-amber-700">精华</span>
+    {% endif %}
+    {% if board == 'bounty' %}
+      {% if p.has_accepted %}
+      <span class="rounded bg-emerald-50 px-2 py-0.5 text-xs text-emerald-700">已结算</span>
+      {% else %}
+      <span class="rounded bg-violet-50 px-2 py-0.5 text-xs text-violet-700">悬赏 {{ p.bounty_score }} 分</span>
+      {% endif %}
+    {% elif p.has_accepted %}
     <span class="rounded bg-emerald-50 px-2 py-0.5 text-xs text-emerald-700">已采纳</span>
     {% elif p.has_ai_answer and board == 'qa' %}
     <span class="rounded bg-sky-50 px-2 py-0.5 text-xs text-sky-700">AI 已答</span>
     {% endif %}
   </div>
   <p class="mt-1 line-clamp-2 text-sm text-slate-500">{{ p.excerpt }}</p>
+  {# 经验帖 AI 摘要折叠卡（§13：AI 摘要折叠卡） #}
+  {% if board == 'experience' and p.ai_summary %}
+  <details class="mt-2 rounded border border-slate-100 bg-slate-50 px-3 py-2 text-xs text-slate-500">
+    <summary class="cursor-pointer select-none text-slate-400 hover:text-sky-700">AI 摘要</summary>
+    <div class="md-body mt-1 leading-6" x-data
+         x-init='ZY.md.renderInto($el, {{ p.ai_summary|tojson }})'></div>
+  </details>
+  {% endif %}
   <div class="mt-2 flex flex-wrap items-center gap-3 text-xs text-slate-400">
     <span class="flex items-center gap-1">
       {% if p.author.avatar_url %}
@@ -22,6 +44,7 @@
       {% endif %}
       {{ p.author.nickname }}
     </span>
+    {% if board == 'experience' and p.author.grade %}<span>{{ p.author.grade }}</span>{% endif %}
     <span>{{ p.created_at.strftime('%Y-%m-%d') if p.created_at }}</span>
     <span>浏览 {{ p.view_count }}</span>
     <span>评论 {{ p.comment_count }}</span>
@@ -35,14 +58,15 @@
 {% endmacro %}
 
 {% block content %}
-<div class="mb-6 flex flex-wrap items-center gap-3">
-  {# 板块切换 Tab（知屿问答 / 讨论区） #}
-  <div class="flex gap-1 rounded-lg border border-slate-200 bg-white p-1 text-sm">
-    {% for key, label in [('qa', '知屿问答'), ('discuss', '讨论区')] %}
+<div class="mb-6 flex flex-wrap items-end gap-3 animate-fade-up">
+  {# 板块切换 Tab（§4.2 四板块，v0.7 全部开放）：下划线式导航，窄屏横向滚动 #}
+  <div class="flex max-w-full gap-1 overflow-x-auto border-b border-slate-200 text-sm
+              [&::-webkit-scrollbar]:hidden" style="scrollbar-width: none;">
+    {% for key, label in [('qa', '知屿问答'), ('discuss', '讨论区'), ('experience', '经验长廊'), ('bounty', '资料求援')] %}
     <a href="/boards/{{ key }}"
-       class="rounded-md px-4 py-1.5 transition-colors
-              {{ 'bg-sky-600 text-white font-medium' if board == key
-                 else 'text-slate-600 hover:bg-slate-100' }}">{{ label }}</a>
+       class="shrink-0 -mb-px border-b-2 px-4 py-2 transition-colors
+              {{ 'border-sky-600 font-medium text-sky-700' if board == key
+                 else 'border-transparent text-slate-600 hover:border-slate-300 hover:text-sky-700' }}">{{ label }}</a>
     {% endfor %}
   </div>
   {% if tag %}
@@ -51,35 +75,93 @@
     <a href="/boards/{{ board }}" class="ml-1 text-sky-600 hover:underline">清除</a>
   </p>
   {% endif %}
+  {% if grade %}
+  <p class="text-sm text-slate-500">
+    届别筛选：<span class="rounded bg-sky-50 px-2 py-0.5 text-sky-700">{{ grade }}</span>
+    <a href="/boards/{{ board }}" class="ml-1 text-sky-600 hover:underline">清除</a>
+  </p>
+  {% endif %}
+  {% if course_id %}
+  <p class="text-sm text-slate-500">
+    课程筛选：<span class="rounded bg-sky-50 px-2 py-0.5 text-sky-700">{{ course.name if course else ('课程 #' ~ course_id) }}</span>
+    <a href="/boards/{{ board }}" class="ml-1 text-sky-600 hover:underline">清除</a>
+  </p>
+  {% endif %}
   <a href="/posts/new?board={{ board }}"
-     class="ml-auto rounded-md bg-sky-600 px-4 py-2 text-sm text-white hover:bg-sky-700">发帖</a>
+     class="ml-auto rounded-md bg-sky-600 px-4 py-2 text-sm text-white transition-colors hover:bg-sky-700">发帖</a>
 </div>
 
+{# 经验长廊：精华区入口 + 标签云 + 届别过滤（§13） #}
+{% if board == 'experience' and ssr_ok and (tag_cloud or grades) %}
+<div class="mb-4 rounded-card border border-slate-200 bg-white p-4 shadow-card">
+  <div class="flex flex-wrap items-center gap-2 text-xs">
+    <span class="font-medium text-slate-500">精华区</span>
+    {% if featured %}
+    <a href="/boards/experience" class="rounded bg-amber-100 px-2 py-0.5 text-amber-700">全部帖子</a>
+    {% else %}
+    <a href="/boards/experience?featured=1"
+       class="rounded bg-amber-50 px-2 py-0.5 text-amber-700 hover:bg-amber-100">精华帖</a>
+    {% endif %}
+    {% if grades %}
+    <span class="ml-3 font-medium text-slate-500">按届别</span>
+    {% for g in grades %}
+    <a href="/boards/experience?grade={{ g|urlencode }}"
+       class="rounded bg-slate-100 px-2 py-0.5 text-slate-500 hover:bg-sky-50 hover:text-sky-700
+              {{ 'bg-sky-100 text-sky-700' if grade == g }}">{{ g }}</a>
+    {% endfor %}
+    {% endif %}
+  </div>
+  {% if tag_cloud %}
+  {# 标签云：pill 大小按频次分三档（相对本页最大频次） #}
+  {% set max_count = (tag_cloud | map(attribute='count') | list | max) or 1 %}
+  <div class="mt-2 flex flex-wrap items-center gap-2 text-xs">
+    <span class="font-medium text-slate-500">标签云</span>
+    {% for t in tag_cloud %}
+    {% set tier = 2 if t.count >= max_count * 0.66 else (1 if t.count >= max_count * 0.33 else 0) %}
+    <a href="/boards/experience?tag={{ t.tag|urlencode }}"
+       class="rounded-full transition-colors hover:bg-sky-50 hover:text-sky-700
+              {{ 'bg-sky-100 text-sky-700' if tag == t.tag else 'bg-slate-100 text-slate-500' }}
+              {{ ['px-2 py-0.5', 'px-2.5 py-1 font-medium', 'px-3 py-1 text-sm font-medium'][tier] }}">
+      #{{ t.tag }} <span class="text-slate-300">{{ t.count }}</span>
+    </a>
+    {% endfor %}
+  </div>
+  {% endif %}
+</div>
+{% endif %}
+
 {% if posts %}
-<div class="space-y-3">
+<div class="space-y-3 animate-fade-up">
   {% for p in posts %}{{ post_card(p, board) }}{% endfor %}
 </div>
 
-{# 分页（?page= 链接，保留 tag 过滤） #}
+{# 分页（?page= 链接，保留 tag/grade/featured 过滤） #}
 {% set pages = ((total + size - 1) // size) %}
 {% if pages > 1 %}
-{% set tag_qs = '&tag=' + tag|urlencode if tag else '' %}
+{% set extra_qs = ('&tag=' + tag|urlencode) if tag else '' %}
+{% set extra_qs = extra_qs + ('&grade=' + grade|urlencode) if grade else extra_qs %}
+{% set extra_qs = extra_qs + '&featured=1' if featured else extra_qs %}
+{% set extra_qs = extra_qs + ('&course_id=' ~ course_id) if course_id else extra_qs %}
 <nav class="mt-6 flex items-center justify-center gap-2 text-sm">
   {% if page > 1 %}
-  <a href="/boards/{{ board }}?page={{ page - 1 }}{{ tag_qs }}"
+  <a href="/boards/{{ board }}?page={{ page - 1 }}{{ extra_qs }}"
      class="rounded-md border border-slate-300 px-3 py-1.5 text-slate-600 hover:bg-slate-100">上一页</a>
   {% endif %}
   <span class="px-2 text-slate-400">{{ page }} / {{ pages }}</span>
   {% if page < pages %}
-  <a href="/boards/{{ board }}?page={{ page + 1 }}{{ tag_qs }}"
+  <a href="/boards/{{ board }}?page={{ page + 1 }}{{ extra_qs }}"
      class="rounded-md border border-slate-300 px-3 py-1.5 text-slate-600 hover:bg-slate-100">下一页</a>
   {% endif %}
 </nav>
 {% endif %}
 
 {% elif ssr_ok %}
-<div class="rounded-lg border border-dashed border-slate-300 bg-white py-16 text-center">
-  <p class="text-4xl">💬</p>
+<div class="rounded-card border border-dashed border-slate-300 bg-white py-16 text-center animate-fade-up">
+  <svg class="mx-auto h-10 w-10 text-slate-300" fill="none" stroke="currentColor" stroke-width="1.5"
+       viewBox="0 0 24 24" aria-hidden="true">
+    <path stroke-linecap="round" stroke-linejoin="round"
+          d="M8 10h8m-8 4h5M7 20l-3 3V5a2 2 0 012-2h12a2 2 0 012 2v12a2 2 0 01-2 2H7z"/>
+  </svg>
   <p class="mt-4 text-slate-600">还没有帖子</p>
   <p class="mt-1 text-sm text-slate-400">
     {% if tag %}该标签下暂无帖子，<a href="/boards/{{ board }}" class="text-sky-600 hover:underline">查看全部</a>。
@@ -89,17 +171,39 @@
 
 {% else %}
 {# DB 不可用时的降级路径：客户端 fetch 补载列表（页面骨架已由 SSR 渲染） #}
-<div x-data="boardList('{{ board }}', {{ page }}, {{ tag|tojson }})" x-init="load()">
-  <p x-show="loading" x-cloak class="py-8 text-center text-sm text-slate-400">加载中…</p>
+<div x-data='boardList({{ board|tojson }}, {{ page }}, {{ tag|tojson }}, {{ course_id|tojson }})' x-init="load()">
+  {# 列表加载骨架屏（.skeleton 自带 shimmer 扫光） #}
+  <div x-show="loading" x-cloak class="space-y-3" aria-hidden="true">
+    {% for i in range(3) %}
+    <div class="rounded-card border border-slate-200 bg-white p-4 shadow-card">
+      <div class="skeleton rounded-md h-4 w-1/2"></div>
+      <div class="skeleton mt-2 rounded-md h-3 w-full"></div>
+      <div class="skeleton mt-1.5 rounded-md h-3 w-2/3"></div>
+      <div class="mt-3 flex gap-3">
+        <div class="skeleton rounded-md h-3 w-16"></div>
+        <div class="skeleton rounded-md h-3 w-16"></div>
+        <div class="skeleton rounded-md h-3 w-16"></div>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
   <p x-show="error" x-text="error" x-cloak
      class="rounded bg-red-50 px-3 py-2 text-sm text-red-600"></p>
   <div class="space-y-3">
     <template x-for="p in items" :key="p.id">
-      <div class="rounded-lg border border-slate-200 bg-white p-4 transition-shadow hover:shadow-sm">
+      <div class="rounded-card border border-slate-200 bg-white p-4 shadow-card card-hover"
+           :class="p.status === 'featured' ? 'border-l-4 border-l-amber-400' : ''">
         <div class="flex flex-wrap items-center gap-2">
           <a :href="'/posts/' + p.id" class="text-base font-medium text-slate-800 hover:text-sky-700"
              x-text="p.title"></a>
-          <span x-show="p.has_accepted" x-cloak
+          <span x-show="p.status === 'featured'" x-cloak
+                class="rounded bg-amber-50 px-2 py-0.5 text-xs text-amber-700">精华</span>
+          <span x-show="board === 'bounty' && p.has_accepted" x-cloak
+                class="rounded bg-emerald-50 px-2 py-0.5 text-xs text-emerald-700">已结算</span>
+          <span x-show="board === 'bounty' && !p.has_accepted" x-cloak
+                class="rounded bg-violet-50 px-2 py-0.5 text-xs text-violet-700"
+                x-text="'悬赏 ' + p.bounty_score + ' 分'"></span>
+          <span x-show="p.has_accepted && board !== 'bounty'" x-cloak
                 class="rounded bg-emerald-50 px-2 py-0.5 text-xs text-emerald-700">已采纳</span>
           <span x-show="!p.has_accepted && p.has_ai_answer && board === 'qa'" x-cloak
                 class="rounded bg-sky-50 px-2 py-0.5 text-xs text-sky-700">AI 已答</span>
@@ -121,30 +225,9 @@
     </template>
   </div>
   <p x-show="loaded && !items.length" x-cloak
-     class="rounded-lg border border-dashed border-slate-300 bg-white py-16 text-center text-sm text-slate-400">
+     class="rounded-card border border-dashed border-slate-300 bg-white py-16 text-center text-sm text-slate-400">
     还没有帖子，点击右上角「发帖」，成为第一个分享的人。
   </p>
 </div>
-
-<script>
-function boardList(board, page, tag) {
-  return {
-    board: board, items: [], loading: false, loaded: false, error: '',
-    async load() {
-      this.loading = true; this.error = '';
-      try {
-        let url = '/api/posts?board=' + board + '&page=' + page + '&size=20';
-        if (tag) url += '&tag=' + encodeURIComponent(tag);
-        const resp = await fetch(url);
-        const data = await resp.json().catch(() => ({}));
-        if (!resp.ok) throw new Error(data.detail || ('加载失败 ' + resp.status));
-        this.items = data.items || [];
-        this.loaded = true;
-      } catch (e) { this.error = e.message; }
-      finally { this.loading = false; }
-    },
-  };
-}
-</script>
 {% endif %}
 {% endblock %}

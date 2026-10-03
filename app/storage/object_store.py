@@ -5,6 +5,7 @@ endpoint 指向 compose 中的 seaweedfs 服务。
 """
 
 import inspect
+from collections.abc import AsyncIterator
 
 import aioboto3
 
@@ -46,6 +47,25 @@ async def get_object(key: str) -> bytes:
     async with session.client("s3", endpoint_url=settings.s3_endpoint_url) as s3:
         resp = await s3.get_object(Bucket=settings.s3_bucket, Key=key)
         return await resp["Body"].read()
+
+
+async def object_size(key: str) -> int | None:
+    """对象字节数（流式响应的 Content-Length 用）；对象不存在时 head_object 照常抛错。"""
+    settings = get_settings()
+    session = get_s3_session()
+    async with session.client("s3", endpoint_url=settings.s3_endpoint_url) as s3:
+        resp = await s3.head_object(Bucket=settings.s3_bucket, Key=key)
+        return resp.get("ContentLength")
+
+
+async def stream_object(key: str, chunk_size: int = 1024 * 1024) -> AsyncIterator[bytes]:
+    """流式下载对象（在线预览/下载转发用，v0.9）：分块迭代 S3 Body，避免全量读入内存。"""
+    settings = get_settings()
+    session = get_s3_session()
+    async with session.client("s3", endpoint_url=settings.s3_endpoint_url) as s3:
+        resp = await s3.get_object(Bucket=settings.s3_bucket, Key=key)
+        async for chunk in resp["Body"].iter_chunks(chunk_size=chunk_size):
+            yield chunk
 
 
 async def presigned_url(key: str, expires: int = 3600) -> str:

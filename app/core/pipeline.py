@@ -189,7 +189,13 @@ async def answer_question(
 
     answer = "".join(answer_parts)
     cited_ids = extract_citations(answer, {h["chunk"].chunk_id for h in hits})
-    items = await _build_citation_items(session, cited_ids, hits)
+    try:
+        items = await _build_citation_items(session, cited_ids, hits)
+    except Exception:
+        # token 已流出：引用映射查询异常降级为空引用继续走 done，
+        # 避免 SSE 流中断（客户端拿不到 done/error、qa_logs 不落库）
+        logger.exception("引用映射查询失败（降级为空引用）")
+        items = []
     yield {"type": "citations", "items": items}
 
     token_usage = (client.last_usage or {}).get("total_tokens", 0)

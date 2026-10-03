@@ -1,4 +1,4 @@
-"""解析与向量化任务（模块 A1）：解析 → 目录树 → 语义切块 → 向量化 → 落库。
+"""解析与向量化任务（模块 A1）：解析 → 目录树 → 语义切块 → 向量化 → 落库 → 章节树 AI 校验（附加层）。
 
 上传即返回，页面轮询 /api/documents/{id}/status 更新进度；
 失败任务自动重试 3 次后标记 failed 并通知上传者（arq max_tries=3，见 workers/settings.py）。
@@ -15,7 +15,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.chunking import semantic_splitter
 from app.core.embeddings import get_embedding
 from app.core.parser import parse_by_file_type
-from app.core.structure import tree_builder
+from app.core.retrieval.fine import invalidate_bm25
+from app.core.structure import ai_verifier, tree_builder
 from app.storage import object_store
 from app.storage.db import SessionLocal
 from app.storage.models import Chunk, Document
@@ -43,7 +44,7 @@ def build_chunk_meta(doc: Document, chunk: dict) -> dict:
     }
 
 
-async def _run_pipeline(session: AsyncSession, doc: Document) -> None:
+async def _run_pipeline(session: AsyncSession, doc: Document) -> list:
     data = await object_store.get_object(doc.storage_key)
     blocks = parse_by_file_type(doc.file_type, data)
     if not blocks:
@@ -90,18 +91,22 @@ async def _run_pipeline(session: AsyncSession, doc: Document) -> None:
     )
     doc.status = "parsed"
     await session.commit()
+    # chunks 已落库：失效该课程 BM25 语料缓存（v0.9），下次检索重建
+    invalidate_bm25(doc.course_id, doc.scope, doc.owner_id)
+    return blocks
 
 
 async def parse_document(ctx: dict, document_id: int) -> None:
     """ARQ 任务：对象存储取件 → parser 解析 → tree_builder → semantic_splitter
-    → embeddings → Chroma 写入（按 scope 分 Collection）→ PG 落切块。"""
+    → embeddings → Chroma 写入（按 scope 分 Collection）→ PG 落切块；
+    成功后附加章节树 AI 校验（仅记日志，结果不影响解析状态）。"""
     async with SessionLocal() as session:
         doc = await session.get(Document, document_id)
         if doc is None:
             logger.warning("解析任务跳过：文档不存在 document_id=%s", document_id)
             return
         try:
-            await _run_pipeline(session, doc)
+            blocks = await _run_pipeline(session, doc)
         except Exception:
             await session.rollback()
             if ctx.get("job_try", 1) >= 3:
@@ -109,4 +114,8 @@ async def parse_document(ctx: dict, document_id: int) -> None:
                 doc.status = "failed"
                 await session.commit()
             raise
+    # 章节树 AI 校验（模块 A1 附加层）：解析主流程成功后才执行；verify_tree_safe
+    # 内部对 LLM 异常/超时/解析失败一律降级为规则结果并记日志，绝不抛出，
+    # 不影响 doc.status 与切块落库结论（结论仅写日志，见 ai_verifier 模块 docstring）。
+    await ai_verifier.verify_tree_safe(blocks, document_id=doc.id)
     logger.info("文档解析完成 document_id=%s", document_id)

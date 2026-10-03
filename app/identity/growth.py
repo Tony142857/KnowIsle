@@ -3,7 +3,7 @@
 贡献分事件驱动结算：统一写 score_logs 明细 + users.score 事务更新 +
 等级阈值检查 + Redis 贡献榜（rank:major:{id} / rank:course:{id}）Sorted Set 实时排名。
 信用分：管理员裁决扣分（credit_logs 留痕 + 通知本人，v0.6）；
-阶梯处罚（限流/禁言/冻结自动执行）留 v0.8 与举报一起做。
+v0.8 起裁决后自动执行阶梯处罚（<80 门控限流 / <60 禁言 / <40 冻结）。
 
 v0.5 落地：grant_score 升级判定与站内通知、Redis 实时榜、下载分成纯函数、
 课程贡献 SQL 现算（榜单退化与 settle_worker 每日对账共用）。
@@ -11,10 +11,12 @@ v0.6 落地：apply_credit_change 信用裁决（CreditLog 留痕 + 限幅 0~100
 """
 
 import logging
+from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.platform_config import get_config
 from app.storage.cache import get_redis
 from app.storage.models import (
     Comment,
@@ -143,15 +145,99 @@ async def compute_course_scores(
 
 # ---------------------------------------------------------------------------
 # 信用分（§3.3.3，v0.6）：管理员裁决扣分 / 恢复
+# v0.8：裁决后自动执行阶梯处罚（<80 限流门控 / <60 禁言 / <40 冻结）
 # ---------------------------------------------------------------------------
 
 CREDIT_MIN = 0
 CREDIT_MAX = 100  # 信用分上下限（初始 100）
 
+TIER_RATE_LIMIT = 80  # 低于此分：发帖/评论/上传走 Redis 冷却（门控实时判定，不落库）
+TIER_MUTE = 60  # 低于此分：自动禁言 credit_mute_days 天
+TIER_FREEZE = 40  # 低于此分：自动冻结
+
 
 def clamp_credit(value: int) -> int:
     """信用分限幅（纯函数）：裁决后分值钳制在 [CREDIT_MIN, CREDIT_MAX]。"""
     return max(CREDIT_MIN, min(CREDIT_MAX, value))
+
+
+def evaluate_credit_tier(credit: int) -> str:
+    """信用阶梯评估（纯函数）：frozen / muted / rate_limited / normal。"""
+    if credit < TIER_FREEZE:
+        return "frozen"
+    if credit < TIER_MUTE:
+        return "muted"
+    if credit < TIER_RATE_LIMIT:
+        return "rate_limited"
+    return "normal"
+
+
+def effective_status(status: str, muted_until: datetime | None, now: datetime) -> str:
+    """有效状态推导（纯函数）：muted 且 muted_until 已到期视为 active（惰性解除由门控落库）。"""
+    if status == "muted" and muted_until is not None and muted_until <= now:
+        return "active"
+    return status
+
+
+async def _enforce_credit_tier(session: AsyncSession, user: User, now: datetime) -> None:
+    """按裁决后信用分自动落库阶梯处罚；状态变化（含禁言期限重置）时追加通知。
+
+    rate_limited 档不落库（users.status 无对应取值），由 identity.penalty 门控
+    按 credit 实时判定冷却。
+    """
+    tier = evaluate_credit_tier(user.credit)
+    if tier == "frozen":
+        if user.status != "frozen":
+            user.status = "frozen"
+            user.muted_until = None
+            session.add(
+                Notification(
+                    user_id=user.id,
+                    type="penalty",
+                    title="账号已冻结",
+                    body=f"信用分降至 {user.credit}（<40），账号已冻结，请联系管理员申诉",
+                    link="/me",
+                )
+            )
+    elif tier == "muted":
+        mute_days = await get_config(session, "credit_mute_days")
+        until = now + timedelta(days=mute_days)
+        user.status = "muted"
+        user.muted_until = until  # 已在禁言期则重置为全新周期
+        session.add(
+            Notification(
+                user_id=user.id,
+                type="penalty",
+                title=f"账号禁言 {mute_days} 天",
+                body=f"信用分降至 {user.credit}（<60），禁言至 {until.isoformat()}，期间无法发帖与评论",
+                link="/me",
+            )
+        )
+    else:  # normal / rate_limited：解除既有的禁言或冻结
+        if user.status == "muted":
+            user.status = "active"
+            user.muted_until = None
+            session.add(
+                Notification(
+                    user_id=user.id,
+                    type="credit_restore",
+                    title="禁言已解除",
+                    body=f"信用分恢复至 {user.credit}，禁言已解除",
+                    link="/me",
+                )
+            )
+        elif user.status == "frozen":
+            user.status = "active"
+            user.muted_until = None
+            session.add(
+                Notification(
+                    user_id=user.id,
+                    type="credit_restore",
+                    title="冻结已解除",
+                    body=f"信用分恢复至 {user.credit}，账号已解冻",
+                    link="/me",
+                )
+            )
 
 
 async def apply_credit_change(
@@ -164,8 +250,9 @@ async def apply_credit_change(
     ref_id: int | None = None,
 ) -> int:
     """信用裁决：写 credit_logs（注明裁决人与理由）+ 限幅更新 users.credit +
-    通知本人（扣分 penalty / 恢复 credit_restore）。调用方负责 commit 与审计。
-    返回裁决后信用分。阶梯处罚自动执行留 v0.8。
+    通知本人（扣分 penalty / 恢复 credit_restore）+ 自动执行阶梯处罚（v0.8，
+    状态实际变化时追加 penalty/credit_restore 通知）。调用方负责 commit 与审计。
+    返回裁决后信用分。
     """
     session.add(
         CreditLog(
@@ -198,7 +285,5 @@ async def apply_credit_change(
                 link="/me",
             )
         )
+    await _enforce_credit_tier(session, user, datetime.now(UTC))
     return user.credit
-
-
-# TODO(v0.8): 信用分阶梯处罚自动执行（<80 限流 / <60 禁言 7 天 / <40 冻结）

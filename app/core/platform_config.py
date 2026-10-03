@@ -8,15 +8,25 @@
 - ai_daily_limit            每用户每日 AI 问答免费额度（默认 settings.ai_daily_free_quota）
 - ai_quota_exchange_rate    贡献分兑换 1 次额外额度的分值（默认 settings.ai_quota_exchange_rate）
 - review_co_timeout_hours   协审超时自动重指派时限（默认 settings.review_co_timeout_hours）
+- credit_mute_days          信用分 <60 自动禁言天数（默认 settings.credit_mute_days，v0.8）
+- credit_rate_limit_cooldown_seconds  信用分 <80 发帖/评论/上传冷却秒数
+  （默认 settings.credit_rate_limit_cooldown_seconds，v0.8）
 """
 
 from dataclasses import dataclass
+from time import monotonic
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
 from app.storage.models import PlatformConfig
+
+# 进程内读缓存（v0.9）：get_config 调用点遍布发帖/评论/上传/问答，避免每请求一次 SELECT。
+# 键数受 CONFIG_SPECS 限制（个位数），无内存风险；TTL 兜底多实例间的陈旧窗口，
+# 本进程内 set_config 立即失效（见下），保证写后读一致。
+_CONFIG_CACHE_TTL = 30.0  # 秒
+_config_cache: dict[str, tuple[float, int]] = {}
 
 
 @dataclass(frozen=True)
@@ -53,6 +63,20 @@ def config_specs() -> dict[str, ConfigSpec]:
             min_value=1,
             max_value=720,
         ),
+        "credit_mute_days": ConfigSpec(
+            key="credit_mute_days",
+            default=s.credit_mute_days,
+            description="信用分低于 60 自动禁言天数",
+            min_value=1,
+            max_value=30,
+        ),
+        "credit_rate_limit_cooldown_seconds": ConfigSpec(
+            key="credit_rate_limit_cooldown_seconds",
+            default=s.credit_rate_limit_cooldown_seconds,
+            description="信用分低于 80 发帖/评论/上传冷却秒数",
+            min_value=30,
+            max_value=3600,
+        ),
     }
 
 
@@ -73,14 +97,23 @@ def validate_value(key: str, raw: object) -> int:
 
 
 async def get_config(session: AsyncSession, key: str) -> int:
-    """读生效配置：DB 覆盖优先，无记录回落 .env 默认值。未知键抛 KeyError（编程错误）。"""
+    """读生效配置：DB 覆盖优先，无记录回落 .env 默认值。未知键抛 KeyError（编程错误）。
+
+    命中进程内缓存（TTL 30s）时不查库；set_config 写入会立即失效对应键。
+    """
     spec = config_specs()[key]
+    now = monotonic()
+    hit = _config_cache.get(key)
+    if hit is not None and now - hit[0] < _CONFIG_CACHE_TTL:
+        return hit[1]
     row = (
         await session.execute(
             select(PlatformConfig.value).where(PlatformConfig.key == key)
         )
     ).scalar_one_or_none()
-    return spec.default if row is None else int(row)
+    value = spec.default if row is None else int(row)
+    _config_cache[key] = (now, value)
+    return value
 
 
 async def set_config(
@@ -102,4 +135,6 @@ async def set_config(
     else:
         row.value = new_value
         row.updated_by = admin_id
+    # 失效读缓存：写入后立即生效（下次 get_config 回源；同事务 SELECT 会 autoflush 到新值）
+    _config_cache.pop(key, None)
     return old_value, new_value

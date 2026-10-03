@@ -1,7 +1,185 @@
 /* 知屿自定义样式（Tailwind 原子类之外的少量补充）。
-   TODO(v0.9 前端): 改用 Tailwind CLI 本地构建产物，替换 CDN。 */
+   v1.0 拍板：保留 Tailwind Play CDN（本地化 vendor 版）+ tailwind-config.js 设计令牌，
+   不引入 CLI 构建链（演示项目无构建步骤，记录在案）。 */
+
+/* 骨架屏 shimmer：配合 animate-shimmer 的渐变扫光（设计令牌 keyframes 驱动） */
+.skeleton {
+  position: relative;
+  overflow: hidden;
+  background: #f1f5f9; /* slate-100 */
+}
+.skeleton::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(90deg, transparent, rgb(255 255 255 / 0.65), transparent);
+  animation: shimmer 1.4s infinite;
+}
+
+/* 卡片悬浮统一语义：静态 shadow-card，hover 抬升为 shadow-lift */
+.card-hover {
+  transition: box-shadow 0.2s ease, transform 0.2s ease, border-color 0.2s ease;
+}
+.card-hover:hover {
+  transform: translateY(-2px);
+}
+
+/* AI 问答「正在输入」三点指示器（配合 animate-pulse-dot，模板内三个 span 延迟错开） */
+.typing-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 9999px;
+  background: #94a3b8; /* slate-400 */
+}
+
+/* 动画关键帧统一定义在 CSS（Play CDN 按需生成不可靠，令牌 animation 仅引用此处名字） */
+@keyframes fade-up {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes shimmer {
+  100% { transform: translateX(100%); }
+}
+@keyframes pulse-dot {
+  0%, 80%, 100% { opacity: 0.25; transform: scale(0.85); }
+  40% { opacity: 1; transform: scale(1); }
+}
+
+/* 系统字体栈：优先各平台中文渲染效果最好的系统字体 */
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+    "Hiragino Sans GB", "Microsoft YaHei", "Helvetica Neue", Arial, sans-serif;
+}
 
 /* Alpine.js x-cloak：初始化完成前隐藏，避免闪烁 */
 [x-cloak] {
   display: none !important;
+}
+
+/* 键盘导航焦点环：主色 sky-600，鼠标点击不触发 */
+:focus-visible {
+  outline: 2px solid #0284c7;
+  outline-offset: 2px;
+}
+
+/* 细滚动条美化（WebKit + Firefox） */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #cbd5e1 transparent;
+}
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+
+/* 打印：隐藏导航 / 提示条 / 页脚，仅输出正文 */
+@media print {
+  header,
+  footer,
+  #flash {
+    display: none !important;
+  }
+}
+
+/* ===== Markdown 渲染排版（ZY.md.render 产物挂载点，与站点卡片风格一致） ===== */
+.md-body {
+  line-height: 1.8; /* 中文正文行高 */
+  color: #334155; /* slate-700 */
+  word-break: break-word;
+}
+.md-body > :first-child { margin-top: 0; }
+.md-body > :last-child { margin-bottom: 0; }
+.md-body h1,
+.md-body h2,
+.md-body h3,
+.md-body h4,
+.md-body h5,
+.md-body h6 {
+  margin: 1em 0 0.5em;
+  font-weight: 600;
+  color: #1e293b; /* slate-800 */
+  line-height: 1.5;
+}
+.md-body h1 { font-size: 1.25rem; }
+.md-body h2 { font-size: 1.125rem; }
+.md-body h3 { font-size: 1rem; }
+.md-body h4,
+.md-body h5,
+.md-body h6 { font-size: 0.875rem; }
+.md-body p { margin: 0.5em 0; }
+.md-body ul,
+.md-body ol {
+  margin: 0.5em 0;
+  padding-left: 1.5em;
+}
+.md-body ul { list-style: disc; }
+.md-body ol { list-style: decimal; }
+.md-body li { margin: 0.25em 0; }
+.md-body li > ul,
+.md-body li > ol { margin: 0.25em 0; }
+.md-body a {
+  color: #0369a1; /* sky-700 */
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.md-body a:hover { color: #075985; } /* sky-800 */
+.md-body blockquote {
+  margin: 0.75em 0;
+  padding: 0.25em 0 0.25em 0.75em;
+  border-left: 3px solid #cbd5e1; /* slate-300 */
+  color: #64748b; /* slate-500 */
+}
+.md-body code {
+  padding: 0.1em 0.35em;
+  border-radius: 4px;
+  background: #f1f5f9; /* slate-100 */
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.85em;
+}
+.md-body pre {
+  margin: 0.75em 0;
+  padding: 0.75em 1em;
+  border-radius: 8px;
+  background: #f1f5f9;
+  border: 1px solid #e2e8f0; /* slate-200 */
+  overflow-x: auto;
+  line-height: 1.6;
+}
+.md-body pre code {
+  padding: 0;
+  background: transparent;
+  font-size: 0.8125rem;
+}
+.md-body hr {
+  margin: 1em 0;
+  border: 0;
+  border-top: 1px solid #e2e8f0;
+}
+.md-body table {
+  margin: 0.75em 0;
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.875em;
+}
+.md-body th,
+.md-body td {
+  padding: 0.375em 0.75em;
+  border: 1px solid #e2e8f0;
+  text-align: left;
+}
+.md-body th {
+  background: #f8fafc; /* slate-50 */
+  font-weight: 600;
 }

@@ -7,6 +7,8 @@ v0.5 落地：社区板块（问答/讨论列表、发帖、帖子详情含 AI �
 个人中心（成长看板 / AI 额度与 Key / 通知）。
 v0.6 落地：管理后台主页（/admin：空间管理 / 用户治理 / 平台配置）、
 课程关注与资源/帖子收藏按钮的状态注入。
+v0.8 落地：全站搜索页（/search，骨架 SSR + 客户端 fetch 结果）。
+复习工具页（/library/review，模块 A4）：大纲 / 习题生成，数据由前端 fetch。
 """
 
 import logging
@@ -17,13 +19,16 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import RedirectResponse
 from fastapi.templating import Jinja2Templates
-from sqlalchemy import func, select
+from sqlalchemy import any_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.community.experience import can_feature
 from app.community.posts import (
     ai_answer_key,
     build_ai_citations,
     derive_ai_answer_status,
+    derive_summary_status,
+    exp_summary_key,
     make_excerpt,
 )
 from app.config import get_settings
@@ -55,6 +60,9 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(include_in_schema=False)
 templates = Jinja2Templates(directory=Path(__file__).resolve().parents[1] / "templates")
+# tojson 保留非 ASCII 原文（Markdown 文本经 tojson 注入 x-init，中文不应变成 \uXXXX；
+# 安全性不受影响——htmlsafe_json_dumps 始终转义 < > & '）
+templates.env.policies["json.dumps_kwargs"] = {"ensure_ascii": False}
 
 # 社区板块（§4.2），用于 /boards/{board} 校验
 BOARDS = {
@@ -64,8 +72,8 @@ BOARDS = {
     "discuss": ("讨论区", "v0.5"),
 }
 
-# 已落地的社区板块（其余仍为占位页）
-OPEN_BOARDS = ("qa", "discuss")
+# 已落地的社区板块（v0.7 起四板块全部开放）
+OPEN_BOARDS = ("qa", "discuss", "experience", "bounty")
 
 BOARD_PAGE_SIZE = 20
 
@@ -85,8 +93,45 @@ def _login_redirect(user: User | None) -> RedirectResponse | None:
 
 
 @router.get("/")
-async def index(request: Request, user: Annotated[User | None, Depends(get_current_user_optional)]):
-    return templates.TemplateResponse(request, "index.html", _ctx(user, active=""))
+async def index(
+    request: Request,
+    user: Annotated[User | None, Depends(get_current_user_optional)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    """首页（§13）：Hero + 板块导览 + 平台数据概览（SSR 注入）+ 动态流骨架
+    （登录/匿名两态均由客户端 fetch /api/feed 渲染）。
+    平台统计查询失败（如 DB 不可用）时降级为不展示统计行，页面其余照常渲染。"""
+    stats = None
+    try:
+        stats = {
+            "courses": (
+                await db.execute(
+                    select(func.count()).select_from(Course).where(
+                        Course.scope == "public", Course.status == "active"
+                    )
+                )
+            ).scalar_one(),
+            "resources": (
+                await db.execute(
+                    select(func.count()).select_from(Resource).where(
+                        Resource.review_status == "approved"
+                    )
+                )
+            ).scalar_one(),
+            "posts": (
+                await db.execute(
+                    select(func.count()).select_from(Post).where(
+                        Post.status.in_(["normal", "featured"])
+                    )
+                )
+            ).scalar_one(),
+        }
+    except Exception:
+        # DB 不可用（如 CI 冒烟环境）：降级为不展示统计行（与板块列表降级惯例一致）
+        logger.warning("首页平台统计查询失败，降级为不展示统计", exc_info=True)
+    return templates.TemplateResponse(
+        request, "index.html", _ctx(user, active="", stats=stats)
+    )
 
 
 @router.get("/login")
@@ -99,9 +144,13 @@ async def login(request: Request, user: Annotated[User | None, Depends(get_curre
     )
 
 
-@router.get("/logout")
+@router.post("/logout")
 async def logout(request: Request):
-    """页面端退出：销毁 Redis 会话、清 Cookie、回首页。"""
+    """页面端退出：销毁 Redis 会话、清 Cookie、回首页。
+
+    v1.0 安全收尾：仅接受 POST（base.html 退出按钮为内联表单），
+    GET 不再可用——防止跨站 <img src=/logout> 强制登出（CSRF 纵深）。
+    """
     settings = get_settings()
     await destroy_session(get_redis(), request.cookies.get(settings.session_cookie_name, ""))
     resp = RedirectResponse("/", status_code=303)
@@ -319,17 +368,43 @@ async def library_chat(
     db: Annotated[AsyncSession, Depends(get_db)],
     course_id: int | None = None,
 ):
-    """AI 对话页：SSE 流式问答 + 引用溯源（scope 三态切换）。"""
+    """AI 对话页：SSE 流式问答 + 引用溯源（scope 三态切换）。
+
+    个人课程仅本人可进；公共 active 课程任何登录用户可进（课程空间「AI 问答」
+    Tab 链接到本页做预选），默认检索档按课程类型预选 personal/public。"""
     if (resp := _login_redirect(user)) is not None:
         return resp
     if course_id is None:
         return RedirectResponse("/library", status_code=303)
     course = await db.get(Course, course_id)
-    if course is None or course.scope != "personal" or course.owner_id != user.id:
+    if course is None:
         raise HTTPException(status_code=404)
+    if course.scope == "personal":
+        if course.owner_id != user.id:
+            raise HTTPException(status_code=404)
+    elif course.status != "active":
+        raise HTTPException(status_code=404)
+    default_scope = "personal" if course.scope == "personal" else "public"
     return templates.TemplateResponse(
         request, "library_chat.html",
-        _ctx(user, active="library", course=course),
+        _ctx(user, active="library", course=course, default_scope=default_scope),
+    )
+
+
+@router.get("/library/review")
+async def library_review(
+    request: Request,
+    user: Annotated[User | None, Depends(get_current_user_optional)],
+    course_id: int | None = None,
+):
+    """复习工具页（模块 A4，§13）：大纲 / 习题生成；课程与章节由前端 fetch
+    （/api/library/ 个人课程 + /api/courses 公共课程），生成走 /api/review/*。
+    course_id 仅作客户端预选，权限由 API 层校验，本路由不做服务端校验。"""
+    if (resp := _login_redirect(user)) is not None:
+        return resp
+    return templates.TemplateResponse(
+        request, "library_review.html",
+        _ctx(user, active="library", course_id=course_id),
     )
 
 
@@ -431,11 +506,18 @@ async def resource_detail(
     )
 
 
-async def _records_with_names(db: AsyncSession, task_id: int) -> list[dict]:
-    """某任务的协审/终审意见（含协审员昵称，按提交顺序）。"""
+async def _records_with_names_batch(
+    db: AsyncSession, task_ids: list[int]
+) -> dict[int, list[dict]]:
+    """批量取多个任务的协审/终审意见（含协审员昵称），按 task_id 分组（v0.9：消 N+1）。
+
+    records 一次 IN 批量查、users 一次 IN 批量查（参考 api/admin.py 审核任务总览写法）。
+    """
+    if not task_ids:
+        return {}
     records = (
         await db.execute(
-            select(ReviewRecord).where(ReviewRecord.task_id == task_id)
+            select(ReviewRecord).where(ReviewRecord.task_id.in_(task_ids))
             .order_by(ReviewRecord.id)
         )
     ).scalars().all()
@@ -447,16 +529,23 @@ async def _records_with_names(db: AsyncSession, task_id: int) -> list[dict]:
             )
         ).scalars()
     } if records else {}
-    return [
-        {
-            "reviewer": names.get(r.reviewer_id, "协审员"),
-            "stage": r.stage,
-            "verdict": r.verdict,
-            "comment": r.comment,
-            "created_at": r.created_at,
-        }
-        for r in records
-    ]
+    grouped: dict[int, list[dict]] = {task_id: [] for task_id in task_ids}
+    for r in records:
+        grouped[r.task_id].append(
+            {
+                "reviewer": names.get(r.reviewer_id, "协审员"),
+                "stage": r.stage,
+                "verdict": r.verdict,
+                "comment": r.comment,
+                "created_at": r.created_at,
+            }
+        )
+    return grouped
+
+
+async def _records_with_names(db: AsyncSession, task_id: int) -> list[dict]:
+    """某任务的协审/终审意见（含协审员昵称，按提交顺序）。"""
+    return (await _records_with_names_batch(db, [task_id])).get(task_id, [])
 
 
 @router.get("/review")
@@ -478,7 +567,7 @@ async def review_workbench(
             .join(Course, Course.id == Resource.course_id)
             .where(
                 ReviewTask.stage == "co_review",
-                ReviewTask.assignee_ids.any(user.id),
+                user.id == any_(ReviewTask.assignee_ids),
             )
             .order_by(ReviewTask.created_at)
         )
@@ -560,18 +649,22 @@ async def admin_review(
             stmt = stmt.limit(limit)
         return (await db.execute(stmt)).all()
 
-    final_tasks = []
-    for t, r, course_name, nickname in await _query(["final"]):
-        final_tasks.append({
+    final_rows = await _query(["final"])
+    # 协审/终审意见按 task_ids 一次 IN 批量查（v0.9：原实现每任务两条查询，N+1）
+    records_map = await _records_with_names_batch(db, [t.id for t, *_ in final_rows])
+    final_tasks = [
+        {
             "task_id": t.id,
             "precheck": t.precheck_result,
             "created_at": t.created_at,
             "resource": r,
             "course_name": course_name,
             "uploader_nickname": nickname,
-            "records": await _records_with_names(db, t.id),
+            "records": records_map[t.id],
             "preview_url": f"/api/resources/{r.id}/preview",
-        })
+        }
+        for t, r, course_name, nickname in final_rows
+    ]
     co_tasks = [
         {"task_id": t.id, "created_at": t.created_at,
          "resource": r, "course_name": course_name,
@@ -604,53 +697,78 @@ async def board(
     user: Annotated[User | None, Depends(get_current_user_optional)],
     db: Annotated[AsyncSession, Depends(get_db)],
     tag: str | None = None,
+    grade: str | None = None,
+    featured: str | None = None,
+    course_id: int | None = None,
     page: int = 1,
 ):
-    """板块帖子列表：qa/discuss 服务端渲染第一页（+ ?page=/ ?tag= 过滤）；
-    experience/bounty 仍为占位页。DB 不可用时降级为空列表 + 客户端补载。"""
+    """板块帖子列表（v0.7 四板块全部 SSR）：经验长廊附标签云/届别过滤/精华区，
+    资料求援卡片展示悬赏分；course_id 过滤（课程空间「讨论」Tab 链接过来）；
+    DB 不可用时降级为空列表 + 客户端补载。"""
     if board not in BOARDS:
         raise HTTPException(status_code=404)
-    name, version = BOARDS[board]
-    if board not in OPEN_BOARDS:
-        return templates.TemplateResponse(
-            request, "placeholder.html",
-            _ctx(user, name=name, version=version, note="", active=board),
-        )
+    name = BOARDS[board][0]
 
     page = max(page, 1)
     total = 0
     items: list[dict] = []
+    tag_cloud: list[dict] = []
+    grades: list[str] = []
+    filter_course = None
     ssr_ok = True
     try:
-        comment_counts = (
-            select(Comment.post_id, func.count().label("n"))
-            .group_by(Comment.post_id)
-            .subquery()
-        )
-        vote_scores = (
-            select(Vote.target_id, func.sum(Vote.value).label("s"))
-            .where(Vote.target_type == "post")
-            .group_by(Vote.target_id)
-            .subquery()
-        )
+        if course_id is not None:
+            filter_course = await db.get(Course, course_id)
         filters = [Post.board == board, Post.status.in_(["normal", "featured"])]
+        if course_id is not None:
+            filters.append(Post.course_id == course_id)
         if tag:
             filters.append(Post.tags.contains([tag]))
+        if grade:
+            filters.append(User.grade == grade)
+        if featured == "1":
+            filters.append(Post.status == "featured")
         total = (
-            await db.execute(select(func.count()).select_from(Post).where(*filters))
+            await db.execute(
+                select(func.count(Post.id))
+                .join(User, User.id == Post.author_id)
+                .where(*filters)
+            )
         ).scalar_one()
+        # 先取本页帖子，聚合只对这页做 IN 过滤（v0.9：原实现对 comments/votes
+        # 全表 GROUP BY 再 JOIN 本页 20 条，表越大越慢）
         rows = (
             await db.execute(
-                select(Post, User, comment_counts.c.n, vote_scores.c.s)
+                select(Post, User)
                 .join(User, User.id == Post.author_id)
-                .outerjoin(comment_counts, comment_counts.c.post_id == Post.id)
-                .outerjoin(vote_scores, vote_scores.c.target_id == Post.id)
                 .where(*filters)
                 .order_by(Post.created_at.desc())
                 .offset((page - 1) * BOARD_PAGE_SIZE)
                 .limit(BOARD_PAGE_SIZE)
             )
         ).all()
+        post_ids = [post.id for post, _ in rows]
+        comment_counts: dict[int, int] = {}
+        vote_scores: dict[int, int] = {}
+        if post_ids:
+            comment_counts = dict(
+                (
+                    await db.execute(
+                        select(Comment.post_id, func.count())
+                        .where(Comment.post_id.in_(post_ids))
+                        .group_by(Comment.post_id)
+                    )
+                ).all()
+            )
+            vote_scores = dict(
+                (
+                    await db.execute(
+                        select(Vote.target_id, func.sum(Vote.value))
+                        .where(Vote.target_type == "post", Vote.target_id.in_(post_ids))
+                        .group_by(Vote.target_id)
+                    )
+                ).all()
+            )
         items = [
             {
                 "id": post.id,
@@ -658,15 +776,52 @@ async def board(
                 "author": author,
                 "tags": post.tags or [],
                 "view_count": post.view_count,
-                "comment_count": comment_count or 0,
-                "vote_score": vote_score or 0,
+                "comment_count": comment_counts.get(post.id, 0),
+                "vote_score": vote_scores.get(post.id, 0),
+                "status": post.status,
+                "bounty_score": post.bounty_score,
+                "ai_summary": post.ai_summary,
                 "has_ai_answer": post.ai_first_answer is not None,
                 "has_accepted": post.accepted_comment_id is not None,
                 "created_at": post.created_at,
                 "excerpt": make_excerpt(post.content),
             }
-            for post, author, comment_count, vote_score in rows
+            for post, author in rows
         ]
+        if board == "experience":
+            # 标签云（§13 经验长廊页）：该板块全部帖的标签频次，按热度排序取前 12
+            rows_tags = (
+                await db.execute(
+                    select(Post.tags).where(
+                        Post.board == "experience",
+                        Post.status.in_(["normal", "featured"]),
+                        Post.tags.is_not(None),
+                    )
+                )
+            ).scalars().all()
+            counts: dict[str, int] = {}
+            for tags in rows_tags:
+                for t in tags or []:
+                    counts[t] = counts.get(t, 0) + 1
+            tag_cloud = [
+                {"tag": t, "count": n}
+                for t, n in sorted(counts.items(), key=lambda x: (-x[1], x[0]))[:12]
+            ]
+            # 届别过滤（§13）：该板块作者年级去重（如 2023 级），供页面渲染过滤链接
+            grade_rows = (
+                await db.execute(
+                    select(User.grade)
+                    .join(Post, Post.author_id == User.id)
+                    .where(
+                        Post.board == "experience",
+                        Post.status.in_(["normal", "featured"]),
+                        User.grade.is_not(None),
+                    )
+                    .distinct()
+                    .order_by(User.grade)
+                )
+            ).scalars().all()
+            grades = [g for g in grade_rows if g]
     except Exception:
         # DB 不可用（如 CI 冒烟环境）：页面骨架照常渲染，列表由客户端 fetch 补载
         logger.warning("板块列表查询失败，降级客户端加载 board=%s", board, exc_info=True)
@@ -675,7 +830,9 @@ async def board(
         request, "board.html",
         _ctx(user, active=board, board=board, board_name=name, posts=items,
              total=total, page=page, size=BOARD_PAGE_SIZE, tag=tag or "",
-             ssr_ok=ssr_ok),
+             grade=grade or "", featured=featured == "1", tag_cloud=tag_cloud,
+             grades=grades, ssr_ok=ssr_ok, course=filter_course,
+             course_id=course_id),
     )
 
 
@@ -685,7 +842,8 @@ async def post_new(
     user: Annotated[User | None, Depends(get_current_user_optional)],
     board: str | None = None,
 ):
-    """发帖页（登录）：qa 帖必选公共课程（+可选章节），discuss 帖无课程要求。"""
+    """发帖页（登录）：qa 帖必选公共课程（+可选章节）；experience 帖走结构化模板；
+    bounty 帖须填悬赏贡献分；discuss 帖无附加要求。"""
     if (resp := _login_redirect(user)) is not None:
         return resp
     if board not in OPEN_BOARDS:
@@ -813,13 +971,29 @@ async def post_detail(
     if post.board == "qa":
         redis_state = None
         if not post.ai_first_answer:
-            redis_state = await get_redis().get(ai_answer_key(post.id))
+            try:
+                redis_state = await get_redis().get(ai_answer_key(post.id))
+            except Exception:
+                # Redis 故障仅记日志放行：按无状态键处理（与项目容错惯例一致）
+                logger.warning("AI 首答状态键读取失败 post_id=%s", post.id, exc_info=True)
         ai_status = derive_ai_answer_status(
             post.board, post.ai_first_answer, redis_state
         )
         if post.ai_first_answer:
             ai_citations = await build_ai_citations(db, post.ai_first_answer)
             ai_segments = _ai_segments(post.ai_first_answer, ai_citations)
+
+    # 经验帖 AI 摘要状态（v0.7）：done 渲染摘要 / pending 轮询 / failed 友好提示
+    summary_status = "none"
+    if post.board == "experience":
+        summary_state = None
+        if not post.ai_summary:
+            try:
+                summary_state = await get_redis().get(exp_summary_key(post.id))
+            except Exception:
+                # Redis 故障仅记日志放行：按无状态键处理（与项目容错惯例一致）
+                logger.warning("AI 摘要状态键读取失败 post_id=%s", post.id, exc_info=True)
+        summary_status = derive_summary_status(post.board, post.ai_summary, summary_state)
 
     await db.commit()
     is_favorited = False
@@ -840,8 +1014,10 @@ async def post_detail(
              comment_tree=roots, comment_count=len(rows),
              is_author=user is not None and user.id == post.author_id,
              is_favorited=is_favorited,
+             can_feature=(user is not None and post.board == "experience"
+                          and can_feature(user, post.author_id)),
              ai_status=ai_status, ai_citations=ai_citations,
-             ai_segments=ai_segments),
+             ai_segments=ai_segments, summary_status=summary_status),
     )
 
 
@@ -881,6 +1057,35 @@ async def me(
     return templates.TemplateResponse(
         request, "me.html",
         _ctx(user, active="", major=major, growth=growth),
+    )
+
+
+# ---------------------------------------------------------------------------
+# 全站搜索（v0.8）：骨架 SSR（过滤条件回显），结果由客户端 fetch /api/search 渲染
+# （检索交互重，且搜索查询逻辑由后端 API 独立实现，页面端不重复 SSR 查询）
+# ---------------------------------------------------------------------------
+
+
+@router.get("/search")
+async def search_page(
+    request: Request,
+    user: Annotated[User | None, Depends(get_current_user_optional)],
+    q: str = "",
+    type: str = "all",
+    board: str = "",
+    course_id: int | None = None,
+):
+    """全站搜索页（登录）：关键词 + 类型（all/post/resource）+ 板块 + 课程过滤。"""
+    if (resp := _login_redirect(user)) is not None:
+        return resp
+    if type not in ("all", "post", "resource"):
+        type = "all"
+    if board not in BOARDS:
+        board = ""
+    return templates.TemplateResponse(
+        request, "search.html",
+        _ctx(user, active="search", q=q, search_type=type, board=board,
+             course_id=course_id, boards=BOARDS),
     )
 
 

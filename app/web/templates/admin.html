@@ -1,19 +1,27 @@
 {% extends "base.html" %}
 {% block title %}管理后台 · 知屿 KnowIsle{% endblock %}
 
+{% block head %}
+{# 页面脚本须在 Alpine（defer）启动前执行：head 块内同步加载，勿加 defer #}
+<script src="/static/js/pages/admin.js"></script>
+{% endblock %}
+
 {% block content %}
-<div x-data="{ tab: 'review' }">
+<div x-data="{ tab: 'review' }"
+     x-init="$watch('tab', v => { if (v === 'dashboard') $nextTick(() => window.dispatchEvent(new CustomEvent('admin:dashboard'))); })"
+     class="animate-fade-up">
   <div class="mb-6">
     <h1 class="text-2xl font-bold text-slate-800">管理后台</h1>
-    <p class="mt-1 text-sm text-slate-400">审核终审 / 空间管理 / 用户治理 / 平台配置（v0.6）</p>
+    <p class="mt-1 text-sm text-slate-400">审核终审 / 空间管理 / 用户治理 / 平台配置（v0.6）· 举报处理 / 运营看板（v0.8）</p>
   </div>
 
-  {# Tab 切换（风格仿 course_detail.html） #}
+  {# Tab 切换（下划线式，brand 主色） #}
   <div class="flex gap-1 overflow-x-auto border-b border-slate-200 text-sm">
     {% for key, label in [('review', '审核终审'), ('space', '空间管理'),
-                          ('users', '用户治理'), ('config', '平台配置')] %}
+                          ('users', '用户治理'), ('config', '平台配置'),
+                          ('reports', '举报处理'), ('dashboard', '运营看板')] %}
     <button @click="tab = '{{ key }}'"
-            :class="tab === '{{ key }}' ? 'border-sky-600 text-sky-700 font-medium' : 'border-transparent text-slate-500 hover:text-sky-700'"
+            :class="tab === '{{ key }}' ? 'border-brand-600 text-brand-700 font-medium' : 'border-transparent text-slate-500 hover:text-brand-700'"
             class="shrink-0 border-b-2 px-4 py-2 -mb-px transition-colors">{{ label }}</button>
     {% endfor %}
   </div>
@@ -23,12 +31,12 @@
     <div x-show="tab === 'review'">
       <div class="grid gap-4 sm:grid-cols-2">
         <a href="/admin/review"
-           class="block rounded-lg border border-slate-200 bg-white p-5 transition-shadow hover:shadow-sm">
+           class="card-hover block rounded-card border border-slate-200 bg-white p-5 shadow-card">
           <h2 class="text-base font-semibold text-slate-800">管理员终审 →</h2>
           <p class="mt-1 text-sm text-slate-500">终审队列裁决（通过上架 / 驳回）、等待协审任务改派与直审、最近完成记录。</p>
         </a>
         <a href="/review"
-           class="block rounded-lg border border-slate-200 bg-white p-5 transition-shadow hover:shadow-sm">
+           class="card-hover block rounded-card border border-slate-200 bg-white p-5 shadow-card">
           <h2 class="text-base font-semibold text-slate-800">协审工作台 →</h2>
           <p class="mt-1 text-sm text-slate-500">以协审员视角处理本人被指派的协审任务。</p>
         </a>
@@ -38,7 +46,7 @@
     {# ===== 空间管理：专业导入 / 课程审批 / 创建课程 ===== #}
     <div x-show="tab === 'space'" x-cloak class="space-y-6">
       {# 专业批量导入 #}
-      <div class="rounded-lg border border-slate-200 bg-white p-4" x-data="majorImport()">
+      <div class="rounded-card border border-slate-200 bg-white p-4 shadow-card" x-data="majorImport()">
         <h2 class="text-sm font-semibold text-slate-700">专业批量导入</h2>
         <p class="mt-1 text-xs text-slate-400">
           粘贴 JSON（如 [{"name":"计算机科学与技术","code":"080901"}]）或逐行「名称,代码」（代码可省略）。按名称幂等去重。
@@ -57,7 +65,7 @@
       </div>
 
       {# 公共课程列表（状态过滤 + 审批/停用） #}
-      <div class="rounded-lg border border-slate-200 bg-white p-4" x-data="adminCourses()" x-init="load()">
+      <div class="rounded-card border border-slate-200 bg-white p-4 shadow-card" x-data="adminCourses()" x-init="load()">
         <div class="flex flex-wrap items-center gap-2">
           <h2 class="text-sm font-semibold text-slate-700">公共课程空间</h2>
           <span class="text-xs text-slate-400" x-show="loaded" x-text="'共 ' + total + ' 门'"></span>
@@ -76,7 +84,7 @@
         <div x-show="items.length" x-cloak class="mt-3 overflow-x-auto">
           <table class="w-full text-sm">
             <thead>
-              <tr class="border-b border-slate-200 text-left text-xs text-slate-400">
+              <tr class="border-b border-slate-200 text-left text-[11px] uppercase tracking-wider text-slate-400">
                 <th class="py-2 pr-3 font-medium">ID</th>
                 <th class="py-2 pr-3 font-medium">课程名</th>
                 <th class="py-2 pr-3 font-medium">所属专业</th>
@@ -87,7 +95,7 @@
             </thead>
             <tbody class="divide-y divide-slate-100">
               <template x-for="c in items" :key="c.id">
-                <tr>
+                <tr class="transition-colors hover:bg-slate-50">
                   <td class="py-2 pr-3 text-slate-400" x-text="c.id"></td>
                   <td class="py-2 pr-3">
                     <a :href="'/courses/' + c.id" class="text-sky-600 hover:underline" x-text="c.name"></a>
@@ -103,7 +111,7 @@
                   <td class="py-2 pr-3 text-xs text-slate-400"
                       x-text="(c.created_at || '').slice(0, 10)"></td>
                   <td class="py-2">
-                    <div class="flex gap-2">
+                    <div class="flex flex-wrap gap-2">
                       <button x-show="c.status !== 'active'" @click="setStatus(c, 'active')" :disabled="loading"
                               class="rounded bg-sky-600 px-2 py-1 text-xs text-white hover:bg-sky-700 disabled:opacity-50">
                         审批通过
@@ -122,7 +130,7 @@
       </div>
 
       {# 创建课程（管理员创建直接 active） #}
-      <div class="rounded-lg border border-slate-200 bg-white p-4" x-data="createCourse()" x-init="loadMajors()">
+      <div class="rounded-card border border-slate-200 bg-white p-4 shadow-card" x-data="createCourse()" x-init="loadMajors()">
         <h2 class="text-sm font-semibold text-slate-700">创建课程</h2>
         <p class="mt-1 text-xs text-slate-400">管理员创建的课程直接开通（active），无需审批。</p>
         <div class="mt-3 grid gap-2 sm:grid-cols-2">
@@ -151,7 +159,7 @@
 
     {# ===== 用户治理：搜索 + 角色任命 / 信用裁决 / 信用明细 ===== #}
     <div x-show="tab === 'users'" x-cloak>
-      <div class="rounded-lg border border-slate-200 bg-white p-4" x-data="adminUsers()" x-init="load()">
+      <div class="rounded-card border border-slate-200 bg-white p-4 shadow-card" x-data="adminUsers()" x-init="load()">
         <div class="flex flex-wrap items-center gap-2">
           <h2 class="text-sm font-semibold text-slate-700">用户治理</h2>
           <span class="text-xs text-slate-400" x-show="loaded" x-text="'共 ' + total + ' 人'"></span>
@@ -171,7 +179,7 @@
         <div x-show="items.length" x-cloak class="mt-3 overflow-x-auto">
           <table class="w-full text-sm">
             <thead>
-              <tr class="border-b border-slate-200 text-left text-xs text-slate-400">
+              <tr class="border-b border-slate-200 text-left text-[11px] uppercase tracking-wider text-slate-400">
                 <th class="py-2 pr-3 font-medium">学号</th>
                 <th class="py-2 pr-3 font-medium">昵称</th>
                 <th class="py-2 pr-3 font-medium">角色</th>
@@ -184,7 +192,7 @@
             </thead>
             <template x-for="u in items" :key="u.id">
               <tbody class="divide-y divide-slate-100" x-data="userRow(u)">
-                <tr>
+                <tr class="transition-colors hover:bg-slate-50">
                   <td class="py-2 pr-3 text-slate-500" x-text="u.student_no"></td>
                   <td class="py-2 pr-3 text-slate-700" x-text="u.nickname"></td>
                   <td class="py-2 pr-3">
@@ -274,16 +282,19 @@
 
     {# ===== 平台配置：生效值可编辑保存（越界 422 展示 detail） ===== #}
     <div x-show="tab === 'config'" x-cloak>
-      <div class="rounded-lg border border-slate-200 bg-white p-4" x-data="adminConfig()" x-init="load()">
+      <div class="rounded-card border border-slate-200 bg-white p-4 shadow-card" x-data="adminConfig()" x-init="load()">
         <h2 class="text-sm font-semibold text-slate-700">平台配置</h2>
         <p class="mt-1 text-xs text-slate-400">仅注册键可调；修改写审计日志，即时生效。</p>
         <p x-show="loading" x-cloak class="mt-3 text-sm text-slate-400">加载中…</p>
         <p x-show="error" x-text="error" x-cloak
            class="mt-3 rounded bg-red-50 px-3 py-2 text-sm text-red-600"></p>
+        <p x-show="!loading && !error && !items.length" x-cloak class="mt-3 text-sm text-slate-400">
+          暂无注册配置项。
+        </p>
         <div x-show="items.length" x-cloak class="mt-3 overflow-x-auto">
           <table class="w-full text-sm">
             <thead>
-              <tr class="border-b border-slate-200 text-left text-xs text-slate-400">
+              <tr class="border-b border-slate-200 text-left text-[11px] uppercase tracking-wider text-slate-400">
                 <th class="py-2 pr-3 font-medium">配置键</th>
                 <th class="py-2 pr-3 font-medium">描述</th>
                 <th class="py-2 pr-3 font-medium">生效值</th>
@@ -295,7 +306,7 @@
             </thead>
             <tbody class="divide-y divide-slate-100">
               <template x-for="item in items" :key="item.key">
-                <tr>
+                <tr class="transition-colors hover:bg-slate-50">
                   <td class="py-2 pr-3 font-mono text-xs text-slate-600" x-text="item.key"></td>
                   <td class="py-2 pr-3 text-xs text-slate-500" x-text="item.description"></td>
                   <td class="py-2 pr-3">
@@ -333,210 +344,166 @@
         </div>
       </div>
     </div>
+
+    {# ===== 举报处理（v0.8）：状态过滤 + 处理流转（open→processing→resolved/dismissed） ===== #}
+    <div x-show="tab === 'reports'" x-cloak>
+      <div class="rounded-card border border-slate-200 bg-white p-4 shadow-card" x-data="adminReports()" x-init="load(1)">
+        <div class="flex flex-wrap items-center gap-2">
+          <h2 class="text-sm font-semibold text-slate-700">举报处理</h2>
+          <span class="text-xs text-slate-400" x-show="loaded" x-text="'共 ' + total + ' 条'"></span>
+          <select x-model="status" @change="load(1)"
+                  class="ml-auto rounded border border-slate-300 px-2 py-1.5 text-sm">
+            <option value="">全部状态</option>
+            <option value="open">待处理</option>
+            <option value="processing">处理中</option>
+            <option value="resolved">已解决</option>
+            <option value="dismissed">已驳回</option>
+          </select>
+        </div>
+        <p x-show="loading" x-cloak class="mt-3 text-sm text-slate-400">加载中…</p>
+        <p x-show="error" x-text="error" x-cloak
+           class="mt-3 rounded bg-red-50 px-3 py-2 text-sm text-red-600"></p>
+        <p x-show="msg" x-text="msg" x-cloak
+           class="mt-3 rounded bg-emerald-50 px-3 py-2 text-sm text-emerald-700"></p>
+        <p x-show="loaded && !loading && !items.length" x-cloak class="mt-3 text-sm text-slate-400">暂无举报。</p>
+        <div x-show="items.length" x-cloak class="mt-3 overflow-x-auto">
+          <table class="w-full text-sm">
+            <thead>
+              <tr class="border-b border-slate-200 text-left text-[11px] uppercase tracking-wider text-slate-400">
+                <th class="py-2 pr-3 font-medium">举报人</th>
+                <th class="py-2 pr-3 font-medium">举报对象</th>
+                <th class="py-2 pr-3 font-medium">理由</th>
+                <th class="py-2 pr-3 font-medium">状态</th>
+                <th class="py-2 pr-3 font-medium">处理人</th>
+                <th class="py-2 pr-3 font-medium">时间</th>
+                <th class="py-2 font-medium">操作</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-100">
+              <template x-for="r in items" :key="r.id">
+                <tr class="transition-colors hover:bg-slate-50">
+                  <td class="py-2 pr-3 text-slate-700" x-text="r.reporter ? r.reporter.nickname : '—'"></td>
+                  <td class="py-2 pr-3">
+                    <span class="rounded bg-slate-100 px-1.5 py-0.5 text-xs text-slate-500"
+                          x-text="targetLabel(r.target_type)"></span>
+                    {# 资源/帖子可跳转详情；评论无法定位、用户无公开主页，仅显示摘要文本 #}
+                    <template x-if="targetLink(r)">
+                      <a :href="targetLink(r)" class="ml-1 text-sky-600 hover:underline"
+                         x-text="r.target_summary || ('#' + r.target_id)"></a>
+                    </template>
+                    <template x-if="!targetLink(r)">
+                      <span class="ml-1 text-slate-600" x-text="r.target_summary || ('#' + r.target_id)"></span>
+                    </template>
+                  </td>
+                  <td class="max-w-48 truncate py-2 pr-3 text-slate-600" :title="r.reason"
+                      x-text="r.reason"></td>
+                  <td class="py-2 pr-3">
+                    <span class="rounded px-2 py-0.5 text-xs"
+                          :class="{'bg-amber-100 text-amber-700': r.status === 'open',
+                                   'bg-sky-50 text-sky-700': r.status === 'processing',
+                                   'bg-emerald-50 text-emerald-700': r.status === 'resolved',
+                                   'bg-slate-100 text-slate-500': r.status === 'dismissed'}"
+                          x-text="statusLabel(r.status)"></span>
+                  </td>
+                  <td class="py-2 pr-3 text-slate-500"
+                      x-text="r.handler ? r.handler.nickname : '—'"></td>
+                  <td class="py-2 pr-3 text-xs text-slate-400"
+                      x-text="(r.created_at || '').slice(0, 16).replace('T', ' ')"></td>
+                  <td class="py-2">
+                    <div class="flex flex-wrap gap-2">
+                      <button x-show="r.status === 'open'" @click="handle(r, 'processing')" :disabled="loading"
+                              class="rounded border border-slate-300 px-2 py-1 text-xs text-slate-600 hover:bg-slate-50 disabled:opacity-50">
+                        开始处理
+                      </button>
+                      <button x-show="r.status === 'open' || r.status === 'processing'"
+                              @click="handle(r, 'resolve')" :disabled="loading"
+                              class="rounded bg-emerald-600 px-2 py-1 text-xs text-white hover:bg-emerald-700 disabled:opacity-50">
+                        解决
+                      </button>
+                      <button x-show="r.status === 'open' || r.status === 'processing'"
+                              @click="handle(r, 'dismiss')" :disabled="loading"
+                              class="rounded border border-red-300 px-2 py-1 text-xs text-red-600 hover:bg-red-50 disabled:opacity-50">
+                        驳回
+                      </button>
+                      <span x-show="r.status === 'resolved' || r.status === 'dismissed'"
+                            class="text-xs text-slate-300">已结案</span>
+                    </div>
+                  </td>
+                </tr>
+              </template>
+            </tbody>
+          </table>
+        </div>
+        <div x-show="total > size" x-cloak class="mt-3 flex items-center justify-center gap-2 text-sm">
+          <button @click="load(page - 1)" :disabled="loading || page <= 1"
+                  class="rounded-md border border-slate-300 px-3 py-1.5 text-slate-600 hover:bg-slate-100 disabled:opacity-50">上一页</button>
+          <span class="px-2 text-slate-400" x-text="page + ' / ' + Math.max(1, Math.ceil(total / size))"></span>
+          <button @click="load(page + 1)" :disabled="loading || page * size >= total"
+                  class="rounded-md border border-slate-300 px-3 py-1.5 text-slate-600 hover:bg-slate-100 disabled:opacity-50">下一页</button>
+        </div>
+      </div>
+    </div>
+
+    {# ===== 运营看板（v0.8）：指标卡组 + 近 7 天趋势折线图（ECharts，切 Tab 后才初始化） ===== #}
+    {# ECharts 5 本地化：与 base.html 其余依赖同置于 static/vendor #}
+    <script src="/static/vendor/echarts-5.6.0.min.js"></script>
+    <div x-show="tab === 'dashboard'" x-cloak>
+      <div class="rounded-card border border-slate-200 bg-white p-4 shadow-card" x-data="adminDashboard()"
+           @admin:dashboard.window="onShow()">
+        <h2 class="text-sm font-semibold text-slate-700">运营看板</h2>
+        <p x-show="loading" x-cloak class="mt-3 text-sm text-slate-400">加载中…</p>
+        <p x-show="error" x-text="error" x-cloak
+           class="mt-3 rounded bg-red-50 px-3 py-2 text-sm text-red-600"></p>
+        <template x-if="data">
+          <div class="mt-4 space-y-6">
+            {# 指标卡组：用户 / 内容 / AI 三行 #}
+            <div class="grid gap-3 sm:grid-cols-3">
+              <div class="rounded-card border border-slate-200 bg-slate-50 p-4">
+                <p class="text-xs text-slate-400">用户总数</p>
+                <p class="mt-1 text-2xl font-bold text-slate-800" x-text="data.users.total"></p>
+                <p class="mt-1 text-xs text-slate-400"
+                   x-text="'今日新增 ' + data.users.new_today + ' · 今日活跃 ' + data.users.active_today"></p>
+              </div>
+              <div class="rounded-card border border-slate-200 bg-slate-50 p-4">
+                <p class="text-xs text-slate-400">资源总数</p>
+                <p class="mt-1 text-2xl font-bold text-slate-800" x-text="data.content.resources_total"></p>
+                <p class="mt-1 text-xs"
+                   :class="data.content.resources_pending > 0 ? 'text-amber-600' : 'text-slate-400'"
+                   x-text="'审核积压 ' + data.content.resources_pending"></p>
+              </div>
+              <div class="rounded-card border border-slate-200 bg-slate-50 p-4">
+                <p class="text-xs text-slate-400">帖子总数</p>
+                <p class="mt-1 text-2xl font-bold text-slate-800" x-text="data.content.posts_total"></p>
+                <p class="mt-1 text-xs text-slate-400"
+                   x-text="'评论 ' + data.content.comments_total + ' · 待处理举报 ' + data.content.reports_open"></p>
+              </div>
+              <div class="rounded-card border border-slate-200 bg-slate-50 p-4">
+                <p class="text-xs text-slate-400">今日 AI 问答</p>
+                <p class="mt-1 text-2xl font-bold text-slate-800" x-text="data.ai.qa_today"></p>
+                <p class="mt-1 text-xs text-slate-400" x-text="'累计问答 ' + data.ai.qa_total"></p>
+              </div>
+              <div class="rounded-card border border-slate-200 bg-slate-50 p-4">
+                <p class="text-xs text-slate-400">今日 Token 消耗</p>
+                <p class="mt-1 text-2xl font-bold text-slate-800" x-text="data.ai.tokens_today"></p>
+              </div>
+              <div class="rounded-card border border-slate-200 bg-slate-50 p-4">
+                <p class="text-xs text-slate-400">今日平均延迟</p>
+                <p class="mt-1 text-2xl font-bold text-slate-800"
+                   x-text="(data.ai.avg_latency_ms_today / 1000).toFixed(1) + ' s'"></p>
+                <p class="mt-1 text-xs text-slate-400"
+                   x-text="data.ai.avg_latency_ms_today + ' ms'"></p>
+              </div>
+            </div>
+            {# 近 7 天趋势：问答 / 发帖 / 上传 三条折线 #}
+            <div class="rounded-card border border-slate-200 bg-white p-3 shadow-card">
+              <h3 class="text-xs font-medium text-slate-500">近 7 天趋势</h3>
+              <div x-ref="trendChart" class="mt-2 h-64 w-full"></div>
+            </div>
+          </div>
+        </template>
+      </div>
+    </div>
   </div>
 </div>
 
-<script>
-// 管理后台统一 fetch 封装：204 视为成功空响应，错误抛出 detail
-async function adminApi(url, options) {
-  const resp = await fetch(url, options);
-  const data = resp.status === 204 ? {} : await resp.json().catch(() => ({}));
-  if (!resp.ok && resp.status !== 204) {
-    const detail = typeof data.detail === 'string' ? data.detail : JSON.stringify(data.detail);
-    throw new Error(detail || ('请求失败 ' + resp.status));
-  }
-  return data;
-}
-function adminPost(url, method, body) {
-  return adminApi(url, {
-    method: method,
-    headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify(body),
-  });
-}
-
-// 专业批量导入：优先按 JSON 解析，失败按逐行「名称,代码」解析
-function majorImport() {
-  return {
-    text: '', loading: false, error: '', result: '',
-    parseItems() {
-      const raw = this.text.trim();
-      if (!raw) throw new Error('请输入专业名单');
-      if (raw.startsWith('[')) {
-        const arr = JSON.parse(raw);
-        return arr.map(it => ({name: String(it.name || '').trim(),
-                              code: it.code ? String(it.code).trim() : null}));
-      }
-      return raw.split('\n').map(line => line.trim()).filter(Boolean).map(line => {
-        const parts = line.split(/[,，]/);
-        return {name: parts[0].trim(), code: parts[1] ? parts[1].trim() : null};
-      });
-    },
-    async submit() {
-      this.loading = true; this.error = ''; this.result = '';
-      try {
-        const items = this.parseItems();
-        if (!items.length || items.some(it => !it.name)) throw new Error('存在空名称行，请检查格式');
-        const data = await adminPost('/api/admin/majors', 'POST', {items: items});
-        this.result = '导入完成：新增 ' + data.created + ' 个，跳过已存在 ' + data.skipped + ' 个';
-        this.text = '';
-      } catch (e) { this.error = e.message; }
-      finally { this.loading = false; }
-    },
-  };
-}
-
-// 公共课程列表：状态过滤 + 审批通过 / 停用
-function adminCourses() {
-  return {
-    status: '', items: [], total: 0, loading: false, loaded: false, error: '',
-    statusLabel(s) { return {active: '已开通', pending: '待审批', disabled: '已停用'}[s] || s; },
-    async load() {
-      this.loading = true; this.error = '';
-      try {
-        const data = await adminApi('/api/admin/courses?size=100'
-          + (this.status ? '&status=' + this.status : ''));
-        this.items = data.items || [];
-        this.total = data.total || 0;
-        this.loaded = true;
-      } catch (e) { this.error = e.message; }
-      finally { this.loading = false; }
-    },
-    async setStatus(c, status) {
-      if (status === 'disabled' && !confirm('确认停用课程「' + c.name + '」？停用后不再公开展示。')) return;
-      this.loading = true; this.error = '';
-      try {
-        await adminPost('/api/admin/courses/' + c.id, 'PATCH', {status: status});
-        c.status = status;
-      } catch (e) { this.error = e.message; }
-      finally { this.loading = false; }
-    },
-  };
-}
-
-// 创建课程：管理员直接 active；专业列表取自 GET /api/majors
-function createCourse() {
-  return {
-    majors: [], form: {name: '', major_id: '', description: ''},
-    loading: false, error: '', result: '',
-    async loadMajors() {
-      try {
-        const data = await adminApi('/api/majors');
-        this.majors = data.items || [];
-      } catch (e) { this.error = e.message; }
-    },
-    async submit() {
-      this.error = ''; this.result = '';
-      if (!this.form.name.trim()) { this.error = '请填写课程名'; return; }
-      if (!this.form.major_id) { this.error = '请选择所属专业'; return; }
-      this.loading = true;
-      try {
-        const data = await adminPost('/api/courses', 'POST', {
-          name: this.form.name.trim(),
-          major_id: Number(this.form.major_id),
-          description: this.form.description.trim() || null,
-        });
-        this.result = '已创建并开通：' + data.name;
-        this.form = {name: '', major_id: '', description: ''};
-      } catch (e) { this.error = e.message; }
-      finally { this.loading = false; }
-    },
-  };
-}
-
-// 用户治理：搜索 + 分页首屏
-function adminUsers() {
-  return {
-    q: '', items: [], total: 0, loading: false, loaded: false, error: '',
-    async load() {
-      this.loading = true; this.error = '';
-      try {
-        const data = await adminApi('/api/admin/users?size=50'
-          + (this.q.trim() ? '&q=' + encodeURIComponent(this.q.trim()) : ''));
-        this.items = data.items || [];
-        this.total = data.total || 0;
-        this.loaded = true;
-      } catch (e) { this.error = e.message; }
-      finally { this.loading = false; }
-    },
-  };
-}
-
-// 单行用户：角色任命 / 信用裁决 / 信用明细（展开行内操作）
-function userRow(u) {
-  return {
-    u: u, open: false, role: u.role, delta: null, reason: '',
-    logs: null, logsLoading: false,
-    loading: false, error: '', msg: '',
-    roleLabel(r) { return {student: '学生', reviewer: '协审员', builder: '共建者', admin: '管理员'}[r] || r; },
-    async setRole() {
-      if (this.role === this.u.role) { this.error = '角色未变更'; this.msg = ''; return; }
-      this.loading = true; this.error = ''; this.msg = '';
-      try {
-        const data = await adminPost('/api/admin/users/' + this.u.id + '/role', 'PUT', {role: this.role});
-        this.u.role = data.role;
-        this.msg = '已任命为「' + this.roleLabel(data.role) + '」';
-      } catch (e) { this.error = e.message; this.role = this.u.role; }
-      finally { this.loading = false; }
-    },
-    async submitCredit() {
-      this.error = ''; this.msg = '';
-      if (!Number.isInteger(this.delta) || this.delta === 0) { this.error = '分值须为 ±1~100 的非零整数'; return; }
-      if (!this.reason.trim()) { this.error = '请填写裁决理由'; return; }
-      this.loading = true;
-      try {
-        const data = await adminPost('/api/admin/users/' + this.u.id + '/credit', 'POST', {
-          delta: this.delta, reason: this.reason.trim(),
-        });
-        this.u.credit = data.credit;
-        this.msg = '信用裁决已提交：' + (data.delta >= 0 ? '+' : '') + data.delta
-          + '，当前信用分 ' + data.credit;
-        this.delta = null; this.reason = '';
-        if (this.logs !== null) await this.loadLogs();
-      } catch (e) { this.error = e.message; }
-      finally { this.loading = false; }
-    },
-    async loadLogs() {
-      this.logsLoading = true; this.error = '';
-      try {
-        const data = await adminApi('/api/admin/users/' + this.u.id + '/credit-logs');
-        this.logs = data.items || [];
-      } catch (e) { this.error = e.message; }
-      finally { this.logsLoading = false; }
-    },
-  };
-}
-
-// 平台配置：行内编辑生效值 + 保存（PUT），422 detail 行内展示
-function adminConfig() {
-  return {
-    items: [], drafts: {}, rowErrors: {}, rowMsgs: {},
-    loading: false, error: '',
-    async load() {
-      this.loading = true; this.error = '';
-      try {
-        const data = await adminApi('/api/admin/config');
-        this.items = data.items || [];
-        this.drafts = {};
-        for (const item of this.items) this.drafts[item.key] = item.value;
-      } catch (e) { this.error = e.message; }
-      finally { this.loading = false; }
-    },
-    async save(item) {
-      this.loading = true;
-      this.rowErrors = {...this.rowErrors, [item.key]: ''};
-      this.rowMsgs = {...this.rowMsgs, [item.key]: ''};
-      try {
-        const data = await adminPost('/api/admin/config/' + item.key, 'PUT',
-                                     {value: Number(this.drafts[item.key])});
-        this.rowMsgs = {...this.rowMsgs,
-                        [item.key]: '已保存：' + data.previous + ' → ' + data.value};
-        await this.load();
-      } catch (e) {
-        this.rowErrors = {...this.rowErrors, [item.key]: e.message};
-      } finally { this.loading = false; }
-    },
-  };
-}
-</script>
 {% endblock %}

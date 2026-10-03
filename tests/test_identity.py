@@ -15,7 +15,7 @@ from app.identity.session import create_session, destroy_session, issue_jwt, res
 
 
 class FakeRedis:
-    """最小内存 Redis 替身：支持 set/get/delete/expire/ttl（不模拟真实时间流逝）。"""
+    """最小内存 Redis 替身：支持 set/get/getex/delete/expire/ttl/incr（不模拟真实时间流逝）。"""
 
     def __init__(self):
         self._store: dict[str, tuple[str, int | None]] = {}
@@ -27,6 +27,15 @@ class FakeRedis:
         item = self._store.get(key)
         return item[0] if item else None
 
+    async def getex(self, key, ex=None):
+        """GETEX：取值并按需重设 TTL（会话滑动续期，v0.9）。"""
+        item = self._store.get(key)
+        if item is None:
+            return None
+        value, old_ex = item
+        self._store[key] = (value, ex if ex is not None else old_ex)
+        return value
+
     async def delete(self, key):
         self._store.pop(key, None)
 
@@ -34,6 +43,12 @@ class FakeRedis:
         if key in self._store:
             value, _ = self._store[key]
             self._store[key] = (value, seconds)
+
+    async def incr(self, key):
+        value, ex = self._store.get(key, ("0", None))
+        value = str(int(value) + 1)
+        self._store[key] = (value, ex)
+        return int(value)
 
     async def ttl(self, key):
         if key not in self._store:

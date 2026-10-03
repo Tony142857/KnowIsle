@@ -30,8 +30,6 @@ markdown>=3.6
 rank-bm25>=0.2.2
 
 # ---------- 安全 ----------
-passlib[bcrypt]>=1.7
-itsdangerous>=2.2
 cryptography>=42            # Fernet：用户自定义 Key 加密
 PyJWT>=2.8                  # API 通道 JWT
 

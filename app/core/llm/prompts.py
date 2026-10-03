@@ -30,11 +30,23 @@ REVIEW_OUTLINE_PROMPT = """请基于以下章节内容生成结构化复习提�
 {chapter_text}
 """
 
-# §11.4 习题生成提示词
-QUIZ_PROMPT = """请基于以下章节内容生成 5 道复习题，包含：
-- 2 道单选题（含答案与解析）
-- 2 道简答题（含参考答案要点）
-- 1 道计算/应用题（含完整解答步骤）
+# §11.4 习题生成提示词（模块 A4：结构化 JSON 输出，count 由调用方控制 1~10）
+QUIZ_PROMPT = """请基于以下章节内容生成 {count} 道复习题（单选题 single_choice 与简答题 short_answer 混合）。
+严格输出 JSON（不要输出 JSON 以外的任何文字，不要用 markdown 代码块包裹）：
+{{
+  "questions": [
+    {{
+      "type": "single_choice 或 short_answer",
+      "question": "题干",
+      "options": ["A. ...", "B. ...", "C. ...", "D. ..."],
+      "answer": "单选题填选项字母，简答题填参考答案要点",
+      "explanation": "解析",
+      "chunk_id": "该题主要依据的资料块 ID（取自上下文 [chunk_id] 标注）"
+    }}
+  ]
+}}
+options 仅单选题需要，简答题填空数组。
+【章节内容】
 {chapter_text}
 """
 
@@ -65,4 +77,17 @@ AI_FIRST_ANSWER_PROMPT = """你在一个学生课程答疑社区中担任"AI 助
 EXPERIENCE_SUMMARY_PROMPT = """请为以下经验帖生成 100 字内摘要，提取：适用人群、关键结论 3 条、核心避坑点 1 条。
 保留届别、专业、去向等关键事实，不得添加帖中没有的信息。
 {post_content}
+"""
+
+# §11.8 章节树 AI 校验提示词
+TREE_VERIFY_PROMPT = """你是教材结构校对助手。以下是从课程文档自动提取的章节目录及各章正文样本，
+请校验章节边界是否合理，重点检查：章节切分过碎、正文被误判为标题、标题层级错乱、章节编号跳跃。
+仅输出 JSON，不要输出其他内容：
+{{
+  "ok": true 或 false,
+  "issues": ["发现的问题，逐条描述"],
+  "suggestions": ["可选的调整建议，可为空数组"]
+}}
+无明显问题时 ok 为 true，issues 与 suggestions 为空数组。结论仅供人工修正参考，不要改写原文。
+{tree_sample}
 """

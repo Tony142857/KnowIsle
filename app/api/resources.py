@@ -11,13 +11,14 @@ from datetime import UTC, datetime
 from typing import Annotated
 from urllib.parse import quote
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Response
-from fastapi.responses import JSONResponse
+from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
-from sqlalchemy import func, select
+from sqlalchemy import any_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.embeddings import get_embedding
+from app.core.retrieval.fine import invalidate_bm25
 from app.identity.growth import download_share, grant_score
 from app.identity.rbac import get_current_user
 from app.storage import object_store
@@ -58,6 +59,20 @@ def _resource_item(resource: Resource, file_type: str, nickname: str) -> dict:
     }
 
 
+def escape_like(q: str) -> str:
+    """LIKE 模式串转义（纯函数）：% _ \\ 均为特殊字符，转义为字面量（配合 escape='\\'）。"""
+    return q.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
+async def _stream_headers(key: str, disposition: str) -> dict:
+    """流式响应头：Content-Disposition + Content-Length（head_object 取得到就带）。"""
+    headers = {"Content-Disposition": disposition}
+    size = await object_store.object_size(key)
+    if size is not None:
+        headers["Content-Length"] = str(size)
+    return headers
+
+
 async def _get_public_copy(db: AsyncSession, doc: Document) -> Document | None:
     """终审通过时复制派生的 public 副本（storage_key 复用原件，凭此定位）。"""
     return (
@@ -87,7 +102,7 @@ async def list_resources(
     if chapter_id is not None:
         conditions.append(Resource.chapter_id == chapter_id)
     if q:
-        conditions.append(Resource.title.ilike(f"%{q}%"))
+        conditions.append(Resource.title.ilike(f"%{escape_like(q)}%", escape="\\"))
     total = (
         await db.execute(select(func.count()).select_from(Resource).where(*conditions))
     ).scalar_one()
@@ -159,7 +174,11 @@ async def preview_resource(
 ):
     """在线预览：inline 流式返回（markdown 原文 / pdf 原文 / word·ppt 转换产物）。
 
-    权限：approved 任何登录用户 / 本人 / admin / 该资源协审或终审阶段的被指派人。
+    权限：approved 任何登录用户 / 本人 / admin / 协审阶段的当前被指派人。
+
+    v0.9 已知限制②修正：assignee_ids 在超时重指派与管理员改派时均为覆盖语义
+    （卸任者不再保留在列表中），故仅 stage='co_review' 且当前 assignee_ids
+    含该用户才放行——进入 final（终审）后原协审员已卸任，不再有预览权限。
     """
     resource = await db.get(Resource, resource_id)
     if resource is None:
@@ -175,8 +194,8 @@ async def preview_resource(
                 select(ReviewTask.id)
                 .where(
                     ReviewTask.resource_id == resource.id,
-                    ReviewTask.stage.in_(["co_review", "final"]),
-                    ReviewTask.assignee_ids.any(user.id),
+                    ReviewTask.stage == "co_review",
+                    user.id == any_(ReviewTask.assignee_ids),
                 )
                 .limit(1)
             )
@@ -186,24 +205,24 @@ async def preview_resource(
 
     doc = await db.get(Document, resource.document_id)
     if doc.file_type in ("markdown", "pdf_textbook"):
-        data = await object_store.get_object(doc.storage_key)
         media_type = (
             "text/markdown; charset=utf-8"
             if doc.file_type == "markdown"
             else "application/pdf"
         )
-        return Response(
-            content=data, media_type=media_type,
-            headers={"Content-Disposition": "inline"},
+        return StreamingResponse(
+            object_store.stream_object(doc.storage_key),
+            media_type=media_type,
+            headers=await _stream_headers(doc.storage_key, "inline"),
         )
     public_doc = await _get_public_copy(db, doc)
     preview_key = public_doc.preview_key if public_doc is not None else None
     if not preview_key:
         raise HTTPException(status_code=409, detail="预览生成中")
-    data = await object_store.get_object(preview_key)
-    return Response(
-        content=data, media_type="application/pdf",
-        headers={"Content-Disposition": "inline"},
+    return StreamingResponse(
+        object_store.stream_object(preview_key),
+        media_type="application/pdf",
+        headers=await _stream_headers(preview_key, "inline"),
     )
 
 
@@ -223,7 +242,14 @@ async def download_resource(
     if resource is None or resource.review_status != "approved":
         raise HTTPException(status_code=404, detail="Not Found")
     if resource.download_cost > 0:
-        if user.score < resource.download_cost:
+        # 行锁串行化并发下载的扣分判定，防并发透支（镜像 posts.py 悬赏托管写法）：
+        # user 已被 get_current_user 加载进身份映射，必须 populate_existing=True
+        # 强制发出 SELECT ... FOR UPDATE，否则 session.get 直接命中缓存、行锁不生效；
+        # grant_score 经 session.get(User, ...) 复用同一身份映射实例，锁持续有效
+        locked_user = await db.get(
+            User, user.id, with_for_update=True, populate_existing=True
+        )
+        if locked_user.score < resource.download_cost:
             raise HTTPException(status_code=422, detail="贡献分不足")
         await grant_score(
             db, user.id, -resource.download_cost, "download_cost", "resource", resource.id
@@ -257,13 +283,12 @@ async def download_resource(
     resource.download_count += 1
     await db.commit()
     doc = await db.get(Document, resource.document_id)
-    data = await object_store.get_object(doc.storage_key)
-    return Response(
-        content=data,
+    return StreamingResponse(
+        object_store.stream_object(doc.storage_key),
         media_type="application/octet-stream",
-        headers={
-            "Content-Disposition": f"attachment; filename*=utf-8''{quote(doc.file_name)}"
-        },
+        headers=await _stream_headers(
+            doc.storage_key, f"attachment; filename*=utf-8''{quote(doc.file_name)}"
+        ),
     )
 
 
@@ -479,6 +504,9 @@ async def clone_resource(
         )
         db.add_all(Chunk(**d) for d in derived)
     await db.commit()
+    if derived:
+        # 克隆 chunks 已落库：失效目标个人课程 BM25 语料缓存（v0.9）
+        invalidate_bm25(course.id, "personal", user.id)
     return JSONResponse(
         {"document_id": new_doc.id, "course_id": course.id, "cloned": True},
         status_code=201,

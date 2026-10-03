@@ -1,6 +1,7 @@
 """资料接口（§12.1）：上传个人库（异步解析）、解析状态轮询、溯源视图、投稿公共库。"""
 
 import hashlib
+import logging
 import re
 from typing import Annotated
 
@@ -9,6 +10,8 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.platform_config import get_config
+from app.identity.penalty import check_action_cooldown
 from app.identity.rbac import get_current_user
 from app.moderation.workflow import create_submission
 from app.storage import object_store
@@ -17,6 +20,8 @@ from app.storage.models import Chapter, Chunk, Course, Document, User
 from app.workers.pool import get_arq_pool
 
 router = APIRouter(prefix="/documents", tags=["documents"])
+
+logger = logging.getLogger(__name__)
 
 MAX_FILE_SIZE = 50 * 1024 * 1024  # 单文件 ≤ 50MB
 
@@ -61,6 +66,9 @@ async def upload_document(
 
     chapter_id 为 v0.4 人工挂载章节预留参数；v0.3 章节由 tree_builder 自动构建。
     """
+    # 信用阶梯处罚门控（v0.8）：低信用上传走 Redis 冷却 429
+    cooldown = await get_config(db, "credit_rate_limit_cooldown_seconds")
+    await check_action_cooldown(user, "upload", cooldown)
     course = await db.get(Course, course_id)
     if course is None or course.scope != "personal" or course.owner_id != user.id:
         raise HTTPException(status_code=404, detail="Not Found")
@@ -94,7 +102,16 @@ async def upload_document(
             existing.status = "parsing"
             await db.commit()
             pool = await get_arq_pool()
-            await pool.enqueue_job("parse_document", existing.id)
+            try:
+                await pool.enqueue_job("parse_document", existing.id)
+            except Exception as exc:
+                # 入队失败补偿（镜像 posts.py 发帖）：落回 failed 供再次重传，避免卡 parsing
+                existing.status = "failed"
+                await db.commit()
+                logger.exception("解析任务入队失败 document_id=%s", existing.id)
+                raise HTTPException(
+                    status_code=500, detail="解析任务入队失败，请稍后重试"
+                ) from exc
             return {
                 "document_id": existing.id,
                 "status": "parsing",
@@ -122,7 +139,16 @@ async def upload_document(
     await db.commit()
 
     pool = await get_arq_pool()
-    await pool.enqueue_job("parse_document", doc.id)
+    try:
+        await pool.enqueue_job("parse_document", doc.id)
+    except Exception as exc:
+        # 入队失败补偿（镜像 posts.py 发帖）：标记 failed 供重传，避免文档永久卡 parsing
+        doc.status = "failed"
+        await db.commit()
+        logger.exception("解析任务入队失败 document_id=%s", doc.id)
+        raise HTTPException(
+            status_code=500, detail="解析任务入队失败，请稍后重传"
+        ) from exc
     return {
         "document_id": doc.id,
         "status": "parsing",

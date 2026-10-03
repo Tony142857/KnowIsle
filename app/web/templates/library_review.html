@@ -1,0 +1,158 @@
+{% extends "base.html" %}
+{% block title %}复习工具 · 知屿 KnowIsle{% endblock %}
+{% block head %}
+{# 页面交互逻辑已外置（CSP 兼容）：课程/章节加载、大纲与习题生成。
+   同步加载（勿加 defer）：须在 defer 的 Alpine 启动前执行，x-data 才能找到全局工厂函数 #}
+<script src="/static/js/pages/library_review.js"></script>
+{% endblock %}
+{% block content %}
+<div x-data="reviewPage({{ course_id | tojson }})" x-init="init()">
+  <div class="mb-4">
+    <a href="/library" class="text-sm text-brand-600 transition-colors hover:text-brand-700 hover:underline">← 返回个人知识库</a>
+    <div class="mt-2 flex flex-wrap items-center gap-3">
+      <h1 class="text-2xl font-bold text-slate-800">复习工具</h1>
+      <p class="text-sm text-slate-400">基于课程资料生成复习大纲与考点习题</p>
+    </div>
+  </div>
+
+  {# 课程与章节选择 #}
+  <div class="rounded-card border border-slate-200 bg-white p-4 shadow-card">
+    <div class="flex flex-wrap items-center gap-2">
+      <select x-model="courseKey" @change="onCourseChange()"
+              class="rounded-md border border-slate-300 px-3 py-2 text-sm transition-colors focus:border-brand-500 focus:outline-none">
+        <option value="">请选择课程</option>
+        <optgroup label="个人知识库" x-show="personalCourses.length">
+          <template x-for="c in personalCourses" :key="'p' + c.id">
+            <option :value="'personal:' + c.id" x-text="c.name"></option>
+          </template>
+        </optgroup>
+        <optgroup label="公共课程空间" x-show="publicCourses.length">
+          <template x-for="c in publicCourses" :key="'c' + c.id">
+            <option :value="'public:' + c.id" x-text="c.name"></option>
+          </template>
+        </optgroup>
+      </select>
+      <span x-show="coursesLoading" class="text-xs text-slate-400">课程加载中…</span>
+      <span x-show="coursesError" x-text="coursesError" x-cloak
+            class="text-xs text-red-600"></span>
+    </div>
+
+    {# 章节多选（大纲范围）；无章节课程按全课程生成 #}
+    <div x-show="courseKey" x-cloak class="mt-3">
+      <p class="text-xs font-medium text-slate-500">选择章节（不选默认全课程）</p>
+      <p x-show="chaptersLoading" class="mt-2 text-xs text-slate-400">章节加载中…</p>
+      <div x-show="!chaptersLoading && !chapters.length" x-cloak
+           class="mt-2 text-xs text-slate-400">该课程暂无章节，将按全课程范围生成。</div>
+      <div class="mt-2 flex flex-wrap gap-2">
+        <template x-for="ch in chapters" :key="ch.id">
+          <label class="cursor-pointer rounded-md border px-3 py-1.5 text-sm transition-colors"
+                 :class="selectedChapters.includes(ch.id)
+                         ? 'border-brand-300 bg-brand-50 text-brand-700'
+                         : 'border-slate-200 text-slate-600 hover:text-brand-700'">
+            <input type="checkbox" class="hidden" :value="ch.id"
+                   @change="toggleChapter(ch.id)">
+            <span x-text="ch.label"></span>
+          </label>
+        </template>
+      </div>
+    </div>
+  </div>
+
+  {# 复习大纲 #}
+  <div class="mt-4 rounded-card border border-slate-200 bg-white p-4 shadow-card">
+    <div class="flex flex-wrap items-center gap-3">
+      <h2 class="text-base font-semibold text-slate-800">复习大纲</h2>
+      <button @click="generateOutline()" :disabled="!courseKey || outlineState === 'loading'"
+              class="ml-auto rounded-lg bg-brand-600 px-4 py-2 text-sm text-white transition-colors hover:bg-brand-700 disabled:opacity-50"
+              x-text="outlineState === 'loading' ? '生成中…' : '生成复习大纲'"></button>
+    </div>
+
+    <p x-show="outlineState === 'error'" x-text="outlineError" x-cloak
+       class="mt-3 rounded bg-red-50 px-3 py-2 text-sm text-red-600"></p>
+    <p x-show="outlineState === 'idle'" class="mt-3 text-sm text-slate-400">
+      选择课程（可多选章节）后点击生成，产出核心考点 / 易混概念 / 典型题型结构化提纲。
+    </p>
+    <p x-show="outlineState === 'loading'" x-cloak class="mt-3 text-sm text-slate-400">
+      AI 正在梳理章节资料，通常需要十几秒…
+    </p>
+
+    <div x-show="outlineState === 'done'" x-cloak class="mt-3 animate-fade-up">
+      <!-- Markdown 渲染挂载点（ZY.md.render，class 名 md-body 勿改）：大纲变化时整段重渲染 -->
+      <div class="md-body rounded-lg bg-slate-50 px-4 py-3 text-sm text-slate-700"
+           x-effect="if (outlineState === 'done') ZY.md.renderInto($el, outline)"></div>
+      <p class="mt-2 text-xs text-slate-400"
+         x-text="outlineUsage ? ('本次消耗 ' + outlineUsage.token_usage + ' tokens · 耗时 ' +
+                (outlineUsage.latency_ms / 1000).toFixed(1) + ' s') : ''"></p>
+    </div>
+  </div>
+
+  {# 考点习题（按章生成） #}
+  <div class="mt-4 rounded-card border border-slate-200 bg-white p-4 shadow-card">
+    <div class="flex flex-wrap items-center gap-3">
+      <h2 class="text-base font-semibold text-slate-800">考点习题</h2>
+      <div class="ml-auto flex items-center gap-2">
+        <select x-model="quizChapterId"
+                class="rounded-md border border-slate-300 px-3 py-2 text-sm transition-colors focus:border-brand-500 focus:outline-none">
+          <option value="">选择章节</option>
+          <template x-for="ch in chapters" :key="ch.id">
+            <option :value="ch.id" x-text="ch.label"></option>
+          </template>
+        </select>
+        <input type="number" x-model.number="quizCount" min="1" max="10"
+               class="w-20 rounded-md border border-slate-300 px-3 py-2 text-sm transition-colors focus:border-brand-500 focus:outline-none" title="题数 1~10">
+        <button @click="generateQuiz()"
+                :disabled="!courseKey || !quizChapterId || quizState === 'loading'"
+                class="rounded-lg bg-brand-600 px-4 py-2 text-sm text-white transition-colors hover:bg-brand-700 disabled:opacity-50"
+                x-text="quizState === 'loading' ? '出题中…' : '生成习题'"></button>
+      </div>
+    </div>
+
+    <p x-show="quizState === 'error'" x-text="quizError" x-cloak
+       class="mt-3 rounded bg-red-50 px-3 py-2 text-sm text-red-600"></p>
+    <p x-show="quizState === 'idle'" class="mt-3 text-sm text-slate-400">
+      选择章节与题数（1~10），AI 按章节资料出单选 / 简答题，答案与解析默认折叠。
+    </p>
+    <p x-show="quizState === 'loading'" x-cloak class="mt-3 text-sm text-slate-400">
+      AI 正在出题，请稍候…
+    </p>
+
+    <div x-show="quizState === 'done'" x-cloak class="mt-3 space-y-3">
+      <template x-for="(q, i) in questions" :key="i">
+        <div x-data="{open: false}"
+             class="animate-fade-up rounded-card border border-slate-200 bg-white p-4 shadow-card">
+          <div class="flex items-start gap-2">
+            <span class="shrink-0 rounded bg-brand-50 px-2 py-0.5 text-xs text-brand-700"
+                  x-text="q.type === 'single_choice' ? '单选' : (q.type === 'calculation' ? '计算' : '简答')"></span>
+            <p class="text-sm font-medium text-slate-800" x-text="(i + 1) + '. ' + q.question"></p>
+          </div>
+          {# 选项 button 化：点击标记选中（仅本地记录，不影响答案展示） #}
+          <div x-show="q.options && q.options.length" class="mt-3 space-y-2">
+            <template x-for="(opt, j) in q.options" :key="j">
+              <button type="button" @click="pick(i, j)"
+                      class="block w-full rounded-lg border px-3 py-2 text-left text-sm transition-colors"
+                      :class="picked[i] === j
+                              ? 'border-brand-300 bg-brand-50 text-brand-800 ring-2 ring-brand-300'
+                              : 'border-slate-200 text-slate-600 hover:border-brand-200 hover:text-brand-700'">
+                <span x-text="opt"></span>
+              </button>
+            </template>
+          </div>
+          {# 答案 / 解析默认折叠（Alpine 折叠卡 + x-transition 展开动画） #}
+          <button @click="open = !open" class="mt-2 text-xs text-brand-600 transition-colors hover:text-brand-700 hover:underline"
+                  x-text="open ? '收起答案' : '查看答案与解析'"></button>
+          <div x-show="open" x-cloak x-transition
+               class="mt-2 rounded-lg bg-slate-50 px-3 py-2 text-sm leading-6 text-slate-700">
+            <p><span class="font-medium">答案：</span><span x-text="q.answer || '（未给出）'"></span></p>
+            <p x-show="q.explanation" class="mt-1">
+              <span class="font-medium">解析：</span><span x-text="q.explanation"></span>
+            </p>
+            <p x-show="q.chunk_id" class="mt-1 text-xs text-slate-400"
+               x-text="'依据资料块：' + q.chunk_id"></p>
+          </div>
+        </div>
+      </template>
+      <p x-show="!questions.length" class="text-sm text-slate-400">本次未生成有效习题，请重试。</p>
+    </div>
+  </div>
+</div>
+{% endblock %}

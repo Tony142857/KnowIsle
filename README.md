@@ -1,14 +1,19 @@
 # 知屿 KnowIsle · 智能课程知识社区
 
 > 以学生社区为驱动、以结构化 RAG-AI 为学习引擎的大学课程知识平台。
-> 详细设计见《知屿-智能课程知识社区-项目文档.md》（v3.2.7）。
+> 详细设计见《知屿-智能课程知识社区-项目文档.md》（v3.6.0）。
 > 进度跟踪见 [docs/开发进度与目标.md](docs/开发进度与目标.md)（每迭代更新）。
 
 技术栈：FastAPI + Jinja2/HTMX/Tailwind · PostgreSQL 16 · Redis 7 · SeaweedFS（S3） · Chroma · ARQ · Docker Compose
 
 ## 当前状态
 
-**v0.6 已完成**（2026-09-30）：收藏/关注（资源/帖子收藏含 fav_count 同步、课程/用户关注，幂等开关语义）✅ · 订阅类通知（终审上架自动通知课程关注者 new_resource）✅ · 管理后台完整版 `/admin`（用户治理：角色任命/信用裁决限幅 0~100 + credit_logs 留痕；空间管理：专业导入/课程审批停用；平台配置：新增第 26 表 platform_config，AI 日额度/兑换汇率/协审时限在线调整 + 审计）✅ · 个人中心新增「我的收藏/我的关注」卡片、课程页关注按钮、资源/帖子页收藏按钮 ✅ · 容器内 ruff + pytest 147 例全绿、52 项 E2E 断言全过
+**v1.0 答辩演示定稿**（2026-10-02，M3 里程碑达成）：**前端体系 v1.0**（设计令牌统一 tailwind.config + main.css、全站 17 模板零内联脚本——页面 JS 外置 `static/js/pages/*.js`、vendor 新增 highlight.js 代码高亮、全局 toast、毛玻璃导航与页脚改版、列表摘要剥离 Markdown 标记）· **安全收尾**（nginx CSP 正式启用——script-src 含 'unsafe-eval' 为 Alpine 标准构建必需、logout 改 POST、Dockerfile 非 root 运行 uid=999）· seed_demo 扩展（9 篇演示帖：预填 AI 首答 + 采纳计分 / 结构化经验帖 + 预填 AI 摘要 + 精华 / 悬赏托管，积分双写配平）· 客户端打包资产完善（NSIS 修复 + 版本 1.0.0 + 一键打包清单，实际打包按 Owner 决定不执行）· 云端部署按 Owner 决定搁置（标注后期增补，v1.0 以本地可交付演示为目标）· 新增 [docs/接口契约.md](docs/接口契约.md)（82 接口逐条契约，代码为准）与 [docs/演示剧本与检查清单.md](docs/演示剧本与检查清单.md)（四幕剧本 + 断网兜底）· 演示主线 E2E 19 项真实环境实跑通过，测试 503→519 例全绿，镜像 knowisle-app:1.0.0
+（此前 v0.9 交付完善，2026-10-02）：复习工具落地（`POST /api/review/outline` 复习大纲 + `POST /api/review/quiz` 考点习题，复用问答双通道/额度/落库口径，新页面 `/library/review`；期末串讲留二期）· 章节树 AI 校验落地（解析后附加层，结论写 worker 日志、异常降级不阻塞主流程）· 协审口径修正（多数决只计当前有效指派人、预览授权收紧 co_review 单阶段）· seed_demo.py 演示种子脚本（4 演示账号 + 3 门公共课程章节树，幂等 + --reset 保护）· 前端体系化改版（CDN 全部本地化钉版本断网可演示、Markdown 渲染统一 + DOMPurify 白名单、移动端汉堡导航与响应式补齐、首页改版 + GET /api/feed）· 合规修复（悬挂 tag 重打、SQLAlchemy `.any()`→`any_()`、死代码/死依赖清理），测试 469→503 例全绿，镜像 knowisle-app:0.9.1
+（此前 v0.9，2026-10-01）：测试加固（pytest-cov 入工具链，测试 189→469 例全绿；核心模块检索/审核/积分行覆盖率 100%，整体 43%→83%，超额达成 §18.1「核心 ≥80%、整体 ≥60%」）✅ · 安全审计（SECRET_KEY 弱默认值拒绝启动、验证码回显默认关闭 + 日志脱敏 + 连续 5 次错码作废 + 发码 IP 限流、自定义 Key base_url SSRF 防护、Session Cookie Secure 配置项、JWT TTL 默认收紧 7 天→2 小时、兑换/下载积分加行锁、ILIKE 通配符转义、nginx 安全响应头 + /api/auth 与 /api/chat 限流）✅ · 性能优化（第 6 个迁移 e5f2b8c41d09 补 8 个索引、BM25 索引按课程缓存 + 打分卸载事件循环、platform_config 30s TTL 缓存、Chroma 集合 ID 缓存 + 连接复用、预览/下载改真流式 StreamingResponse、帖子列表聚合限定本页、会话续期 GETEX 单往返）✅ · 桌面客户端打包资产就绪（PyInstaller spec + NSIS 完整脚本 + 打包文档，实际打包留 v1.0）
+（此前 v0.8：全站搜索（帖子/资源 ILIKE、标题命中优先于正文再按时间排序、板块/课程/专业过滤、/search 页 + 导航搜索框）· 信用阶梯处罚自动执行（<80 行为冷却 429 含剩余秒数 / <60 禁言 403 含截止时间 / <40 冻结 401，回升自动解除 + 禁言到期惰性解除，users.muted_until 新列迁移 d1e5f7a29c03）· 举报处理（四类目标幂等举报 + 管理端 open→processing→resolved/dismissed 状态机 + report_result 通知 + report_handle 审计）· 运营看板（/api/admin/dashboard 四分组 + ECharts 7 天趋势））
+（此前 v0.7：经验长廊（结构化模板发帖 + AI 摘要异步生成、标签云/届别过滤/精华区、精华标记作者 +30 每帖一次）· 资料求援（悬赏托管/评论响应/采纳结算，禁自采纳与结算后改采）· 四板块全部开放、posts.ai_summary 新列 · 检查加固：采纳/精华/悬赏三处读-判-写加行锁封堵并发透支与重复结算）
+（此前 v0.6：收藏/关注（资源/帖子收藏含 fav_count 同步、课程/用户关注，幂等开关语义）· 订阅类通知（终审上架自动通知课程关注者 new_resource）· 管理后台完整版 `/admin`（用户治理：角色任命/信用裁决限幅 0~100 + credit_logs 留痕；空间管理：专业导入/课程审批停用；平台配置：新增第 26 表 platform_config，AI 日额度/兑换汇率/协审时限在线调整 + 审计）· 个人中心新增「我的收藏/我的关注」卡片、课程页关注按钮、资源/帖子页收藏按钮）
 （此前 v0.5：问答贴 + AI 首答（异步生成、带引用溯源）· 评论/点赞/采纳（自问自答不计分）· 成长体系完整版（等级升级 + Redis 实时贡献榜 + 每日对账 + 下载积分 80% 上传者分成）· AI 额度贡献分兑换 + 用户自定义 Key（Fernet 加密、qa_logs 双通道溯源）· 协审 48h 超时自动重指派 + 管理员改派/直审 · 公共资源克隆进个人库）
 （此前 v0.4：公共库投稿→三级审核→上架全流程 · 自动预检（格式/MD5 查重/敏感词/AI 初评）· 资源预览/下载/评分 · 章节摘要回填启用粗召回）
 （此前 v0.3：个人库 RAG 全链路端到端可用（M1 里程碑）——四格式解析 + 语义切块 · 本地 bge 向量化（模型烘焙进镜像）· 双库 RRF 融合检索 · SSE 流式问答 + 引用溯源 · 个人库三页面 · AI 日额度）
@@ -36,6 +41,9 @@ docker compose -f deploy/docker-compose.yml exec app python scripts/create_admin
   --student-no 20230001 --nickname 管理员 --email admin@stu.example.edu.cn
 docker compose -f deploy/docker-compose.yml exec app python scripts/init_majors.py scripts/majors.example.csv
 
+# 4.5 灌演示数据（可选，v0.9 交付完善起）：4 演示账号 + 3 门公共课程章节树，幂等可重复执行
+docker compose -f deploy/docker-compose.yml exec app python scripts/seed_demo.py
+
 # 5. 登录：浏览器打开 http://localhost:8080/login ，输入学号 + 上一步绑定的邮箱；
 #    开发期为假通道，验证码直接显示在页面上（EMAIL_CODE_ECHO=true），也可在
 #    `docker compose -f deploy/docker-compose.yml logs -f app` 中查看
@@ -59,7 +67,18 @@ docker compose -f deploy/docker-compose.yml exec app python scripts/init_majors.
 #    管理；管理员后台 http://localhost:8080/admin ：用户治理（角色任命/信用裁决）、
 #    空间管理（专业导入/课程审批）、平台配置（AI 日额度/兑换汇率/协审时限在线调整）
 
-# 10. 停止 / 清理
+# 10. 经验长廊与资料求援（v0.7 起）：http://localhost:8080/boards/experience 按结构化模板
+#    （背景/时间线/经验要点/避坑提示）发帖，AI 摘要自动生成（真实 DeepSeek，列表折叠卡/
+#    详情卡片展示）；管理员/共建者可将经验帖标记为精华（作者 +30 分）；
+#    http://localhost:8080/boards/bounty 发布求资料需求并悬赏贡献分，他人评论响应、
+#    帖主采纳后赏金自动转给响应者（双方收站内通知）
+
+# 11. 全站搜索与治理（v0.8 起）：导航栏搜索框或 http://localhost:8080/search
+#    全站搜索（帖子/资源分组结果，支持板块/课程/专业过滤）；管理后台
+#    http://localhost:8080/admin 新增「举报处理」「运营看板」（ECharts 7 天趋势）两 Tab；
+#    信用低于阈值自动阶梯处罚（<80 行为冷却 / <60 禁言 / <40 冻结，信用回升自动解除）
+
+# 12. 停止 / 清理
 docker compose -f deploy/docker-compose.yml down          # 停止
 docker compose -f deploy/docker-compose.yml down -v       # 停止并删除数据卷（慎用）
 ```
@@ -71,7 +90,7 @@ app/            FastAPI 应用（api/ web/ core/ community/ identity/ moderation
 client/         桌面客户端薄壳（pywebview + NSIS 安装包）
 alembic/        数据库迁移
 deploy/         docker-compose.yml / nginx.conf / backup.sh / seaweedfs-s3.json
-docs/           开发进度与目标.md（进度跟踪，每迭代更新）
+docs/           开发进度与目标.md（进度跟踪，每迭代更新）/ 接口契约.md / 演示剧本与检查清单.md
 scripts/        init_majors.py / create_admin.py / seed_demo.py
 tests/          pytest（unit / integration / e2e）
 ```
@@ -82,7 +101,9 @@ tests/          pytest（unit / integration / e2e）
 - Commit 规范：Conventional Commits（`feat:` / `fix:` / `refactor:` / `test:` / `docs:`）
 - 本地检查：`pip install -r requirements-dev.txt && ruff check app tests scripts && pytest -q`
 - 依赖分层：`requirements.txt` 为应用与 CI 共用；`requirements-ml.txt`（torch CPU + sentence-transformers）仅由 Dockerfile 装入镜像，应用代码对其一律惰性导入
-- 镜像版本全部钉死：自建镜像按版本号命名（`knowisle-app:0.6.0`，发版时手动递增，禁止 latest）；五个第三方镜像与 Dockerfile 基础镜像均以 `@sha256` digest 固定，团队构建逐字节一致
+- 镜像版本全部钉死：自建镜像按版本号命名（`knowisle-app:1.0.0`，发版时手动递增，禁止 latest）；五个第三方镜像与 Dockerfile 基础镜像均以 `@sha256` digest 固定，团队构建逐字节一致
+- 前端 CDN 依赖全部本地化到 `app/web/static/vendor/`（tailwind/htmx/alpine/echarts/marked/purify/highlight.js 七库钉版本，断网环境可完整演示）；**页面 JS 一律外置为 `static/js/pages/*.js` 并在 `{% block head %}` 内同步加载**（defer 的 Alpine 启动早于 defer 页面脚本；模板内禁止内联脚本与内联事件处理器，Jinja 注入走 x-data 属性或 `<script type="application/json" id="page-data">` 惰性块）——CSP 启用的前提，新增页面必须遵守
+- 容器内跑测试务必以 root + 隔离 HOME 执行（`docker run --user root -e HOME=/root ...`），否则 pip 会落入镜像 HOME 的 user site 并污染工作区 `.local/`
 - Embedding 模型 bge-small-zh-v1.5 在镜像构建时预下载（经 hf-mirror），运行时 `HF_HUB_OFFLINE=1` 离线加载
 - 数据库迁移：`alembic revision --autogenerate -m "..."`，迁移随 app 容器启动自动执行
 

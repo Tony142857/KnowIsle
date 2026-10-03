@@ -1,8 +1,17 @@
 {% extends "base.html" %}
 {% block title %}{{ resource.title }} · 知屿 KnowIsle{% endblock %}
+{% block head %}
+{# 页面数据惰性注入（CSP 安全的 application/json 数据块，不执行）+ 页面交互外置 #}
+<script type="application/json" id="page-data">{{ {
+  "ratingAvg": ('%.2f'|format(resource.rating)) if resource.rating is not none else '—',
+  "ratingCount": resource.rating_count
+} | tojson }}</script>
+{# 同步加载，须先于 defer 的 Alpine 启动（x-data 引用全局函数） #}
+<script src="/static/js/pages/resource_detail.js"></script>
+{% endblock %}
 
 {% block content %}
-<div class="mb-6">
+<div class="mb-6 animate-fade-up">
   {% if course %}
   <a href="/courses/{{ course.id }}" class="text-sm text-sky-600 hover:underline">← {{ course.name }}</a>
   {% endif %}
@@ -29,7 +38,7 @@
 <div class="grid gap-6 lg:grid-cols-3">
   {# 主栏：描述 + 预览 #}
   <div class="space-y-6 lg:col-span-2">
-    <div class="rounded-lg border border-slate-200 bg-white p-4">
+    <div class="rounded-card border border-slate-200 bg-white p-4 shadow-card">
       <h2 class="text-sm font-semibold text-slate-700">资料简介</h2>
       <p class="mt-2 whitespace-pre-wrap text-sm text-slate-600">{{ resource.description or '暂无简介' }}</p>
       <p class="mt-3 text-xs text-slate-400">
@@ -38,14 +47,14 @@
       </p>
     </div>
 
-    <div class="rounded-lg border border-slate-200 bg-white p-4">
+    <div class="rounded-card border border-slate-200 bg-white p-4 shadow-card">
       <h2 class="text-sm font-semibold text-slate-700">在线预览</h2>
       {% if preview_available %}
       <iframe src="/api/resources/{{ resource.id }}/preview"
-              class="mt-3 h-[36rem] w-full rounded border border-slate-200 bg-slate-50"
+              class="mt-3 h-[36rem] w-full rounded-lg border border-slate-200 bg-slate-50"
               title="资源预览"></iframe>
       {% else %}
-      <div class="mt-3 rounded border border-dashed border-slate-300 py-16 text-center text-sm text-slate-400">
+      <div class="mt-3 rounded-lg border border-dashed border-slate-300 py-16 text-center text-sm text-slate-400">
         预览不可用 / 生成中，请下载后查看
       </div>
       {% endif %}
@@ -54,44 +63,52 @@
 
   {# 侧栏：下载 + 克隆到个人库 + 评分 #}
   <aside class="space-y-4" x-data="cloneBox({{ resource.id }})">
-    <div class="rounded-lg border border-slate-200 bg-white p-4">
-      <dl class="space-y-2 text-sm">
-        <div class="flex justify-between">
-          <dt class="text-slate-500">综合评分</dt>
-          <dd id="avg-line" class="text-amber-600 font-medium">
+    <div class="rounded-card border border-slate-200 bg-white p-4 shadow-card">
+      {# 元信息定义列表：dt 灰小字 / dd 正文双栏对齐 #}
+      <dl class="space-y-2.5">
+        <div class="flex items-baseline justify-between">
+          <dt class="text-xs text-slate-400">综合评分</dt>
+          <dd id="avg-line" class="text-sm text-amber-600 font-medium">
             {% if resource.rating is not none %}★ {{ '%.1f'|format(resource.rating) }}{% else %}暂无评分{% endif %}
             <span class="text-xs font-normal text-slate-400">（{{ resource.rating_count }} 人）</span>
           </dd>
         </div>
-        <div class="flex justify-between">
-          <dt class="text-slate-500">下载量</dt>
-          <dd class="text-slate-700">{{ resource.download_count }}</dd>
+        <div class="flex items-baseline justify-between">
+          <dt class="text-xs text-slate-400">下载量</dt>
+          <dd class="text-sm text-slate-700">{{ resource.download_count }}</dd>
         </div>
-        <div class="flex justify-between">
-          <dt class="text-slate-500">收藏</dt>
-          <dd id="fav-count" class="text-slate-700">{{ resource.fav_count }}</dd>
+        <div class="flex items-baseline justify-between">
+          <dt class="text-xs text-slate-400">收藏</dt>
+          <dd id="fav-count" class="text-sm text-slate-700">{{ resource.fav_count }}</dd>
+        </div>
+        <div class="flex items-baseline justify-between">
+          <dt class="text-xs text-slate-400">上传时间</dt>
+          <dd class="text-sm text-slate-700">{{ resource.created_at.strftime('%Y-%m-%d') }}</dd>
         </div>
       </dl>
       {% if resource.review_status == 'approved' %}
+      {# 操作层级：主下载实心，克隆 / 收藏描边 #}
       <a href="/api/resources/{{ resource.id }}/download"
-         class="mt-4 block rounded bg-sky-600 py-2 text-center text-sm text-white hover:bg-sky-700">
+         class="mt-4 block rounded-md bg-sky-600 py-2 text-center text-sm text-white transition-colors hover:bg-sky-700">
         下载原件{% if resource.download_cost > 0 %}（{{ resource.download_cost }} 贡献分）{% endif %}
       </a>
       <button @click="openClone()"
-              class="mt-2 block w-full rounded border border-sky-600 py-2 text-center text-sm text-sky-700 hover:bg-sky-50">
+              class="mt-2 block w-full rounded-md border border-sky-600 py-2 text-center text-sm text-sky-700 transition-colors hover:bg-sky-50">
         克隆到个人库
       </button>
-      {# 收藏开关（v0.6）：POST/DELETE /api/favorites，同步刷新收藏数 #}
-      <div x-data="favBox({{ resource.id }}, {{ 'true' if is_favorited else 'false' }})">
+      {# 收藏开关（v0.6）：共享组件 favBox（components.js），同步刷新收藏数 #}
+      <div x-data="favBox('resource', {{ resource.id }},
+                          {{ 'true' if is_favorited else 'false' }},
+                          {{ 'true' if user else 'false' }}, 'fav-count')">
         <button @click="toggle()" :disabled="loading"
                 :class="favorited
                   ? 'border-amber-400 bg-amber-50 text-amber-700'
                   : 'border-slate-300 text-slate-500 hover:border-amber-400 hover:text-amber-700'"
-                class="mt-2 block w-full rounded border py-2 text-center text-sm transition-colors disabled:opacity-50">
+                class="mt-2 block w-full rounded-md border py-2 text-center text-sm transition-colors disabled:opacity-50">
           <span x-text="favorited ? '★ 已收藏' : '☆ 收藏'"></span>
         </button>
         <p x-show="error" x-text="error" x-cloak
-           class="mt-2 rounded bg-red-50 px-2 py-1.5 text-xs text-red-600"></p>
+           class="mt-2 rounded-md bg-red-50 px-2 py-1.5 text-xs text-red-600"></p>
       </div>
       {% endif %}
     </div>
@@ -101,21 +118,22 @@
     <div x-show="cloneOpen" x-cloak
          class="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4"
          @keydown.escape.window="cloneOpen = false">
-      <div class="w-full max-w-md rounded-lg bg-white p-5 shadow-xl" @click.outside="cloneOpen = false">
+      <div class="w-full max-w-md rounded-card bg-white p-5 shadow-lift" @click.outside="cloneOpen = false">
         <h2 class="text-base font-semibold text-slate-800">克隆到个人库</h2>
         <p class="mt-1 text-xs text-slate-400">克隆后资料进入你的个人知识库，可向 AI 提问，不影响原公共资源。</p>
 
         <p x-show="cloneError" x-text="cloneError" x-cloak
-           class="mt-3 rounded bg-red-50 px-3 py-2 text-sm text-red-600"></p>
+           class="mt-3 rounded-md bg-red-50 px-3 py-2 text-sm text-red-600"></p>
         <div x-show="cloneDone" x-cloak
-             class="mt-3 rounded bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
+             class="mt-3 rounded-md bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
           <p x-text="cloneMsg"></p>
           <a href="/library" class="mt-1 inline-block text-sky-700 hover:underline">前往个人库查看 →</a>
         </div>
 
         <label class="mt-4 block text-xs font-medium text-slate-500">目标课程</label>
         <select x-model="cloneCourseId" :disabled="cloneDone"
-                class="mt-1 w-full rounded border border-slate-300 px-3 py-2 text-sm disabled:opacity-50">
+                class="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm
+                       focus:border-sky-500 focus:outline-none disabled:opacity-50">
           <option value="">公共库克隆（自动创建）</option>
           <template x-for="c in myCourses" :key="c.id">
             <option :value="c.id" x-text="c.label"></option>
@@ -124,11 +142,11 @@
 
         <div class="mt-5 flex justify-end gap-2">
           <button @click="cloneOpen = false"
-                  class="rounded-md border border-slate-300 px-4 py-2 text-sm text-slate-600 hover:bg-slate-100">
+                  class="rounded-md border border-slate-300 px-4 py-2 text-sm text-slate-600 transition-colors hover:bg-slate-100">
             关闭
           </button>
           <button @click="doClone()" :disabled="cloneLoading || cloneDone"
-                  class="rounded-md bg-sky-600 px-4 py-2 text-sm text-white hover:bg-sky-700 disabled:opacity-50">
+                  class="rounded-md bg-sky-600 px-4 py-2 text-sm text-white transition-colors hover:bg-sky-700 disabled:opacity-50">
             <span x-show="!cloneLoading">确认克隆</span>
             <span x-show="cloneLoading" x-cloak>克隆中…</span>
           </button>
@@ -137,16 +155,16 @@
     </div>
     {% endif %}
 
-    {# 评分组件：五颗星点击提交，重复评分覆盖 #}
+    {# 评分组件：五颗星点击提交，hover 预亮，重复评分覆盖 #}
     {% if resource.review_status == 'approved' %}
-    <div class="rounded-lg border border-slate-200 bg-white p-4"
+    <div class="rounded-card border border-slate-200 bg-white p-4 shadow-card"
          x-data="ratingBox({{ resource.id }}, {{ my_rating or 0 }})">
       <h3 class="text-sm font-semibold text-slate-700">我的评分</h3>
       <div class="mt-2 flex items-center gap-1">
         <template x-for="star in 5" :key="star">
           <button @click="rate(star)" @mouseenter="hover = star" @mouseleave="hover = 0"
                   :disabled="loading" class="text-2xl leading-none transition-colors disabled:opacity-50"
-                  :class="star <= (hover || myRating) ? 'text-amber-400' : 'text-slate-300'"
+                  :class="star <= (hover || myRating) ? 'text-amber-400' : 'text-slate-300 hover:text-amber-200'"
                   :title="star + ' 星'">★</button>
         </template>
         <span x-show="myRating" x-cloak class="ml-1 text-xs text-slate-400">
@@ -154,7 +172,7 @@
         </span>
       </div>
       <p x-show="error" x-text="error" x-cloak
-         class="mt-2 rounded bg-red-50 px-2 py-1.5 text-xs text-red-600"></p>
+         class="mt-2 rounded-md bg-red-50 px-2 py-1.5 text-xs text-red-600"></p>
       <p x-show="count > 0" x-cloak class="mt-2 text-xs text-slate-500">
         当前均分 <span x-text="avg" class="text-amber-600"></span>
         · <span x-text="count"></span> 人评分
@@ -163,103 +181,4 @@
     {% endif %}
   </aside>
 </div>
-
-<script>
-// 收藏开关（v0.6）：POST/DELETE /api/favorites（target_type=resource），同步刷新侧栏收藏数
-function favBox(resourceId, favorited) {
-  return {
-    favorited: favorited, loading: false, error: '',
-    async toggle() {
-      this.loading = true; this.error = '';
-      try {
-        const resp = await fetch('/api/favorites', {
-          method: this.favorited ? 'DELETE' : 'POST',
-          headers: {'Content-Type': 'application/json'},
-          body: JSON.stringify({target_type: 'resource', target_id: resourceId}),
-        });
-        if (resp.status !== 204) {
-          const data = await resp.json().catch(() => ({}));
-          if (!resp.ok) throw new Error(data.detail || ('操作失败 ' + resp.status));
-        }
-        this.favorited = !this.favorited;
-        const el = document.getElementById('fav-count');
-        if (el) el.textContent = Math.max(0, parseInt(el.textContent, 10) + (this.favorited ? 1 : -1));
-      } catch (e) { this.error = e.message; }
-      finally { this.loading = false; }
-    },
-  };
-}
-
-// 克隆到个人库：modal 打开时懒加载本人个人课程列表
-function cloneBox(resourceId) {
-  return {
-    cloneOpen: false, cloneCourseId: '', myCourses: [],
-    cloneLoading: false, cloneError: '', cloneDone: false, cloneMsg: '',
-
-    async openClone() {
-      this.cloneOpen = true; this.cloneError = ''; this.cloneDone = false;
-      this.cloneCourseId = '';
-      if (this.myCourses.length) return;
-      try {
-        const resp = await fetch('/api/library');
-        const data = await resp.json().catch(() => ({}));
-        if (!resp.ok) throw new Error(data.detail || ('加载个人课程失败 ' + resp.status));
-        const flat = [];
-        for (const s of data.semesters || []) {
-          for (const c of s.courses || []) flat.push({id: c.id, label: s.name + ' / ' + c.name});
-        }
-        for (const c of data.uncategorized_courses || []) flat.push({id: c.id, label: c.name});
-        this.myCourses = flat;
-      } catch (e) { this.cloneError = e.message; }
-    },
-
-    async doClone() {
-      this.cloneLoading = true; this.cloneError = '';
-      try {
-        const resp = await fetch('/api/resources/' + resourceId + '/clone', {
-          method: 'POST', headers: {'Content-Type': 'application/json'},
-          body: JSON.stringify({course_id: this.cloneCourseId ? Number(this.cloneCourseId) : null}),
-        });
-        const data = await resp.json().catch(() => ({}));
-        if (!resp.ok) throw new Error(data.detail || ('克隆失败 ' + resp.status));
-        this.cloneDone = true;
-        this.cloneMsg = data.cloned
-          ? '克隆成功，资料已进入你的个人库（解析完成后即可 AI 问答）'
-          : '你的个人库中已有该资料，无需重复克隆';
-      } catch (e) { this.cloneError = e.message; }
-      finally { this.cloneLoading = false; }
-    },
-  };
-}
-
-function ratingBox(resourceId, initial) {
-  return {
-    myRating: initial, hover: 0, loading: false, error: '',
-    avg: '{{ '%.2f'|format(resource.rating) if resource.rating is not none else '—' }}',
-    count: {{ resource.rating_count }},
-
-    async rate(stars) {
-      this.loading = true; this.error = '';
-      try {
-        const resp = await fetch('/api/resources/' + resourceId + '/rating', {
-          method: 'POST',
-          headers: {'Content-Type': 'application/json'},
-          body: JSON.stringify({stars: stars}),
-        });
-        const data = await resp.json().catch(() => ({}));
-        if (!resp.ok) throw new Error(data.detail || ('评分失败 ' + resp.status));
-        this.myRating = data.my_rating;
-        this.avg = data.rating.toFixed(2);
-        this.count = data.rating_count;
-        // 同步刷新侧栏服务端渲染的「综合评分」行
-        const line = document.getElementById('avg-line');
-        if (line) line.innerHTML = '★ ' + data.rating.toFixed(1)
-          + ' <span class="text-xs font-normal text-slate-400">（'
-          + data.rating_count + ' 人）</span>';
-      } catch (e) { this.error = e.message; }
-      finally { this.loading = false; }
-    },
-  };
-}
-</script>
 {% endblock %}

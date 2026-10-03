@@ -34,6 +34,26 @@ def test_validate_value_boundary():
         validate_value("ai_quota_exchange_rate", 0)
 
 
+def test_validate_value_credit_mute_days():
+    # v0.8：信用分 <60 自动禁言天数，1~30
+    assert validate_value("credit_mute_days", 1) == 1
+    assert validate_value("credit_mute_days", 7) == 7
+    assert validate_value("credit_mute_days", 30) == 30
+    for raw in (0, 31, True):
+        with pytest.raises(ValueError):
+            validate_value("credit_mute_days", raw)
+
+
+def test_validate_value_credit_rate_limit_cooldown():
+    # v0.8：信用分 <80 操作冷却秒数，30~3600
+    assert validate_value("credit_rate_limit_cooldown_seconds", 30) == 30
+    assert validate_value("credit_rate_limit_cooldown_seconds", 300) == 300
+    assert validate_value("credit_rate_limit_cooldown_seconds", 3600) == 3600
+    for raw in (29, 3601, False):
+        with pytest.raises(ValueError):
+            validate_value("credit_rate_limit_cooldown_seconds", raw)
+
+
 def test_validate_value_bad_type():
     # bool 是 int 子类，必须显式拒绝；字符串/浮点同样拒绝
     for raw in (True, "30", 30.5, None, [1]):
@@ -57,12 +77,22 @@ def test_config_specs_defaults_match_settings():
     assert specs["ai_daily_limit"].default == s.ai_daily_free_quota
     assert specs["ai_quota_exchange_rate"].default == s.ai_quota_exchange_rate
     assert specs["review_co_timeout_hours"].default == s.review_co_timeout_hours
+    assert specs["credit_mute_days"].default == s.credit_mute_days
+    assert (
+        specs["credit_rate_limit_cooldown_seconds"].default
+        == s.credit_rate_limit_cooldown_seconds
+    )
 
 
 def test_config_specs_registry_shape():
     specs = config_specs()
-    assert set(specs) == {"ai_daily_limit", "ai_quota_exchange_rate",
-                          "review_co_timeout_hours"}
+    assert set(specs) == {
+        "ai_daily_limit",
+        "ai_quota_exchange_rate",
+        "review_co_timeout_hours",
+        "credit_mute_days",
+        "credit_rate_limit_cooldown_seconds",
+    }
     for key, spec in specs.items():
         assert spec.key == key
         assert spec.min_value <= spec.default <= spec.max_value

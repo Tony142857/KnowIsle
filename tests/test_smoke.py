@@ -27,17 +27,16 @@ def test_login_page():
 
 
 def test_board_pages_render_without_db():
-    # v0.5：qa/discuss 板块页已交付（SSR 骨架 + 列表降级客户端加载），匿名可读
-    for path, name in (("/boards/qa", "知屿问答"), ("/boards/discuss", "讨论区")):
+    # v0.7：四板块全部交付（SSR 骨架 + 列表降级客户端加载），匿名可读
+    for path, name in (
+        ("/boards/qa", "知屿问答"),
+        ("/boards/discuss", "讨论区"),
+        ("/boards/experience", "经验长廊"),
+        ("/boards/bounty", "资料求援"),
+    ):
         resp = client.get(path)
         assert resp.status_code == 200, path
         assert name in resp.text
-
-    # experience/bounty 仍为占位页
-    for path in ("/boards/experience", "/boards/bounty"):
-        resp = client.get(path)
-        assert resp.status_code == 200, path
-        assert "建设中" in resp.text
 
 
 def test_me_and_post_new_require_login():

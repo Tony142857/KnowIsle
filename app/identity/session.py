@@ -33,15 +33,13 @@ async def create_session(redis, user_id: int) -> str:
 
 
 async def resolve_session(redis, token: str) -> int | None:
-    """按令牌解析 user_id；命中时滑动续期。无效/过期返回 None。"""
+    """按令牌解析 user_id；命中时滑动续期（GETEX 一次往返替代 GET+EXPIRE）。无效/过期返回 None。"""
     if not token:
         return None
     settings = get_settings()
-    key = session_key(token)
-    value = await redis.get(key)
+    value = await redis.getex(session_key(token), ex=settings.session_ttl_seconds)
     if value is None:
         return None
-    await redis.expire(key, settings.session_ttl_seconds)
     return int(value)
 
 

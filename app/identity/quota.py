@@ -43,6 +43,7 @@ async def ensure_quota(session: AsyncSession, user: User) -> AiQuota:
             date=today,
             used=0,
             daily_limit=await get_config(session, "ai_daily_limit"),
+            bonus_balance=0,  # server_default 要 INSERT 后 refresh 才生效，flush 后须显式可读
         )
         session.add(row)
         await session.flush()
