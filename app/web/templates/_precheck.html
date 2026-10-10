@@ -1,9 +1,10 @@
 {# 预检结果侧栏宏（review.html / admin_review.html 共用）：
    precheck_result JSONB 形如 {format_ok, duplicate, sensitive_hits:[],
    ai_review:{relevance,completeness,quality,issues:[],suggested_chapter}|{error},
-   hard_fail, reason}；为 None 时表示预检仍在进行。 #}
+   hard_fail, reason}；为 None 时表示预检仍在进行。
+   徽章语义：通过= badge-brand（绿），疑似/注意 = badge-accent（琥珀），未通过/命中 = 红。 #}
 {% macro precheck_panel(p) %}
-<div class="rounded-card border border-slate-200 bg-white p-4 shadow-card">
+<div class="card p-4">
   <h3 class="text-sm font-semibold text-slate-700">自动预检结果</h3>
   {% if not p %}
   <p class="mt-2 text-xs text-slate-400">预检进行中，稍后刷新查看。</p>
@@ -11,27 +12,27 @@
   <ul class="mt-2 space-y-1.5 text-xs">
     <li class="flex items-center gap-2">
       {% if p.format_ok %}
-      <span class="rounded bg-emerald-50 px-1.5 py-0.5 text-emerald-700">通过</span>
+      <span class="badge badge-brand">通过</span>
       {% else %}
-      <span class="rounded bg-red-50 px-1.5 py-0.5 text-red-600">未通过</span>
+      <span class="rounded-full bg-red-50 px-1.5 py-0.5 text-red-600">未通过</span>
       {% endif %}
       <span class="text-slate-600">格式检查</span>
     </li>
     <li class="flex items-center gap-2">
       {% if p.duplicate %}
-      <span class="rounded bg-amber-50 px-1.5 py-0.5 text-amber-700">疑似重复</span>
+      <span class="badge badge-accent">疑似重复</span>
       {% else %}
-      <span class="rounded bg-emerald-50 px-1.5 py-0.5 text-emerald-700">未发现重复</span>
+      <span class="badge badge-brand">未发现重复</span>
       {% endif %}
       <span class="text-slate-600">内容查重</span>
     </li>
     <li class="flex items-start gap-2">
       {% if p.sensitive_hits %}
-      <span class="rounded bg-red-50 px-1.5 py-0.5 text-red-600">
+      <span class="rounded-full bg-red-50 px-1.5 py-0.5 text-red-600">
         命中 {{ p.sensitive_hits|length }} 处
       </span>
       {% else %}
-      <span class="rounded bg-emerald-50 px-1.5 py-0.5 text-emerald-700">未命中</span>
+      <span class="badge badge-brand">未命中</span>
       {% endif %}
       <span class="text-slate-600">
         敏感词检测
@@ -63,7 +64,7 @@
       {% endfor %}
     </dl>
     {% if p.ai_review.issues %}
-    <ul class="mt-2 list-disc pl-4 text-xs text-amber-700">
+    <ul class="mt-2 list-disc pl-4 text-xs text-accent-700">
       {% for issue in p.ai_review.issues %}<li>{{ issue }}</li>{% endfor %}
     </ul>
     {% endif %}

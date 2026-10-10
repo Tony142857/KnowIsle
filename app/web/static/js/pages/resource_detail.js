@@ -1,8 +1,9 @@
-/* resource_detail.html 页面交互（CSP 外置，v1.0）。
+/* resource_detail.html 页面交互（CSP 外置，v1.1）。
  * favBox 为跨页共享组件，经 alpine:init 注册于 /static/js/components.js。
  * 加载方式：{% block head %} 内同步 <script src>（原因见 board.js 头注）。
  * Jinja 注入值经模板内 <script type="application/json" id="page-data"> 惰性数据块传递，
- * 这里在组件实例化时（Alpine 初始化后，DOM 已解析完）惰性读取。 */
+ * 这里在组件实例化时（Alpine 初始化后，DOM 已解析完）惰性读取。
+ * v1.1：统一 ZY.api；克隆弹窗接入 ZY.bindModalA11y；克隆/评分成功 ZY.toast。 */
 (function () {
   'use strict';
 
@@ -13,17 +14,27 @@
   // 克隆到个人库：modal 打开时懒加载本人个人课程列表
   window.cloneBox = function (resourceId) {
     return {
-      cloneOpen: false, cloneCourseId: '', myCourses: [],
-      cloneLoading: false, cloneError: '', cloneDone: false, cloneMsg: '',
+      cloneOpen: false, cloneCourseId: '', myCourses: [], coursesLoading: false,
+      cloneLoading: false, cloneError: '', cloneDone: false, cloneMsg: '', _a11y: null,
+
+      init() {
+        // 弹窗 a11y：焦点圈定 / Esc 关闭 / 焦点还原（v1.1 F4）；非上架资源无弹窗节点，跳过
+        const modal = document.getElementById('clone-modal');
+        if (!modal) return;
+        this._a11y = ZY.bindModalA11y(modal, {
+          isOpen: () => this.cloneOpen,
+          onEscape: () => { this.cloneOpen = false; },
+        });
+        this.$watch('cloneOpen', () => { if (this._a11y) this._a11y.sync(); });
+      },
 
       async openClone() {
         this.cloneOpen = true; this.cloneError = ''; this.cloneDone = false;
         this.cloneCourseId = '';
         if (this.myCourses.length) return;
+        this.coursesLoading = true;
         try {
-          const resp = await fetch('/api/library');
-          const data = await resp.json().catch(() => ({}));
-          if (!resp.ok) throw new Error(data.detail || ('加载个人课程失败 ' + resp.status));
+          const data = await ZY.api.get('/api/library');
           const flat = [];
           for (const s of data.semesters || []) {
             for (const c of s.courses || []) flat.push({id: c.id, label: s.name + ' / ' + c.name});
@@ -31,21 +42,19 @@
           for (const c of data.uncategorized_courses || []) flat.push({id: c.id, label: c.name});
           this.myCourses = flat;
         } catch (e) { this.cloneError = e.message; }
+        finally { this.coursesLoading = false; }
       },
 
       async doClone() {
         this.cloneLoading = true; this.cloneError = '';
         try {
-          const resp = await fetch('/api/resources/' + resourceId + '/clone', {
-            method: 'POST', headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({course_id: this.cloneCourseId ? Number(this.cloneCourseId) : null}),
-          });
-          const data = await resp.json().catch(() => ({}));
-          if (!resp.ok) throw new Error(data.detail || ('克隆失败 ' + resp.status));
+          const data = await ZY.api.post('/api/resources/' + resourceId + '/clone',
+            {course_id: this.cloneCourseId ? Number(this.cloneCourseId) : null});
           this.cloneDone = true;
           this.cloneMsg = data.cloned
             ? '克隆成功，资料已进入你的个人库（解析完成后即可 AI 问答）'
             : '你的个人库中已有该资料，无需重复克隆';
+          ZY.toast(data.cloned ? '克隆成功' : '个人库中已有该资料', 'success');
         } catch (e) { this.cloneError = e.message; }
         finally { this.cloneLoading = false; }
       },
@@ -61,13 +70,7 @@
       async rate(stars) {
         this.loading = true; this.error = '';
         try {
-          const resp = await fetch('/api/resources/' + resourceId + '/rating', {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({stars: stars}),
-          });
-          const data = await resp.json().catch(() => ({}));
-          if (!resp.ok) throw new Error(data.detail || ('评分失败 ' + resp.status));
+          const data = await ZY.api.post('/api/resources/' + resourceId + '/rating', {stars: stars});
           this.myRating = data.my_rating;
           this.avg = data.rating.toFixed(2);
           this.count = data.rating_count;
@@ -76,6 +79,7 @@
           if (line) line.innerHTML = '★ ' + data.rating.toFixed(1)
             + ' <span class="text-xs font-normal text-slate-400">（'
             + data.rating_count + ' 人）</span>';
+          ZY.toast('评分成功', 'success');
         } catch (e) { this.error = e.message; }
         finally { this.loading = false; }
       },

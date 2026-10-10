@@ -46,7 +46,7 @@ def _notify(
     body: str = "",
     link: str = "",
 ) -> None:
-    """站内通知直接落库（send_notification ARQ 任务为 v0.6 占位，不调用）。"""
+    """站内通知直接落库（§20.5 B3：通知直写口径；notify_worker 占位任务已于 v1.1 移除）。"""
     session.add(
         Notification(
             user_id=user_id, type=type_, title=title, body=body or None, link=link or None
@@ -251,6 +251,8 @@ async def _approve(session: AsyncSession, task: ReviewTask) -> int:
     resource = await session.get(Resource, task.resource_id)
     src_doc = await session.get(Document, resource.document_id)
     resource.review_status = "approved"
+    # §20.5 B3（迁移⑧）：回填上架时间，feed「最新上架」按 approved_at 排序
+    resource.approved_at = datetime.now(UTC)
     task.stage = "done"
     task.finished_at = datetime.now(UTC)
 
@@ -312,8 +314,9 @@ async def _approve(session: AsyncSession, task: ReviewTask) -> int:
             )
             for d, src in zip(derived, src_chunks, strict=True)
         )
-        # 派生 public chunks 已写入：失效该课程公共库 BM25 语料缓存（v0.9）
-        invalidate_bm25(new_doc.course_id, "public")
+        # 派生 public chunks 已写入：失效该课程公共库 BM25 语料缓存（v0.9；
+        # v1.1 起含 Redis 版本戳跨进程失效，§20.5 B2）
+        await invalidate_bm25(new_doc.course_id, "public")
 
     await grant_score(
         session, resource.uploader_id, SCORE_UPLOAD_APPROVED,

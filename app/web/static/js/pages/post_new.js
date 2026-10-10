@@ -1,5 +1,6 @@
-/* post_new.html 页面交互（CSP 外置，v1.0）。
- * 加载方式：{% block head %} 内同步 <script src>（原因见 board.js 头注）。 */
+/* post_new.html 页面交互（CSP 外置，v1.1）。
+ * 加载方式：{% block head %} 内同步 <script src>（原因见 board.js 头注）。
+ * 统一走 ZY.api（/api/ 前缀由封装补齐），成功反馈用 ZY.toast。 */
 (function () {
   'use strict';
 
@@ -41,9 +42,7 @@
 
       async loadCourses() {
         try {
-          const resp = await fetch('/api/courses?size=100');
-          const data = await resp.json().catch(() => ({}));
-          if (!resp.ok) throw new Error(data.detail || ('加载课程失败 ' + resp.status));
+          const data = await ZY.api.get('/api/courses?size=100');
           this.courses = data.items || [];
         } catch (e) { this.error = e.message; }
       },
@@ -52,9 +51,7 @@
         this.chapterId = ''; this.chapters = [];
         if (!this.courseId) return;
         try {
-          const resp = await fetch('/api/courses/' + this.courseId + '/chapters');
-          const data = await resp.json().catch(() => ({}));
-          if (!resp.ok) throw new Error(data.detail || ('加载章节失败 ' + resp.status));
+          const data = await ZY.api.get('/api/courses/' + this.courseId + '/chapters');
           // 章节树扁平化，用全角空格缩进体现层级
           const flat = [];
           const walk = (nodes, depth) => {
@@ -108,13 +105,9 @@
             tags: this.parseTags(),
           };
           if (this.board === 'bounty') body.bounty_score = Number(this.bountyScore);
-          const resp = await fetch('/api/posts', {
-            method: 'POST', headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify(body),
-          });
-          const data = await resp.json().catch(() => ({}));
-          if (!resp.ok) throw new Error(data.detail || ('发布失败 ' + resp.status));
-          window.location.href = '/posts/' + data.post_id;
+          const data = await ZY.api.post('/api/posts', body);
+          ZY.toast('发布成功', 'success');
+          setTimeout(() => { window.location.href = '/posts/' + data.post_id; }, 800);
         } catch (e) { this.error = e.message; }
         finally { this.loading = false; }
       },

@@ -1,4 +1,4 @@
-/* 登录页交互（原 login.html 内联脚本外置，CSP 兼容）。
+/* 登录页交互（v1.1：统一走 ZY.api、发码 60s 冷却倒计时、按钮加载态）。
  * 流程（§3.1 邮箱降级通道）：
  *   1) 学号 + 校园邮箱发送验证码 → 2) 验证码校验登录 → 3) 首次登录补全资料建档。
  *
@@ -10,32 +10,44 @@
 document.addEventListener('alpine:init', function () {
   'use strict';
 
+  var RESEND_COOLDOWN = 60; // 与服务端 EMAIL_CODE_COOLDOWN_SECONDS 默认一致
+
   Alpine.data('loginForm', function () {
     return {
       step: 1, loading: false, error: '', hint: '',
+      cooldown: 0, _timer: null,
       student_no: '', email: '', code: '',
       real_name: '', nickname: '', grade: '', major_id: '', majors: [],
 
-      async post(url, body) {
+      _startCooldown() {
+        var self = this;
+        this.cooldown = RESEND_COOLDOWN;
+        if (this._timer) clearInterval(this._timer);
+        this._timer = setInterval(function () {
+          self.cooldown -= 1;
+          if (self.cooldown <= 0) {
+            clearInterval(self._timer);
+            self._timer = null;
+            self.cooldown = 0;
+          }
+        }, 1000);
+      },
+
+      async _post(url, body) {
         this.loading = true; this.error = ''; this.hint = '';
         try {
-          const resp = await fetch(url, {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify(body),
-          });
-          const data = await resp.json().catch(() => ({}));
-          if (!resp.ok) throw new Error(data.detail || ('请求失败 ' + resp.status));
-          return data;
+          return await ZY.api.post(url, body);
         } finally { this.loading = false; }
       },
 
       async sendCode() {
+        if (this.loading || this.cooldown > 0) return;
         if (!this.student_no || !this.email) { this.error = '请填写学号与校园邮箱'; return; }
         try {
-          const data = await this.post('/api/auth/email/code',
+          const data = await this._post('/api/auth/email/code',
             {student_no: this.student_no, email: this.email});
-          this.step = 2;
+          this.step = Math.max(this.step, 2);
+          this._startCooldown();
           // 开发期假通道：接口回显验证码便于联调（email_code_echo，生产关闭）
           this.hint = data.dev_code
             ? ('开发模式验证码：' + data.dev_code + '（10 分钟内有效）')
@@ -53,12 +65,12 @@ document.addEventListener('alpine:init', function () {
           });
         }
         try {
-          const data = await this.post('/api/auth/email/verify', body);
+          const data = await this._post('/api/auth/email/verify', body);
           if (data.need_profile) {
             this.step = 3;
             this.hint = '该学号首次登录，请补全资料完成建档';
             if (!this.majors.length) {
-              const mj = await fetch('/api/majors').then(r => r.json());
+              const mj = await ZY.api.get('/api/majors');
               this.majors = mj.items || [];
             }
             return;

@@ -55,6 +55,7 @@ from .fakestack import (
     make_resource,
     make_task,
     make_user,
+    recording_async,
     session_local,
 )
 
@@ -88,7 +89,7 @@ def _patch_parse_pipeline(monkeypatch, session, blocks=None, chunks=None):
     monkeypatch.setattr(parse_worker, "get_embedding", FakeEmbedding)
     monkeypatch.setattr(parse_worker, "get_vector_store", lambda: vector_store)
     monkeypatch.setattr(parse_worker, "invalidate_bm25",
-                        lambda *args: invalidated.append(args))
+                        recording_async(invalidated))
     return store, vector_store, invalidated
 
 
@@ -373,6 +374,40 @@ async def test_ai_answer_failure_retry_then_failed_state(monkeypatch):
     assert redis.kv[key] == "failed"
 
 
+async def test_ai_answer_permanent_error_no_retry(monkeypatch):
+    """§20.5 B3：课程被禁用/删除（retrieve 抛 HTTPException 404）属永久性错误，
+    首次执行即置 Redis failed 早退，不占 ARQ 重试。"""
+    redis = FakeRedis()
+    key = ai_answer_worker.ai_answer_key(7)
+    redis.kv[key] = "pending"
+    post = make_post(7, author_id=9, board="qa")
+    session = FakeSession(gets={(Post, 7): post, (User, 9): make_user(9)})
+    _patch_ai_answer(monkeypatch, session, redis, FakeLLM())
+
+    async def _retrieve_404(*_args):
+        raise HTTPException(status_code=404, detail="Not Found")
+
+    monkeypatch.setattr(ai_answer_worker, "retrieve", _retrieve_404)
+    # job_try=1 也不重试：不抛异常，直接置 failed
+    await ai_answer_worker.generate_ai_first_answer({"job_try": 1}, 7)
+    assert redis.kv[key] == "failed"
+    assert session.rollbacks == 1 and session.commits == 0
+    assert post.ai_first_answer is None
+
+
+async def test_ai_answer_missing_author_marks_failed(monkeypatch):
+    """§20.5 B3：作者账号不存在（永久性）→ 置 failed 早退，不重试、不建通知。"""
+    redis = FakeRedis()
+    key = ai_answer_worker.ai_answer_key(7)
+    redis.kv[key] = "pending"
+    post = make_post(7, author_id=9, board="qa")
+    session = FakeSession(gets={(Post, 7): post})  # 无 (User, 9)
+    _patch_ai_answer(monkeypatch, session, redis, FakeLLM())
+    await ai_answer_worker.generate_ai_first_answer({"job_try": 1}, 7)
+    assert redis.kv[key] == "failed"
+    assert session.commits == 0
+
+
 def _patch_exp_summary(monkeypatch, session, redis, llm):
     monkeypatch.setattr(experience_summary_worker, "SessionLocal", session_local(session))
     monkeypatch.setattr(experience_summary_worker, "get_redis", lambda: redis)
@@ -625,11 +660,13 @@ async def test_ensure_quota_new_row_bonus_balance_zero(monkeypatch):
     assert exc_info.value.status_code == 429
     row = next(o for o in session.added if isinstance(o, AiQuota))
     assert (row.used, row.daily_limit, row.bonus_balance) == (0, 0, 0)
-    # consume：新建行属性可直接算术，不炸
+    # consume（§20.5 B1 原子扣减）：锁内复检额度已尽 → 429，不超扣成负余额
     session = FakeSession(results=[FakeResult(scalar=None)])
-    await quota.consume_quota(session, user)
+    with pytest.raises(HTTPException) as exc_info:
+        await quota.consume_quota(session, user)
+    assert exc_info.value.status_code == 429
     row = next(o for o in session.added if isinstance(o, AiQuota))
-    assert row.used == 0 and isinstance(row.bonus_balance, int)
+    assert row.used == 0 and row.bonus_balance == 0
 
 
 async def test_answer_question_citation_mapping_failure_degrades(monkeypatch):

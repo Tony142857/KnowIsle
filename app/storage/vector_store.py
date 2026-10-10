@@ -7,6 +7,9 @@ v0.9 性能优化（A3）：httpx.AsyncClient 改为按 base_url 复用的模块
 （每请求新建客户端的 TCP/TLS 握手开销消除）；collection name→id 进程内缓存
 （避免每次检索多发一次 get_or_create 往返）；query 不再回传 documents
 （消费方只用 id 回表 PG，payload 体积立减）。
+
+§20.5 B4（v1.1）：集合 id 进程缓存不再永不过期——upsert/query 失败且错误
+表明集合不存在（向量库重建后 id 失效）时，清缓存重新解析 id 并重试一次。
 """
 
 import httpx
@@ -21,7 +24,7 @@ _COLLECTIONS_PATH = "/api/v2/tenants/default_tenant/databases/default_database/c
 # 模块级惰性单例：按 base_url 复用 AsyncClient（连接池随进程生命周期存在，无需 lifespan 钩子）
 _clients: dict[str, httpx.AsyncClient] = {}
 
-# collection name → id 进程内缓存：集合由 get_or_create 保证存在，id 一经创建不变
+# collection name → id 进程内缓存：命中不发请求；集合失效时由操作失败驱动清除重试（§20.5 B4）
 _collection_ids: dict[str, str] = {}
 
 
@@ -31,6 +34,11 @@ def _get_client(base_url: str) -> httpx.AsyncClient:
         client = httpx.AsyncClient(base_url=base_url, timeout=60.0)
         _clients[base_url] = client
     return client
+
+
+def _is_collection_missing(resp: httpx.Response) -> bool:
+    """响应是否表明集合不存在（id 缓存因向量库重建而失效）。"""
+    return resp.status_code == 404 or "does not exist" in resp.text.lower()
 
 
 class VectorStoreError(RuntimeError):
@@ -70,6 +78,33 @@ class VectorStore:
         _collection_ids[cache_key] = collection_id
         return collection_id
 
+    def _evict_cached_id(self, collection_id: str) -> str | None:
+        """按 id 反查并清除本实例的 name→id 进程缓存，返回集合名（无缓存返回 None）。"""
+        prefix = f"{self.base_url}:"
+        for cache_key, cached_id in list(_collection_ids.items()):
+            if cached_id == collection_id and cache_key.startswith(prefix):
+                del _collection_ids[cache_key]
+                return cache_key[len(prefix):]
+        return None
+
+    async def _post(
+        self, action: str, collection: str, suffix: str, payload: dict, timeout: float
+    ) -> httpx.Response:
+        """对集合发 POST；集合不存在（id 缓存失效）时清缓存重新解析 id 重试一次（§20.5 B4）。"""
+        resp = await self._client.post(
+            f"{_COLLECTIONS_PATH}/{collection}/{suffix}", json=payload, timeout=timeout
+        )
+        if resp.status_code >= 400 and _is_collection_missing(resp):
+            name = self._evict_cached_id(collection)
+            if name is not None:
+                collection = await self.get_or_create_collection(name)
+                resp = await self._client.post(
+                    f"{_COLLECTIONS_PATH}/{collection}/{suffix}",
+                    json=payload, timeout=timeout,
+                )
+        self._check(resp, action, collection)
+        return resp
+
     async def upsert(
         self,
         collection: str,
@@ -79,9 +114,11 @@ class VectorStore:
         documents: list[str],
     ) -> None:
         """批量写入/覆盖向量。metadata 值仅允许 str/int/float/bool。"""
-        resp = await self._client.post(
-            f"{_COLLECTIONS_PATH}/{collection}/upsert",
-            json={
+        await self._post(
+            "upsert",
+            collection,
+            "upsert",
+            payload={
                 "ids": ids,
                 "embeddings": embeddings,
                 "metadatas": metadatas,
@@ -89,7 +126,6 @@ class VectorStore:
             },
             timeout=60,
         )
-        self._check(resp, "upsert", collection)
 
     async def query(
         self,
@@ -110,10 +146,7 @@ class VectorStore:
         }
         if where:
             payload["where"] = where
-        resp = await self._client.post(
-            f"{_COLLECTIONS_PATH}/{collection}/query", json=payload, timeout=30
-        )
-        self._check(resp, "query", collection)
+        resp = await self._post("query", collection, "query", payload=payload, timeout=30)
         data = resp.json()
         hits = []
         # Chroma v2 响应按查询批次嵌套一层列表（本封装恒为单查询）

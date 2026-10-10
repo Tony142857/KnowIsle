@@ -149,7 +149,7 @@ def _patch_parse_pipeline(monkeypatch, session):
     )
     monkeypatch.setattr(parse_worker, "get_embedding", FakeEmbedding)
     monkeypatch.setattr(parse_worker, "get_vector_store", lambda: FakeVectorStore())
-    monkeypatch.setattr(parse_worker, "invalidate_bm25", lambda *args: None)
+    monkeypatch.setattr(parse_worker, "invalidate_bm25", async_value(None))
 
 
 async def test_parse_document_runs_verifier_and_logs_issues(monkeypatch, caplog):

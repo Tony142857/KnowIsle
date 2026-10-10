@@ -9,6 +9,7 @@ from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 
 import pytest
+from sqlalchemy.exc import IntegrityError
 
 from app.api import admin as admin_api
 from app.api import documents as documents_api
@@ -30,6 +31,7 @@ from app.storage.models import (
     ResourceRating,
     ReviewTask,
     User,
+    Vote,
 )
 
 from .fakestack import (
@@ -53,6 +55,7 @@ from .fakestack import (
     make_resource,
     make_task,
     make_user,
+    recording_async,
 )
 
 USER = make_user(1)
@@ -482,11 +485,14 @@ def test_accept_comment_bounty_settles_escrow(monkeypatch):
 # ---------------------------------------------------------------------------
 
 
-def _upload(client, name="笔记.pdf", data=b"pdf-bytes", course_id="5"):
+def _upload(client, name="笔记.pdf", data=b"pdf-bytes", course_id="5", chapter_id=None):
+    form = {"course_id": course_id}
+    if chapter_id is not None:
+        form["chapter_id"] = chapter_id
     return client.post(
         "/api/documents/",
         files={"file": (name, data, "application/pdf")},
-        data={"course_id": course_id},
+        data=form,
     )
 
 
@@ -562,6 +568,44 @@ def test_upload_document_dedup_and_failed_retry(monkeypatch):
     assert body["retry"] is True and body["dedup"] is True
     assert failed.status == "parsing"
     assert pool.jobs == [("parse_document", 12)]
+
+
+def test_upload_document_chapter_id_rejected(monkeypatch):
+    """§20.5 B3：上传传非空 chapter_id 显式 422（章节由解析自动构建，不支持人工挂载）。"""
+    _patch_documents(monkeypatch)
+    gets = {(Course, 5): make_course(scope="personal", owner_id=1)}
+    with http_client(FakeSession(gets=gets), USER) as client:
+        resp = _upload(client, chapter_id="8")
+    assert resp.status_code == 422
+    assert "章节由解析自动构建" in resp.json()["detail"]
+
+
+class _RaceCommitSession(FakeSession):
+    """首次 commit 抛 IntegrityError（模拟并发写入撞唯一约束），其后正常。"""
+
+    async def commit(self):
+        if self.commits == 0:
+            self.commits += 1
+            raise IntegrityError("INSERT", {}, Exception("duplicate key"))
+        await super().commit()
+
+
+def test_upload_document_integrity_race_falls_back_to_dedup(monkeypatch):
+    """§20.5 B1（迁移⑦）：并发上传同一文件撞部分唯一索引 → 回落去重响应，不出 500。"""
+    _patch_documents(monkeypatch)
+    store = FakeObjectStore()
+    monkeypatch.setattr(documents_api, "object_store", store)
+    gets = {(Course, 5): make_course(scope="personal", owner_id=1)}
+    winner = make_doc(11, owner_id=1, status="parsing")
+    session = _RaceCommitSession(gets=gets, results=[
+        FakeResult(rows=[]),          # 去重预查：无同 md5 文档
+        FakeResult(rows=[winner]),    # 冲突 rollback 后重查：对方已建档
+    ])
+    with http_client(session, USER) as client:
+        resp = _upload(client)
+    assert resp.status_code == 202
+    assert resp.json() == {"document_id": 11, "status": "parsing", "dedup": True}
+    assert session.rollbacks == 1
 
 
 def test_document_status_and_chunks_permission():
@@ -856,6 +900,34 @@ def test_rate_resource_rules_and_upsert():
     assert body["rating"] == 3.0 and body["my_rating"] == 2
 
 
+class _RaceFlushSession(FakeSession):
+    """首次 flush 抛 IntegrityError（模拟并发首评撞唯一约束），其后正常。"""
+
+    async def flush(self):
+        if self.rollbacks == 0:
+            raise IntegrityError("INSERT", {}, Exception("duplicate key"))
+        await super().flush()
+
+
+def test_rate_resource_integrity_race_falls_back_to_update():
+    """§20.5 B1：并发首评撞 (user_id, resource_id) 唯一约束 → rollback 后走
+    update 路径返回（幂等覆盖语义），不出 500。"""
+    resource = make_resource()
+    existing = SimpleNamespace(id=1, user_id=1, resource_id=21, stars=4)
+    session = _RaceFlushSession(gets={(Resource, 21): resource}, results=[
+        FakeResult(scalar=None),        # 预查：无既有评分
+        FakeResult(scalar=existing),    # 冲突 rollback 后重查：对方已插入
+        FakeResult(rows=[(2.0, 1)]),    # avg / count
+    ])
+    with http_client(session, USER) as client:
+        resp = client.post("/api/resources/21/rating", json={"stars": 2})
+    assert resp.status_code == 200
+    body = resp.json()
+    assert existing.stars == 2  # 走了 update 路径覆盖对方行
+    assert body["rating"] == 2.0 and body["my_rating"] == 2
+    assert session.rollbacks == 1
+
+
 def test_clone_resource_guards():
     # 未上架 404；目标课程不存在/非本人个人课程 404
     with http_client(FakeSession(), USER) as client:
@@ -888,7 +960,7 @@ def test_clone_resource_success_with_explicit_course(monkeypatch):
     monkeypatch.setattr(resources_api, "get_embedding", lambda: embedding)
     monkeypatch.setattr(resources_api, "get_vector_store", lambda: vector_store)
     monkeypatch.setattr(resources_api, "invalidate_bm25",
-                        lambda *args: invalidated.append(args))
+                        recording_async(invalidated))
     src_doc = make_doc(11, owner_id=9, scope="public", preview_key="preview/11/m.pdf")
     target = make_course(7, scope="personal", owner_id=1)
     gets = {(Resource, 21): make_resource(), (Document, 11): src_doc, (Course, 7): target}
@@ -918,7 +990,7 @@ def test_clone_resource_default_course_and_preview_fallback(monkeypatch):
     _, _, _ = _patch_resources(monkeypatch)
     monkeypatch.setattr(resources_api, "get_embedding", FakeEmbedding)
     monkeypatch.setattr(resources_api, "get_vector_store", FakeVectorStore)
-    monkeypatch.setattr(resources_api, "invalidate_bm25", lambda *a: None)
+    monkeypatch.setattr(resources_api, "invalidate_bm25", async_value(None))
     # 原件无 preview_key：回退取终审派生 public 副本的预览键
     src_doc = make_doc(11, owner_id=9, scope="public", preview_key=None)
     public_copy = make_doc(12, scope="public", preview_key="preview/12/m.pdf")
@@ -948,7 +1020,7 @@ def test_clone_resource_empty_chunks_skips_embedding(monkeypatch):
     monkeypatch.setattr(resources_api, "get_vector_store", FakeVectorStore)
     invalidated = []
     monkeypatch.setattr(resources_api, "invalidate_bm25",
-                        lambda *args: invalidated.append(args))
+                        recording_async(invalidated))
     src_doc = make_doc(11, owner_id=9, scope="public", preview_key="pk")
     target = make_course(7, scope="personal", owner_id=1)
     gets = {(Resource, 21): make_resource(), (Document, 11): src_doc, (Course, 7): target}
@@ -961,6 +1033,58 @@ def test_clone_resource_empty_chunks_skips_embedding(monkeypatch):
     assert resp.status_code == 201
     assert embedding.calls == []      # 无 chunks 不向量化
     assert invalidated == []          # 也不失效 BM25 缓存
+
+
+# ---------------------------------------------------------------------------
+# /api/votes：目标状态校验（§20.5 B4）与并发幂等收口（§20.5 B1）
+# ---------------------------------------------------------------------------
+
+
+def test_vote_target_state_validation():
+    # closed 帖投票 422
+    closed_post = make_post(1, status="closed")
+    with http_client(FakeSession(gets={(Post, 1): closed_post}), USER) as client:
+        resp = client.post("/api/votes", json={"target_type": "post", "target_id": 1, "value": 1})
+    assert resp.status_code == 422 and "帖子已关闭" in resp.json()["detail"]
+    # 资源仅 approved 可投（其余 404，与收藏口径一致）
+    pending = make_resource(review_status="pending")
+    with http_client(FakeSession(gets={(Resource, 21): pending}), USER) as client:
+        resp = client.post("/api/votes", json={"target_type": "resource", "target_id": 21, "value": 1})
+    assert resp.status_code == 404
+    # 评论投票随所属帖：帖子 closed 时评论投票也 422
+    comment = make_comment(31, post_id=1)
+    gets = {(Comment, 31): comment, (Post, 1): closed_post}
+    with http_client(FakeSession(gets=gets), USER) as client:
+        resp = client.post("/api/votes", json={"target_type": "comment", "target_id": 31, "value": 1})
+    assert resp.status_code == 422
+
+
+def test_vote_normal_insert_and_score():
+    post = make_post(1)
+    session = FakeSession(gets={(Post, 1): post}, results=[
+        FakeResult(scalar=None),   # 无既有投票
+        FakeResult(scalar=1),      # 总分聚合
+    ])
+    with http_client(session, USER) as client:
+        body = client.post("/api/votes", json={"target_type": "post", "target_id": 1, "value": 1}).json()
+    assert body == {"target_type": "post", "target_id": 1, "my_vote": 1, "score": 1}
+    assert any(isinstance(o, Vote) for o in session.added)
+
+
+def test_vote_integrity_race_returns_current_state():
+    """§20.5 B1：并发首次投票撞唯一约束 → rollback 后重查当前状态返回（幂等），不出 500。"""
+    post = make_post(1)
+    session = _RaceCommitSession(gets={(Post, 1): post}, results=[
+        FakeResult(scalar=None),   # 预查：无既有投票
+        FakeResult(scalar=1),      # 冲突后重查我的投票（对方已插入同值）
+        FakeResult(scalar=2),      # 重查总分
+    ])
+    with http_client(session, USER) as client:
+        resp = client.post("/api/votes", json={"target_type": "post", "target_id": 1, "value": 1})
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["my_vote"] == 1 and body["score"] == 2
+    assert session.rollbacks == 1
 
 
 # ---------------------------------------------------------------------------
@@ -1435,7 +1559,8 @@ def test_handle_report_transitions():
 
 
 def test_admin_dashboard_aggregates():
-    day = datetime(2026, 9, 29, tzinfo=UTC)
+    # 趋势窗口为「近 7 天」，fixture 日期须相对今天取值，避免随墙钟漂移失效
+    day = datetime.now(UTC) - timedelta(days=1)
     session = FakeSession(results=[
         FakeResult(scalar=10),                    # users_total
         FakeResult(scalar=2),                     # new_today

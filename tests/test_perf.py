@@ -15,14 +15,19 @@ import app.core.retrieval.fine as fine
 import app.storage.vector_store as vector_store
 from app.api.resources import escape_like
 
+from .fakestack import FakeRedis
+
 
 @pytest.fixture(autouse=True)
-def _clear_caches():
-    """每个用例前后清空进程内缓存，避免用例间相互污染。"""
+def _clear_caches(monkeypatch):
+    """每个用例前后清空进程内缓存，避免用例间相互污染；
+    BM25 版本戳走内存 Redis（§20.5 B2），每个用例独立实例。"""
     fine._bm25_cache.clear()
     platform_config._config_cache.clear()
     vector_store._collection_ids.clear()
-    yield
+    redis = FakeRedis()
+    monkeypatch.setattr(fine, "get_redis", lambda: redis)
+    yield redis
     fine._bm25_cache.clear()
     platform_config._config_cache.clear()
     vector_store._collection_ids.clear()
@@ -105,16 +110,68 @@ async def test_bm25_entry_cached_on_second_call(monkeypatch):
 
 
 async def test_bm25_entry_rebuilt_after_invalidate(monkeypatch):
-    """invalidate_bm25 后重建索引。"""
+    """invalidate_bm25 后重建索引（本进程缓存清除 + Redis 版本戳递增）。"""
     monkeypatch.setattr(fine, "BM25Okapi", _CountingBM25)
     _CountingBM25.builds = 0
     session = _ChunkSession(_corpus(), _chunks_ns())
     await fine._get_bm25_entry(session, 7, "public", None)
-    fine.invalidate_bm25(7, "public")
+    await fine.invalidate_bm25(7, "public")
     entry = await fine._get_bm25_entry(session, 7, "public", None)
     assert entry is not None
     assert session.corpus_calls == 2
     assert _CountingBM25.builds == 2
+
+
+async def test_bm25_version_stamp_cross_process_invalidate(_clear_caches, monkeypatch):
+    """§20.5 B2：其它进程（worker）写 chunks 只 incr Redis 版本戳，
+    本进程命中前比对发现落后即重建——跨进程失效生效。"""
+    redis = _clear_caches
+    monkeypatch.setattr(fine, "BM25Okapi", _CountingBM25)
+    _CountingBM25.builds = 0
+    session = _ChunkSession(_corpus(), _chunks_ns())
+    first = await fine._get_bm25_entry(session, 7, "public", None)
+    assert first.version == 0  # 版本戳初始为 0
+    # 模拟另一进程 invalidate：本进程缓存未清，仅版本戳 +1
+    await redis.incr(fine._bm25_version_key((7, "public", None)))
+    second = await fine._get_bm25_entry(session, 7, "public", None)
+    assert second is not first and second.version == 1
+    assert session.corpus_calls == 2 and _CountingBM25.builds == 2
+    # 重建后版本戳追平：再次命中不重建
+    third = await fine._get_bm25_entry(session, 7, "public", None)
+    assert third is second
+
+
+async def test_bm25_version_stamp_hit_when_unchanged(monkeypatch):
+    """版本戳一致：命中缓存不重建（版本读取不触发回源）。"""
+    monkeypatch.setattr(fine, "BM25Okapi", _CountingBM25)
+    _CountingBM25.builds = 0
+    session = _ChunkSession(_corpus(), _chunks_ns())
+    first = await fine._get_bm25_entry(session, 7, "public", None)
+    assert await fine._get_bm25_entry(session, 7, "public", None) is first
+    assert session.corpus_calls == 1
+
+
+async def test_bm25_redis_failure_degrades_to_ttl(monkeypatch):
+    """Redis 读失败：跳过版本校验仅靠 TTL（优雅降级，§20.5 B2），不阻塞检索。"""
+
+    def _broken():
+        raise ConnectionError("redis down")
+
+    monkeypatch.setattr(fine, "get_redis", _broken)
+    session = _ChunkSession(_corpus(), _chunks_ns())
+    first = await fine._get_bm25_entry(session, 7, "public", None)
+    second = await fine._get_bm25_entry(session, 7, "public", None)
+    assert first is second and session.corpus_calls == 1
+    assert first.version is None  # 无版本信息
+
+
+async def test_invalidate_bm25_bumps_redis_version(_clear_caches):
+    """invalidate：清本进程缓存 + incr Redis 版本戳；Redis 故障仅降级不抛出。"""
+    redis = _clear_caches
+    await fine.invalidate_bm25(7, "personal", 42)
+    key = fine._bm25_version_key(fine._bm25_key(7, "personal", 42))
+    assert redis.counters[key] == 1
+    assert (7, "personal", 42) not in fine._bm25_cache
 
 
 async def test_bm25_cache_keys_isolated():
@@ -124,7 +181,7 @@ async def test_bm25_cache_keys_isolated():
     per = await fine._get_bm25_entry(session, 7, "personal", 42)
     other_course = await fine._get_bm25_entry(session, 8, "public", None)
     assert len({id(pub), id(per), id(other_course)}) == 3
-    fine.invalidate_bm25(7, "personal", 42)
+    await fine.invalidate_bm25(7, "personal", 42)
     assert await fine._get_bm25_entry(session, 7, "public", None) is pub
     assert await fine._get_bm25_entry(session, 8, "public", None) is other_course
     assert await fine._get_bm25_entry(session, 7, "personal", 42) is not per
@@ -283,6 +340,51 @@ async def test_query_payload_excludes_documents(monkeypatch):
     hits = await store.query("cid-1", [0.0], n_results=5)
     assert client.last_json["include"] == ["metadatas", "distances"]
     assert hits == [{"id": "c1", "distance": 0.1, "metadata": {"k": "v"}}]
+
+
+class _StaleIdChromaClient:
+    """旧集合 id（向量库重建后失效）一律 404；get_or_create 重建返回新 id。"""
+
+    is_closed = False
+
+    def __init__(self):
+        self.posts: list[str] = []
+
+    async def post(self, url, json=None, timeout=None):
+        self.posts.append(url)
+        if url.endswith("/collections"):  # get_or_create_collection
+            return _FakeChromaResponse({"id": "cid-new"})
+        if "/cid-stale/" in url:
+            resp = _FakeChromaResponse(None)
+            resp.status_code = 404
+            resp.text = "Collection cid-stale does not exist"
+            return resp
+        return _FakeChromaResponse(
+            {"ids": [["c1"]], "distances": [[0.1]], "metadatas": [[{}]]}
+        )
+
+
+async def test_query_retries_with_refreshed_collection_id(monkeypatch):
+    """§20.5 B4：集合 id 缓存失效（向量库重建）→ 清缓存重新解析 id 并重试一次。"""
+    client = _StaleIdChromaClient()
+    monkeypatch.setitem(vector_store._clients, "http://fake-chroma", client)
+    store = vector_store.VectorStore("http://fake-chroma")
+    vector_store._collection_ids["http://fake-chroma:chunks_public"] = "cid-stale"
+    hits = await store.query("cid-stale", [0.0], n_results=5)
+    assert hits[0]["id"] == "c1"
+    # 旧缓存已清、重建为新 id；重试请求走新 id
+    assert vector_store._collection_ids["http://fake-chroma:chunks_public"] == "cid-new"
+    assert any(url.endswith("/cid-new/query") for url in client.posts)
+
+
+async def test_query_collection_missing_without_cache_raises(monkeypatch):
+    """缓存中无该 id 的映射（无法反查集合名）：不重试，直接抛 VectorStoreError。"""
+    client = _StaleIdChromaClient()
+    monkeypatch.setitem(vector_store._clients, "http://fake-chroma", client)
+    store = vector_store.VectorStore("http://fake-chroma")
+    with pytest.raises(vector_store.VectorStoreError, match="query"):
+        await store.query("cid-stale", [0.0], n_results=5)
+    assert len(client.posts) == 1  # 未重试
 
 
 # ---------------------------------------------------------------------------

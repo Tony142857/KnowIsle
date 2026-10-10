@@ -8,29 +8,29 @@
 {% block content %}
 <div class="mx-auto max-w-3xl" x-data="postNew('{{ board }}')" x-init="loadCourses()">
   <div class="mb-6 animate-fade-up">
-    <a href="/boards/{{ board }}" class="text-sm text-sky-600 hover:underline">← {{ board_name }}</a>
+    <a href="/boards/{{ board }}" class="text-sm text-brand-600 hover:underline">← {{ board_name }}</a>
     <h1 class="mt-2 text-2xl font-bold text-slate-800">发帖</h1>
   </div>
 
-  <div class="space-y-4 rounded-card border border-slate-200 bg-white p-4 shadow-card sm:p-6">
+  <div class="card space-y-4 p-4 sm:p-6">
     <p x-show="error" x-text="error" x-cloak
        class="rounded-md bg-red-50 px-3 py-2 text-sm text-red-600"></p>
 
     {# 板块选择（§4.2 四板块，v0.7 全部开放）；板块相关的表单区带 x-transition 过渡 #}
     <div>
       <label class="block text-xs font-medium text-slate-500">板块</label>
-      <div class="mt-1 flex flex-wrap gap-1 rounded-lg border border-slate-200 p-1 text-sm w-fit">
+      <div class="mt-1 flex w-fit flex-wrap gap-1 rounded-lg border border-slate-200 p-1 text-sm">
         <button @click="switchBoard('qa')" type="button"
-                :class="board === 'qa' ? 'bg-sky-600 text-white font-medium' : 'text-slate-600 hover:bg-slate-100'"
+                :class="board === 'qa' ? 'bg-brand-600 text-white font-medium' : 'text-slate-600 hover:bg-slate-100'"
                 class="rounded-md px-4 py-1.5 transition-colors">知屿问答</button>
         <button @click="switchBoard('discuss')" type="button"
-                :class="board === 'discuss' ? 'bg-sky-600 text-white font-medium' : 'text-slate-600 hover:bg-slate-100'"
+                :class="board === 'discuss' ? 'bg-brand-600 text-white font-medium' : 'text-slate-600 hover:bg-slate-100'"
                 class="rounded-md px-4 py-1.5 transition-colors">讨论区</button>
         <button @click="switchBoard('experience')" type="button"
-                :class="board === 'experience' ? 'bg-sky-600 text-white font-medium' : 'text-slate-600 hover:bg-slate-100'"
+                :class="board === 'experience' ? 'bg-brand-600 text-white font-medium' : 'text-slate-600 hover:bg-slate-100'"
                 class="rounded-md px-4 py-1.5 transition-colors">经验长廊</button>
         <button @click="switchBoard('bounty')" type="button"
-                :class="board === 'bounty' ? 'bg-sky-600 text-white font-medium' : 'text-slate-600 hover:bg-slate-100'"
+                :class="board === 'bounty' ? 'bg-brand-600 text-white font-medium' : 'text-slate-600 hover:bg-slate-100'"
                 class="rounded-md px-4 py-1.5 transition-colors">资料求援</button>
       </div>
       <p class="mt-1 text-xs text-slate-400" x-show="board === 'qa'">
@@ -50,9 +50,7 @@
         关联课程 <span x-show="board === 'qa'" class="text-red-500">*</span>
         <span x-show="board === 'discuss' || board === 'bounty'" class="text-slate-400">（选填）</span>
       </label>
-      <select x-model="courseId" @change="loadChapters()"
-              class="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm
-                     focus:border-sky-500 focus:outline-none">
+      <select x-model="courseId" @change="loadChapters()" class="input-base mt-1 w-full">
         <option value="">请选择课程</option>
         <template x-for="g in courseGroups" :key="g.major">
           <optgroup :label="g.major">
@@ -65,9 +63,7 @@
     </div>
     <div x-show="courseId" x-cloak x-transition>
       <label class="block text-xs font-medium text-slate-500">关联章节（选填）</label>
-      <select x-model="chapterId"
-              class="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm
-                     focus:border-sky-500 focus:outline-none">
+      <select x-model="chapterId" class="input-base mt-1 w-full">
         <option value="">不指定章节</option>
         <template x-for="ch in chapters" :key="ch.id">
           <option :value="ch.id" x-text="ch.label"></option>
@@ -79,8 +75,7 @@
       <label class="block text-xs font-medium text-slate-500">标题 <span class="text-red-500">*</span></label>
       <input type="text" x-model="title" maxlength="128"
              placeholder="一句话说清楚你的问题、经验主题或求援需求"
-             class="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm
-                    focus:border-sky-500 focus:outline-none">
+             class="input-base mt-1 w-full">
     </div>
 
     {# 经验长廊：结构化模板四栏卡片化（§4.3：背景 → 时间线 → 经验要点 → 避坑提示） #}
@@ -93,8 +88,7 @@
           </label>
           <p class="mt-0.5 text-xs text-slate-400" x-text="sec.desc"></p>
           <textarea x-model="sections[sec.key]" rows="4"
-                    class="mt-2 w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm
-                           focus:border-sky-500 focus:outline-none"
+                    class="input-base mt-2 w-full bg-white"
                     :placeholder="sec.placeholder"></textarea>
         </div>
       </template>
@@ -105,8 +99,7 @@
       <label class="block text-xs font-medium text-slate-500">正文 <span class="text-red-500">*</span></label>
       <textarea x-model="content" rows="10"
                 placeholder="问题的背景、你已尝试的思路、希望得到的帮助…"
-                class="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm
-                       focus:border-sky-500 focus:outline-none"></textarea>
+                class="input-base mt-1 w-full"></textarea>
     </div>
 
     {# 资料求援：悬赏贡献分（发布时托管） #}
@@ -116,25 +109,19 @@
         <span class="text-slate-400">（1~1000，发布时从贡献分中托管）</span>
       </label>
       <input type="number" x-model.number="bountyScore" min="1" max="1000" step="1"
-             class="mt-1 w-40 rounded-md border border-slate-300 px-3 py-2 text-sm
-                    focus:border-sky-500 focus:outline-none">
+             class="input-base mt-1 w-40">
     </div>
 
     <div>
       <label class="block text-xs font-medium text-slate-500">标签（选填，逗号分隔，最多 5 个）</label>
       <input type="text" x-model="tagsInput"
              :placeholder="board === 'experience' ? '如：保研, 夏令营（经验帖常用：保研/竞赛/实习/选课/转专业）' : '如：期中复习, 习题课'"
-             class="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm
-                    focus:border-sky-500 focus:outline-none">
+             class="input-base mt-1 w-full">
     </div>
 
     <div class="flex justify-end gap-2 border-t border-slate-100 pt-4">
-      <a :href="'/boards/' + board"
-         class="rounded-md border border-slate-300 px-4 py-2 text-sm text-slate-600 transition-colors hover:bg-slate-100">取消</a>
-      <button @click="submit()" :disabled="loading"
-              class="rounded-md bg-sky-600 px-4 py-2 text-sm text-white transition-colors hover:bg-sky-700 disabled:opacity-50">
-        发布
-      </button>
+      <a :href="'/boards/' + board" class="btn btn-ghost">取消</a>
+      <button @click="submit()" :disabled="loading" class="btn btn-primary">发布</button>
     </div>
   </div>
 </div>

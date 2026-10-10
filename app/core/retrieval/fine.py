@@ -9,9 +9,14 @@ v0.9 性能优化（B1）：BM25 语料按 (course_id, scope, owner_id) 建进�
 构建与打分均为 CPU 密集操作，经 asyncio.to_thread 挪出事件循环。
 缓存有界：最多 32 项 LRU + 600s TTL 兜底，语料变更点（解析落切块 / 终审派生
 public 副本 / 克隆入个人库）调用 invalidate_bm25 精准失效。
+
+§20.5 B2（v1.1）：进程内缓存命中前比对 Redis 版本戳（knowisle:bm25ver:*，
+invalidate 时 incr），worker 与 web 分进程也能跨进程失效；Redis 读失败时
+按现状仅用 TTL，优雅降级。
 """
 
 import asyncio
+import logging
 import time
 from collections import OrderedDict
 from dataclasses import dataclass, field
@@ -21,12 +26,15 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.retrieval.fusion import rrf_fuse
+from app.storage.cache import get_redis
 from app.storage.models import Chunk
 from app.storage.vector_store import (
     COLLECTION_PERSONAL,
     COLLECTION_PUBLIC,
     get_vector_store,
 )
+
+logger = logging.getLogger(__name__)
 
 
 def tokenize(text: str) -> list[str]:
@@ -76,13 +84,18 @@ _BM25_CACHE_TTL = 600.0  # 秒，兜底过期（正常靠写入点 invalidate_bm
 
 @dataclass
 class _Bm25Entry:
-    """单语料的缓存项：BM25 实例 + 分词结果 + 与语料对齐的 id 列表。"""
+    """单语料的缓存项：BM25 实例 + 分词结果 + 与语料对齐的 id 列表。
+
+    version 为构建时读到的 Redis 版本戳（§20.5 B2）；None 表示 Redis 不可用，
+    命中比对时跳过版本校验（仅靠 TTL 兜底）。
+    """
 
     bm25: BM25Okapi
     tokens: list[list[str]]
     chunk_ids: list[str]
     chapter_ids: list[int | None]
     built_at: float = field(default_factory=time.monotonic)
+    version: int | None = None
 
 
 _bm25_cache: OrderedDict[tuple[int, str, int | None], _Bm25Entry] = OrderedDict()
@@ -93,10 +106,32 @@ def _bm25_key(course_id: int, scope: str, owner_id: int | None) -> tuple[int, st
     return (course_id, scope, owner_id if scope == "personal" else None)
 
 
-def invalidate_bm25(course_id: int, scope: str, owner_id: int | None = None) -> None:
-    """语料变更（解析落切块 / 终审派生 public 副本 / 克隆入个人库）后调用，
-    下次检索重建该 (course_id, scope, owner_id) 的 BM25 索引。"""
-    _bm25_cache.pop(_bm25_key(course_id, scope, owner_id), None)
+def _bm25_version_key(key: tuple[int, str, int | None]) -> str:
+    """语料版本戳 Redis 键（§20.5 B2）：knowisle:bm25ver:{course}:{scope}:{owner}。"""
+    course_id, scope, owner_id = key
+    return f"knowisle:bm25ver:{course_id}:{scope}:{owner_id or 0}"
+
+
+async def _corpus_version(key: tuple[int, str, int | None]) -> int | None:
+    """读语料版本戳；Redis 读失败返回 None（优雅降级：命中仅靠 TTL，§20.5 B2）。"""
+    try:
+        raw = await get_redis().get(_bm25_version_key(key))
+    except Exception:
+        logger.warning("BM25 版本戳读取失败（按 TTL 兜底）key=%s", key, exc_info=True)
+        return None
+    return int(raw) if raw is not None else 0
+
+
+async def invalidate_bm25(course_id: int, scope: str, owner_id: int | None = None) -> None:
+    """语料变更（解析落切块 / 终审派生 public 副本 / 克隆入个人库）后调用：
+    incr Redis 版本戳（跨进程失效，§20.5 B2）+ 清本进程缓存。
+    Redis 写失败仅记日志——本进程缓存已清，其它进程靠 TTL 兜底。"""
+    key = _bm25_key(course_id, scope, owner_id)
+    _bm25_cache.pop(key, None)
+    try:
+        await get_redis().incr(_bm25_version_key(key))
+    except Exception:
+        logger.warning("BM25 版本戳递增失败（其它进程靠 TTL 兜底）key=%s", key, exc_info=True)
 
 
 def _build_bm25_entry(rows: list) -> _Bm25Entry:
@@ -133,17 +168,24 @@ def _bm25_top_ids(
 async def _get_bm25_entry(
     session: AsyncSession, course_id: int, scope: str, owner_id: int | None
 ) -> _Bm25Entry | None:
-    """取该 (course_id, scope, owner_id) 的 BM25 缓存项，缺失/过期则查库重建；
-    语料为空返回 None。"""
+    """取该 (course_id, scope, owner_id) 的 BM25 缓存项，缺失/过期/版本戳落后
+    （其它进程已写 chunks，§20.5 B2）则查库重建；语料为空返回 None。"""
     key = _bm25_key(course_id, scope, owner_id)
     entry = _bm25_cache.get(key)
     if entry is not None and time.monotonic() - entry.built_at >= _BM25_CACHE_TTL:
         entry = None
         _bm25_cache.pop(key, None)
     if entry is not None:
-        _bm25_cache.move_to_end(key)
-        return entry
+        current = await _corpus_version(key)
+        if current is None or current == entry.version:
+            _bm25_cache.move_to_end(key)
+            return entry
+        entry = None  # 版本戳落后：其它进程已变更语料，丢弃本进程缓存重建
+        _bm25_cache.pop(key, None)
 
+    # 先读版本戳再查语料：构建中途的 invalidate 只会让缓存版本偏旧（下次命中
+    # 比对 mismatch 再重建一次），不会把「新版本戳 + 旧语料」的脏项留在缓存里
+    version = await _corpus_version(key)
     stmt = select(Chunk.chunk_id, Chunk.chapter_id, Chunk.content).where(
         Chunk.course_id == course_id, Chunk.scope == scope
     )
@@ -153,6 +195,7 @@ async def _get_bm25_entry(
     if not rows:
         return None
     entry = await asyncio.to_thread(_build_bm25_entry, rows)
+    entry.version = version
     _bm25_cache[key] = entry
     _bm25_cache.move_to_end(key)
     while len(_bm25_cache) > _BM25_CACHE_MAX:

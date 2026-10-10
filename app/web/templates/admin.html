@@ -12,15 +12,15 @@
      class="animate-fade-up">
   <div class="mb-6">
     <h1 class="text-2xl font-bold text-slate-800">管理后台</h1>
-    <p class="mt-1 text-sm text-slate-400">审核终审 / 空间管理 / 用户治理 / 平台配置（v0.6）· 举报处理 / 运营看板（v0.8）</p>
+    <p class="mt-1 text-sm text-slate-400">审核终审 / 空间管理 / 用户治理 / 平台配置 · 举报处理 / 运营看板</p>
   </div>
 
   {# Tab 切换（下划线式，brand 主色） #}
-  <div class="flex gap-1 overflow-x-auto border-b border-slate-200 text-sm">
+  <div class="flex gap-1 overflow-x-auto border-b border-slate-200 text-sm" role="tablist">
     {% for key, label in [('review', '审核终审'), ('space', '空间管理'),
                           ('users', '用户治理'), ('config', '平台配置'),
                           ('reports', '举报处理'), ('dashboard', '运营看板')] %}
-    <button @click="tab = '{{ key }}'"
+    <button @click="tab = '{{ key }}'" role="tab" :aria-selected="tab === '{{ key }}'"
             :class="tab === '{{ key }}' ? 'border-brand-600 text-brand-700 font-medium' : 'border-transparent text-slate-500 hover:text-brand-700'"
             class="shrink-0 border-b-2 px-4 py-2 -mb-px transition-colors">{{ label }}</button>
     {% endfor %}
@@ -30,13 +30,11 @@
     {# ===== 审核终审：入口卡片 ===== #}
     <div x-show="tab === 'review'">
       <div class="grid gap-4 sm:grid-cols-2">
-        <a href="/admin/review"
-           class="card-hover block rounded-card border border-slate-200 bg-white p-5 shadow-card">
+        <a href="/admin/review" class="card card-hover block p-5">
           <h2 class="text-base font-semibold text-slate-800">管理员终审 →</h2>
           <p class="mt-1 text-sm text-slate-500">终审队列裁决（通过上架 / 驳回）、等待协审任务改派与直审、最近完成记录。</p>
         </a>
-        <a href="/review"
-           class="card-hover block rounded-card border border-slate-200 bg-white p-5 shadow-card">
+        <a href="/review" class="card card-hover block p-5">
           <h2 class="text-base font-semibold text-slate-800">协审工作台 →</h2>
           <p class="mt-1 text-sm text-slate-500">以协审员视角处理本人被指派的协审任务。</p>
         </a>
@@ -46,38 +44,40 @@
     {# ===== 空间管理：专业导入 / 课程审批 / 创建课程 ===== #}
     <div x-show="tab === 'space'" x-cloak class="space-y-6">
       {# 专业批量导入 #}
-      <div class="rounded-card border border-slate-200 bg-white p-4 shadow-card" x-data="majorImport()">
+      <div class="card p-4" x-data="majorImport()">
         <h2 class="text-sm font-semibold text-slate-700">专业批量导入</h2>
         <p class="mt-1 text-xs text-slate-400">
           粘贴 JSON（如 [{"name":"计算机科学与技术","code":"080901"}]）或逐行「名称,代码」（代码可省略）。按名称幂等去重。
         </p>
         <textarea x-model="text" rows="4" placeholder='[{"name":"计算机科学与技术","code":"080901"}]'
-                  class="mt-2 w-full rounded border border-slate-300 px-3 py-2 font-mono text-sm"></textarea>
+                  aria-label="专业名单"
+                  class="input-base mt-2 font-mono"></textarea>
         <div class="mt-2 flex items-center gap-2">
-          <button @click="submit()" :disabled="loading"
-                  class="rounded bg-sky-600 px-4 py-1.5 text-sm text-white hover:bg-sky-700 disabled:opacity-50">
-            导入
-          </button>
-          <span x-show="result" x-text="result" x-cloak class="text-sm text-emerald-700"></span>
+          <button @click="submit()" :disabled="loading" class="btn btn-primary">导入</button>
+          <span x-show="result" x-text="result" x-cloak class="text-sm text-brand-700"></span>
         </div>
         <p x-show="error" x-text="error" x-cloak
            class="mt-2 rounded bg-red-50 px-3 py-2 text-sm text-red-600"></p>
       </div>
 
       {# 公共课程列表（状态过滤 + 审批/停用） #}
-      <div class="rounded-card border border-slate-200 bg-white p-4 shadow-card" x-data="adminCourses()" x-init="load()">
+      <div class="card p-4" x-data="adminCourses()" x-init="load()">
         <div class="flex flex-wrap items-center gap-2">
           <h2 class="text-sm font-semibold text-slate-700">公共课程空间</h2>
           <span class="text-xs text-slate-400" x-show="loaded" x-text="'共 ' + total + ' 门'"></span>
-          <select x-model="status" @change="load()"
-                  class="ml-auto rounded border border-slate-300 px-2 py-1.5 text-sm">
+          <select x-model="status" @change="load()" aria-label="按状态过滤"
+                  class="input-base ml-auto w-32">
             <option value="">全部状态</option>
             <option value="active">已开通</option>
             <option value="pending">待审批</option>
             <option value="disabled">已停用</option>
           </select>
         </div>
-        <p x-show="loading" x-cloak class="mt-3 text-sm text-slate-400">加载中…</p>
+        <div x-show="loading" x-cloak class="mt-3 space-y-2" aria-hidden="true">
+          <div class="skeleton h-8 rounded-md"></div>
+          <div class="skeleton h-8 rounded-md"></div>
+          <div class="skeleton h-8 rounded-md"></div>
+        </div>
         <p x-show="error" x-text="error" x-cloak
            class="mt-3 rounded bg-red-50 px-3 py-2 text-sm text-red-600"></p>
         <p x-show="loaded && !loading && !items.length" x-cloak class="mt-3 text-sm text-slate-400">暂无课程。</p>
@@ -98,26 +98,26 @@
                 <tr class="transition-colors hover:bg-slate-50">
                   <td class="py-2 pr-3 text-slate-400" x-text="c.id"></td>
                   <td class="py-2 pr-3">
-                    <a :href="'/courses/' + c.id" class="text-sky-600 hover:underline" x-text="c.name"></a>
+                    <a :href="'/courses/' + c.id" class="text-brand-600 hover:underline" x-text="c.name"></a>
                   </td>
                   <td class="py-2 pr-3 text-slate-500" x-text="c.major_name || '—'"></td>
                   <td class="py-2 pr-3">
-                    <span class="rounded px-2 py-0.5 text-xs"
-                          :class="{'bg-emerald-50 text-emerald-700': c.status === 'active',
-                                   'bg-amber-100 text-amber-700': c.status === 'pending',
-                                   'bg-slate-100 text-slate-500': c.status === 'disabled'}"
+                    <span class="badge"
+                          :class="{'badge-brand': c.status === 'active',
+                                   'badge-accent': c.status === 'pending',
+                                   'badge-slate': c.status === 'disabled'}"
                           x-text="statusLabel(c.status)"></span>
                   </td>
                   <td class="py-2 pr-3 text-xs text-slate-400"
-                      x-text="(c.created_at || '').slice(0, 10)"></td>
+                      x-text="ZY.relTime(c.created_at)"></td>
                   <td class="py-2">
                     <div class="flex flex-wrap gap-2">
                       <button x-show="c.status !== 'active'" @click="setStatus(c, 'active')" :disabled="loading"
-                              class="rounded bg-sky-600 px-2 py-1 text-xs text-white hover:bg-sky-700 disabled:opacity-50">
+                              class="rounded-md bg-brand-600 px-2 py-1 text-xs text-white hover:bg-brand-700 disabled:opacity-50">
                         审批通过
                       </button>
                       <button x-show="c.status !== 'disabled'" @click="setStatus(c, 'disabled')" :disabled="loading"
-                              class="rounded border border-red-300 px-2 py-1 text-xs text-red-600 hover:bg-red-50 disabled:opacity-50">
+                              class="rounded-md border border-red-300 px-2 py-1 text-xs text-red-600 hover:bg-red-50 disabled:opacity-50">
                         停用
                       </button>
                     </div>
@@ -130,27 +130,24 @@
       </div>
 
       {# 创建课程（管理员创建直接 active） #}
-      <div class="rounded-card border border-slate-200 bg-white p-4 shadow-card" x-data="createCourse()" x-init="loadMajors()">
+      <div class="card p-4" x-data="createCourse()" x-init="loadMajors()">
         <h2 class="text-sm font-semibold text-slate-700">创建课程</h2>
         <p class="mt-1 text-xs text-slate-400">管理员创建的课程直接开通（active），无需审批。</p>
         <div class="mt-3 grid gap-2 sm:grid-cols-2">
-          <input type="text" x-model="form.name" placeholder="课程名（必填）"
-                 class="rounded border border-slate-300 px-3 py-2 text-sm">
-          <select x-model="form.major_id" class="rounded border border-slate-300 px-3 py-2 text-sm">
+          <input type="text" x-model="form.name" placeholder="课程名（必填）" aria-label="课程名"
+                 class="input-base">
+          <select x-model="form.major_id" aria-label="所属专业" class="input-base">
             <option value="">选择所属专业（必填）</option>
             <template x-for="m in majors" :key="m.id">
               <option :value="m.id" x-text="m.name"></option>
             </template>
           </select>
         </div>
-        <textarea x-model="form.description" rows="2" placeholder="课程简介（选填）"
-                  class="mt-2 w-full rounded border border-slate-300 px-3 py-2 text-sm"></textarea>
+        <textarea x-model="form.description" rows="2" placeholder="课程简介（选填）" aria-label="课程简介"
+                  class="input-base mt-2"></textarea>
         <div class="mt-2 flex items-center gap-2">
-          <button @click="submit()" :disabled="loading"
-                  class="rounded bg-sky-600 px-4 py-1.5 text-sm text-white hover:bg-sky-700 disabled:opacity-50">
-            创建
-          </button>
-          <span x-show="result" x-text="result" x-cloak class="text-sm text-emerald-700"></span>
+          <button @click="submit()" :disabled="loading" class="btn btn-primary">创建</button>
+          <span x-show="result" x-text="result" x-cloak class="text-sm text-brand-700"></span>
         </div>
         <p x-show="error" x-text="error" x-cloak
            class="mt-2 rounded bg-red-50 px-3 py-2 text-sm text-red-600"></p>
@@ -159,20 +156,22 @@
 
     {# ===== 用户治理：搜索 + 角色任命 / 信用裁决 / 信用明细 ===== #}
     <div x-show="tab === 'users'" x-cloak>
-      <div class="rounded-card border border-slate-200 bg-white p-4 shadow-card" x-data="adminUsers()" x-init="load()">
+      <div class="card p-4" x-data="adminUsers()" x-init="load()">
         <div class="flex flex-wrap items-center gap-2">
           <h2 class="text-sm font-semibold text-slate-700">用户治理</h2>
           <span class="text-xs text-slate-400" x-show="loaded" x-text="'共 ' + total + ' 人'"></span>
           <div class="ml-auto flex gap-2">
             <input type="text" x-model="q" @keydown.enter="load()" placeholder="学号 / 昵称"
-                   class="rounded border border-slate-300 px-3 py-1.5 text-sm">
-            <button @click="load()" :disabled="loading"
-                    class="rounded bg-sky-600 px-3 py-1.5 text-sm text-white hover:bg-sky-700 disabled:opacity-50">
-              搜索
-            </button>
+                   aria-label="搜索用户"
+                   class="input-base w-40">
+            <button @click="load()" :disabled="loading" class="btn btn-primary">搜索</button>
           </div>
         </div>
-        <p x-show="loading" x-cloak class="mt-3 text-sm text-slate-400">加载中…</p>
+        <div x-show="loading" x-cloak class="mt-3 space-y-2" aria-hidden="true">
+          <div class="skeleton h-8 rounded-md"></div>
+          <div class="skeleton h-8 rounded-md"></div>
+          <div class="skeleton h-8 rounded-md"></div>
+        </div>
         <p x-show="error" x-text="error" x-cloak
            class="mt-3 rounded bg-red-50 px-3 py-2 text-sm text-red-600"></p>
         <p x-show="loaded && !loading && !items.length" x-cloak class="mt-3 text-sm text-slate-400">无匹配用户。</p>
@@ -196,8 +195,7 @@
                   <td class="py-2 pr-3 text-slate-500" x-text="u.student_no"></td>
                   <td class="py-2 pr-3 text-slate-700" x-text="u.nickname"></td>
                   <td class="py-2 pr-3">
-                    <span class="rounded px-2 py-0.5 text-xs"
-                          :class="u.role === 'admin' ? 'bg-amber-100 text-amber-700' : 'bg-slate-100 text-slate-500'"
+                    <span class="badge" :class="u.role === 'admin' ? 'badge-accent' : 'badge-slate'"
                           x-text="roleLabel(u.role)"></span>
                   </td>
                   <td class="py-2 pr-3 text-slate-500" x-text="'Lv' + u.level"></td>
@@ -207,53 +205,51 @@
                       x-text="u.credit"></td>
                   <td class="py-2 pr-3 text-slate-500" x-text="u.status"></td>
                   <td class="py-2">
-                    <button @click="open = !open"
-                            class="rounded border border-slate-300 px-2 py-1 text-xs text-slate-600 hover:bg-slate-50">
+                    <button @click="open = !open" :aria-expanded="open"
+                            class="rounded-md border border-slate-300 px-2 py-1 text-xs text-slate-600 hover:bg-slate-50">
                       <span x-text="open ? '收起' : '管理'"></span>
                     </button>
                   </td>
                 </tr>
                 {# 展开行：角色任命 / 信用裁决 / 信用明细 #}
-                <tr x-show="open" x-cloak>
+                <tr x-show="open" x-cloak x-transition>
                   <td colspan="8" class="bg-slate-50 px-3 py-3">
                     <p x-show="error" x-text="error" x-cloak
                        class="mb-2 rounded bg-red-50 px-3 py-2 text-sm text-red-600"></p>
                     <p x-show="msg" x-text="msg" x-cloak
-                       class="mb-2 rounded bg-emerald-50 px-3 py-2 text-sm text-emerald-700"></p>
+                       class="mb-2 rounded bg-brand-50 px-3 py-2 text-sm text-brand-700"></p>
                     <div class="grid gap-4 lg:grid-cols-2">
                       <div>
                         <p class="text-xs font-medium text-slate-500">角色任命</p>
                         <div class="mt-1 flex gap-2">
-                          <select x-model="role" class="rounded border border-slate-300 px-2 py-1.5 text-sm">
+                          <select x-model="role" aria-label="选择角色" class="input-base w-32">
                             <option value="student">学生</option>
                             <option value="reviewer">协审员</option>
                             <option value="builder">共建者</option>
                             <option value="admin">管理员</option>
                           </select>
-                          <button @click="setRole()" :disabled="loading"
-                                  class="rounded bg-sky-600 px-3 py-1.5 text-sm text-white hover:bg-sky-700 disabled:opacity-50">
-                            任命
-                          </button>
+                          <button @click="setRole()" :disabled="loading" class="btn btn-primary">任命</button>
                         </div>
                         <p class="mt-4 text-xs font-medium text-slate-500">信用裁决（±1~100，必填理由）</p>
                         <div class="mt-1 flex flex-wrap gap-2">
                           <input type="number" x-model.number="delta" min="-100" max="100" placeholder="±分值"
-                                 class="w-24 rounded border border-slate-300 px-2 py-1.5 text-sm">
-                          <input type="text" x-model="reason" placeholder="裁决理由（必填）"
-                                 class="min-w-0 flex-1 rounded border border-slate-300 px-2 py-1.5 text-sm">
-                          <button @click="submitCredit()" :disabled="loading"
-                                  class="rounded bg-sky-600 px-3 py-1.5 text-sm text-white hover:bg-sky-700 disabled:opacity-50">
-                            提交
-                          </button>
+                                 aria-label="信用分值"
+                                 class="input-base w-24">
+                          <input type="text" x-model="reason" placeholder="裁决理由（必填）" aria-label="裁决理由"
+                                 class="input-base min-w-0 flex-1">
+                          <button @click="submitCredit()" :disabled="loading" class="btn btn-primary">提交</button>
                         </div>
                       </div>
                       <div>
                         <div class="flex items-center gap-2">
                           <p class="text-xs font-medium text-slate-500">信用明细</p>
                           <button x-show="logs === null" @click="loadLogs()"
-                                  class="text-xs text-sky-600 hover:underline">加载明细</button>
+                                  class="text-xs text-brand-600 hover:underline">加载明细</button>
                         </div>
-                        <p x-show="logsLoading" x-cloak class="mt-1 text-xs text-slate-400">加载中…</p>
+                        <div x-show="logsLoading" x-cloak class="mt-1 space-y-1" aria-hidden="true">
+                          <div class="skeleton h-5 rounded-md"></div>
+                          <div class="skeleton h-5 rounded-md"></div>
+                        </div>
                         <p x-show="logs && !logs.length" x-cloak class="mt-1 text-xs text-slate-400">暂无信用记录。</p>
                         <ul x-show="logs && logs.length" x-cloak
                             class="mt-1 max-h-40 space-y-1 overflow-y-auto text-xs">
@@ -265,7 +261,7 @@
                               <span class="min-w-0 flex-1 truncate text-slate-600" x-text="log.reason"></span>
                               <span class="shrink-0 text-slate-400" x-text="log.admin_nickname"></span>
                               <span class="shrink-0 text-slate-400"
-                                    x-text="(log.created_at || '').slice(0, 16).replace('T', ' ')"></span>
+                                    x-text="ZY.relTime(log.created_at)"></span>
                             </li>
                           </template>
                         </ul>
@@ -282,10 +278,13 @@
 
     {# ===== 平台配置：生效值可编辑保存（越界 422 展示 detail） ===== #}
     <div x-show="tab === 'config'" x-cloak>
-      <div class="rounded-card border border-slate-200 bg-white p-4 shadow-card" x-data="adminConfig()" x-init="load()">
+      <div class="card p-4" x-data="adminConfig()" x-init="load()">
         <h2 class="text-sm font-semibold text-slate-700">平台配置</h2>
         <p class="mt-1 text-xs text-slate-400">仅注册键可调；修改写审计日志，即时生效。</p>
-        <p x-show="loading" x-cloak class="mt-3 text-sm text-slate-400">加载中…</p>
+        <div x-show="loading" x-cloak class="mt-3 space-y-2" aria-hidden="true">
+          <div class="skeleton h-8 rounded-md"></div>
+          <div class="skeleton h-8 rounded-md"></div>
+        </div>
         <p x-show="error" x-text="error" x-cloak
            class="mt-3 rounded bg-red-50 px-3 py-2 text-sm text-red-600"></p>
         <p x-show="!loading && !error && !items.length" x-cloak class="mt-3 text-sm text-slate-400">
@@ -312,30 +311,30 @@
                   <td class="py-2 pr-3">
                     <input type="number" x-model.number="drafts[item.key]"
                            :min="item.min_value" :max="item.max_value"
-                           class="w-24 rounded border border-slate-300 px-2 py-1 text-sm">
+                           :aria-label="item.key + ' 生效值'"
+                           class="input-base w-24">
                     <p class="mt-0.5 text-[10px] text-slate-400"
                        x-text="'范围 ' + item.min_value + ' ~ ' + item.max_value"></p>
                   </td>
                   <td class="py-2 pr-3 text-slate-500" x-text="item.default"></td>
                   <td class="py-2 pr-3">
-                    <span class="rounded px-2 py-0.5 text-xs"
-                          :class="item.overridden ? 'bg-amber-100 text-amber-700' : 'bg-slate-100 text-slate-500'"
+                    <span class="badge" :class="item.overridden ? 'badge-accent' : 'badge-slate'"
                           x-text="item.overridden ? '是' : '否'"></span>
                   </td>
                   <td class="py-2 pr-3 text-xs text-slate-400">
                     <span x-text="item.updated_by || '—'"></span>
                     <span x-show="item.updated_at"
-                          x-text="' · ' + (item.updated_at || '').slice(0, 16).replace('T', ' ')"></span>
+                          x-text="' · ' + ZY.relTime(item.updated_at)"></span>
                   </td>
                   <td class="py-2">
                     <button @click="save(item)" :disabled="loading"
-                            class="rounded bg-sky-600 px-2 py-1 text-xs text-white hover:bg-sky-700 disabled:opacity-50">
+                            class="rounded-md bg-brand-600 px-2 py-1 text-xs text-white hover:bg-brand-700 disabled:opacity-50">
                       保存
                     </button>
                     <p x-show="rowErrors[item.key]" x-text="rowErrors[item.key]" x-cloak
                        class="mt-1 max-w-48 text-xs text-red-600"></p>
                     <p x-show="rowMsgs[item.key]" x-text="rowMsgs[item.key]" x-cloak
-                       class="mt-1 text-xs text-emerald-700"></p>
+                       class="mt-1 text-xs text-brand-700"></p>
                   </td>
                 </tr>
               </template>
@@ -347,12 +346,12 @@
 
     {# ===== 举报处理（v0.8）：状态过滤 + 处理流转（open→processing→resolved/dismissed） ===== #}
     <div x-show="tab === 'reports'" x-cloak>
-      <div class="rounded-card border border-slate-200 bg-white p-4 shadow-card" x-data="adminReports()" x-init="load(1)">
+      <div class="card p-4" x-data="adminReports()" x-init="load(1)">
         <div class="flex flex-wrap items-center gap-2">
           <h2 class="text-sm font-semibold text-slate-700">举报处理</h2>
           <span class="text-xs text-slate-400" x-show="loaded" x-text="'共 ' + total + ' 条'"></span>
-          <select x-model="status" @change="load(1)"
-                  class="ml-auto rounded border border-slate-300 px-2 py-1.5 text-sm">
+          <select x-model="status" @change="load(1)" aria-label="按状态过滤"
+                  class="input-base ml-auto w-32">
             <option value="">全部状态</option>
             <option value="open">待处理</option>
             <option value="processing">处理中</option>
@@ -360,11 +359,15 @@
             <option value="dismissed">已驳回</option>
           </select>
         </div>
-        <p x-show="loading" x-cloak class="mt-3 text-sm text-slate-400">加载中…</p>
+        <div x-show="loading" x-cloak class="mt-3 space-y-2" aria-hidden="true">
+          <div class="skeleton h-8 rounded-md"></div>
+          <div class="skeleton h-8 rounded-md"></div>
+          <div class="skeleton h-8 rounded-md"></div>
+        </div>
         <p x-show="error" x-text="error" x-cloak
            class="mt-3 rounded bg-red-50 px-3 py-2 text-sm text-red-600"></p>
         <p x-show="msg" x-text="msg" x-cloak
-           class="mt-3 rounded bg-emerald-50 px-3 py-2 text-sm text-emerald-700"></p>
+           class="mt-3 rounded bg-brand-50 px-3 py-2 text-sm text-brand-700"></p>
         <p x-show="loaded && !loading && !items.length" x-cloak class="mt-3 text-sm text-slate-400">暂无举报。</p>
         <div x-show="items.length" x-cloak class="mt-3 overflow-x-auto">
           <table class="w-full text-sm">
@@ -384,11 +387,10 @@
                 <tr class="transition-colors hover:bg-slate-50">
                   <td class="py-2 pr-3 text-slate-700" x-text="r.reporter ? r.reporter.nickname : '—'"></td>
                   <td class="py-2 pr-3">
-                    <span class="rounded bg-slate-100 px-1.5 py-0.5 text-xs text-slate-500"
-                          x-text="targetLabel(r.target_type)"></span>
+                    <span class="badge badge-slate" x-text="targetLabel(r.target_type)"></span>
                     {# 资源/帖子可跳转详情；评论无法定位、用户无公开主页，仅显示摘要文本 #}
                     <template x-if="targetLink(r)">
-                      <a :href="targetLink(r)" class="ml-1 text-sky-600 hover:underline"
+                      <a :href="targetLink(r)" class="ml-1 text-brand-600 hover:underline"
                          x-text="r.target_summary || ('#' + r.target_id)"></a>
                     </template>
                     <template x-if="!targetLink(r)">
@@ -398,31 +400,31 @@
                   <td class="max-w-48 truncate py-2 pr-3 text-slate-600" :title="r.reason"
                       x-text="r.reason"></td>
                   <td class="py-2 pr-3">
-                    <span class="rounded px-2 py-0.5 text-xs"
-                          :class="{'bg-amber-100 text-amber-700': r.status === 'open',
-                                   'bg-sky-50 text-sky-700': r.status === 'processing',
-                                   'bg-emerald-50 text-emerald-700': r.status === 'resolved',
-                                   'bg-slate-100 text-slate-500': r.status === 'dismissed'}"
+                    <span class="badge"
+                          :class="{'badge-accent': r.status === 'open',
+                                   'badge-slate': r.status === 'processing',
+                                   'badge-brand': r.status === 'resolved',
+                                   'badge-slate': r.status === 'dismissed'}"
                           x-text="statusLabel(r.status)"></span>
                   </td>
                   <td class="py-2 pr-3 text-slate-500"
                       x-text="r.handler ? r.handler.nickname : '—'"></td>
                   <td class="py-2 pr-3 text-xs text-slate-400"
-                      x-text="(r.created_at || '').slice(0, 16).replace('T', ' ')"></td>
+                      x-text="ZY.relTime(r.created_at)"></td>
                   <td class="py-2">
                     <div class="flex flex-wrap gap-2">
                       <button x-show="r.status === 'open'" @click="handle(r, 'processing')" :disabled="loading"
-                              class="rounded border border-slate-300 px-2 py-1 text-xs text-slate-600 hover:bg-slate-50 disabled:opacity-50">
+                              class="rounded-md border border-slate-300 px-2 py-1 text-xs text-slate-600 hover:bg-slate-50 disabled:opacity-50">
                         开始处理
                       </button>
                       <button x-show="r.status === 'open' || r.status === 'processing'"
                               @click="handle(r, 'resolve')" :disabled="loading"
-                              class="rounded bg-emerald-600 px-2 py-1 text-xs text-white hover:bg-emerald-700 disabled:opacity-50">
+                              class="rounded-md bg-emerald-600 px-2 py-1 text-xs text-white hover:bg-emerald-700 disabled:opacity-50">
                         解决
                       </button>
                       <button x-show="r.status === 'open' || r.status === 'processing'"
                               @click="handle(r, 'dismiss')" :disabled="loading"
-                              class="rounded border border-red-300 px-2 py-1 text-xs text-red-600 hover:bg-red-50 disabled:opacity-50">
+                              class="rounded-md border border-red-300 px-2 py-1 text-xs text-red-600 hover:bg-red-50 disabled:opacity-50">
                         驳回
                       </button>
                       <span x-show="r.status === 'resolved' || r.status === 'dismissed'"
@@ -436,10 +438,10 @@
         </div>
         <div x-show="total > size" x-cloak class="mt-3 flex items-center justify-center gap-2 text-sm">
           <button @click="load(page - 1)" :disabled="loading || page <= 1"
-                  class="rounded-md border border-slate-300 px-3 py-1.5 text-slate-600 hover:bg-slate-100 disabled:opacity-50">上一页</button>
+                  class="btn btn-ghost">上一页</button>
           <span class="px-2 text-slate-400" x-text="page + ' / ' + Math.max(1, Math.ceil(total / size))"></span>
           <button @click="load(page + 1)" :disabled="loading || page * size >= total"
-                  class="rounded-md border border-slate-300 px-3 py-1.5 text-slate-600 hover:bg-slate-100 disabled:opacity-50">下一页</button>
+                  class="btn btn-ghost">下一页</button>
         </div>
       </div>
     </div>
@@ -448,10 +450,14 @@
     {# ECharts 5 本地化：与 base.html 其余依赖同置于 static/vendor #}
     <script src="/static/vendor/echarts-5.6.0.min.js"></script>
     <div x-show="tab === 'dashboard'" x-cloak>
-      <div class="rounded-card border border-slate-200 bg-white p-4 shadow-card" x-data="adminDashboard()"
+      <div class="card p-4" x-data="adminDashboard()"
            @admin:dashboard.window="onShow()">
         <h2 class="text-sm font-semibold text-slate-700">运营看板</h2>
-        <p x-show="loading" x-cloak class="mt-3 text-sm text-slate-400">加载中…</p>
+        <div x-show="loading" x-cloak class="mt-3 grid gap-3 sm:grid-cols-3" aria-hidden="true">
+          <div class="skeleton h-24 rounded-card"></div>
+          <div class="skeleton h-24 rounded-card"></div>
+          <div class="skeleton h-24 rounded-card"></div>
+        </div>
         <p x-show="error" x-text="error" x-cloak
            class="mt-3 rounded bg-red-50 px-3 py-2 text-sm text-red-600"></p>
         <template x-if="data">
@@ -495,7 +501,7 @@
               </div>
             </div>
             {# 近 7 天趋势：问答 / 发帖 / 上传 三条折线 #}
-            <div class="rounded-card border border-slate-200 bg-white p-3 shadow-card">
+            <div class="card p-3">
               <h3 class="text-xs font-medium text-slate-500">近 7 天趋势</h3>
               <div x-ref="trendChart" class="mt-2 h-64 w-full"></div>
             </div>

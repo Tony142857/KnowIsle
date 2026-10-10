@@ -1,12 +1,110 @@
 /* 知屿自定义样式（Tailwind 原子类之外的少量补充）。
-   v1.0 拍板：保留 Tailwind Play CDN（本地化 vendor 版）+ tailwind-config.js 设计令牌，
-   不引入 CLI 构建链（演示项目无构建步骤，记录在案）。 */
+   v1.1 拍板：保留 Tailwind Play CDN（本地化 vendor 版）+ tailwind-config.js 设计令牌 v2
+   （翡翠绿·海岛），不引入 CLI 构建链（演示项目无构建步骤，记录在案）。 */
+
+/* ===== 公共组件类（供后续批次页面复用，避免各处重复原子类组合） ===== */
+
+/* 按钮：.btn 基座 + .btn-primary / .btn-secondary / .btn-ghost / .btn-danger 变体 */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.375rem;
+  border-radius: 0.5rem;
+  padding: 0.5rem 1rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+  line-height: 1.25rem;
+  cursor: pointer;
+  transition: background-color 0.2s cubic-bezier(0.22, 1, 0.36, 1),
+    border-color 0.2s cubic-bezier(0.22, 1, 0.36, 1),
+    color 0.2s cubic-bezier(0.22, 1, 0.36, 1),
+    box-shadow 0.2s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.btn-primary {
+  background: #059669; /* brand-600 */
+  color: #fff;
+  box-shadow: 0 1px 2px 0 rgb(2 44 34 / 0.08);
+}
+.btn-primary:hover:not(:disabled) { background: #047857; } /* brand-700 */
+.btn-secondary {
+  background: #d1fae5; /* brand-100 */
+  color: #065f46; /* brand-800 */
+}
+.btn-secondary:hover:not(:disabled) { background: #a7f3d0; } /* brand-200 */
+.btn-ghost {
+  background: transparent;
+  color: #475569; /* slate-600 */
+  border: 1px solid #e2e8f0; /* slate-200 */
+}
+.btn-ghost:hover:not(:disabled) {
+  border-color: #6ee7b7; /* brand-300 */
+  color: #047857; /* brand-700 */
+  background: rgb(236 253 245 / 0.6); /* brand-50/60 */
+}
+.btn-danger {
+  background: #dc2626; /* red-600 */
+  color: #fff;
+}
+.btn-danger:hover:not(:disabled) { background: #b91c1c; } /* red-700 */
+
+/* 徽章：.badge 基座 + .badge-brand / .badge-accent / .badge-slate 变体 */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  border-radius: 9999px;
+  padding: 0.125rem 0.5rem;
+  font-size: 0.75rem;
+  line-height: 1.25rem;
+  font-weight: 500;
+}
+.badge-brand { background: #d1fae5; color: #065f46; } /* brand-100 / brand-800 */
+.badge-accent { background: #faf0cd; color: #86431f; } /* accent-100 / accent-800（精华/悬赏） */
+.badge-slate { background: #f1f5f9; color: #475569; } /* slate-100 / slate-600 */
+
+/* 卡片：白底 + 统一圆角 + 静态阴影（配合 .card-hover 悬浮抬升） */
+.card {
+  background: #fff;
+  border: 1px solid #e2e8f0; /* slate-200 */
+  border-radius: 0.75rem; /* rounded-card */
+  box-shadow: 0 1px 2px 0 rgb(2 44 34 / 0.06); /* shadow-card */
+}
+
+/* 表单输入统一样式（focus 走品牌色，配合全局 :focus-visible 焦点环） */
+.input-base {
+  width: 100%;
+  border-radius: 0.5rem;
+  border: 1px solid #cbd5e1; /* slate-300 */
+  padding: 0.625rem 0.75rem;
+  font-size: 0.875rem;
+  transition: border-color 0.2s cubic-bezier(0.22, 1, 0.36, 1),
+    box-shadow 0.2s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.input-base:focus {
+  border-color: #34d399; /* brand-400 */
+  outline: none;
+  box-shadow: 0 0 0 3px rgb(16 185 129 / 0.15); /* brand-500/15 */
+}
+.input-base:disabled { background: #f8fafc; } /* slate-50 */
+
+/* 空状态容器：虚线框 + 居中，内部放图标 + 文案 + 引导 CTA */
+.empty-state {
+  border: 1px dashed #cbd5e1; /* slate-300 */
+  border-radius: 0.5rem;
+  padding: 2rem 1rem;
+  text-align: center;
+}
 
 /* 骨架屏 shimmer：配合 animate-shimmer 的渐变扫光（设计令牌 keyframes 驱动） */
 .skeleton {
   position: relative;
   overflow: hidden;
-  background: #f1f5f9; /* slate-100 */
+  background: #e9f6ef; /* slate-100 与 brand-50 的调和色 */
 }
 .skeleton::after {
   content: "";
@@ -19,10 +117,14 @@
 
 /* 卡片悬浮统一语义：静态 shadow-card，hover 抬升为 shadow-lift */
 .card-hover {
-  transition: box-shadow 0.2s ease, transform 0.2s ease, border-color 0.2s ease;
+  transition: box-shadow 0.2s cubic-bezier(0.22, 1, 0.36, 1),
+    transform 0.2s cubic-bezier(0.22, 1, 0.36, 1),
+    border-color 0.2s cubic-bezier(0.22, 1, 0.36, 1);
 }
 .card-hover:hover {
   transform: translateY(-2px);
+  box-shadow: 0 10px 28px -8px rgb(5 150 105 / 0.18), 0 2px 8px -2px rgb(2 44 34 / 0.08);
+  border-color: #a7f3d0; /* brand-200 */
 }
 
 /* AI 问答「正在输入」三点指示器（配合 animate-pulse-dot，模板内三个 span 延迟错开） */
@@ -31,7 +133,7 @@
   width: 6px;
   height: 6px;
   border-radius: 9999px;
-  background: #94a3b8; /* slate-400 */
+  background: #10b981; /* brand-500 */
 }
 
 /* 动画关键帧统一定义在 CSS（Play CDN 按需生成不可靠，令牌 animation 仅引用此处名字） */
@@ -39,12 +141,37 @@
   from { opacity: 0; transform: translateY(8px); }
   to { opacity: 1; transform: translateY(0); }
 }
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes scale-in {
+  from { opacity: 0; transform: scale(0.96); }
+  to { opacity: 1; transform: scale(1); }
+}
 @keyframes shimmer {
   100% { transform: translateX(100%); }
 }
 @keyframes pulse-dot {
   0%, 80%, 100% { opacity: 0.25; transform: scale(0.85); }
   40% { opacity: 1; transform: scale(1); }
+}
+/* Hero 装饰缓浮动（首页 / 404 岛屿插画用） */
+@keyframes float-soft {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-6px); }
+}
+
+/* 尊重系统减少动态偏好：禁用非必要动画与过渡（滚动计数等 JS 动效另行降级） */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }
 
 /* 系统字体栈：优先各平台中文渲染效果最好的系统字体 */
@@ -58,16 +185,16 @@ body {
   display: none !important;
 }
 
-/* 键盘导航焦点环：主色 sky-600，鼠标点击不触发 */
+/* 键盘导航焦点环：品牌色 brand-600，鼠标点击不触发 */
 :focus-visible {
-  outline: 2px solid #0284c7;
+  outline: 2px solid #059669;
   outline-offset: 2px;
 }
 
-/* 细滚动条美化（WebKit + Firefox） */
+/* 细滚动条美化（WebKit + Firefox，随新色板微调） */
 * {
   scrollbar-width: thin;
-  scrollbar-color: #cbd5e1 transparent;
+  scrollbar-color: #a7f3d0 transparent; /* brand-200 */
 }
 ::-webkit-scrollbar {
   width: 8px;
@@ -77,11 +204,11 @@ body {
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: #cbd5e1;
+  background: #a7f3d0;
   border-radius: 4px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #94a3b8;
+  background: #6ee7b7; /* brand-300 */
 }
 
 /* 打印：隐藏导航 / 提示条 / 页脚，仅输出正文 */
@@ -130,15 +257,15 @@ body {
 .md-body li > ul,
 .md-body li > ol { margin: 0.25em 0; }
 .md-body a {
-  color: #0369a1; /* sky-700 */
+  color: #047857; /* brand-700 */
   text-decoration: underline;
   text-underline-offset: 2px;
 }
-.md-body a:hover { color: #075985; } /* sky-800 */
+.md-body a:hover { color: #065f46; } /* brand-800 */
 .md-body blockquote {
   margin: 0.75em 0;
   padding: 0.25em 0 0.25em 0.75em;
-  border-left: 3px solid #cbd5e1; /* slate-300 */
+  border-left: 3px solid #a7f3d0; /* brand-200 */
   color: #64748b; /* slate-500 */
 }
 .md-body code {

@@ -2,6 +2,7 @@
  * 响应分组返回：{posts: {total, items: [...]}, resources: {total, items: [...]}}
  * 原 search.html 内联脚本外置（CSP 兼容）；查询条件由模板经 #page-data
  * （type=application/json 惰性数据块）注入，不再内联 Jinja 到脚本里。
+ * v1.1：请求统一 ZY.api（消灭裸 fetch）；结果时间统一 ZY.relTime 相对格式。
  *
  * 加载时序：与 pages/login.js 相同——非 defer 在 head 解析期执行，早于 Alpine 启动。
  */
@@ -26,6 +27,9 @@ document.addEventListener('alpine:init', function () {
       boardLabel(b) {
         return {qa: '知屿问答', discuss: '讨论区', experience: '经验长廊', bounty: '资料求援'}[b] || b;
       },
+      relTime(iso) {
+        return window.ZY && ZY.relTime ? ZY.relTime(iso) : (iso || '').slice(0, 10);
+      },
       get hasMore() {
         return this.posts.length < this.postsTotal || this.resources.length < this.resourcesTotal;
       },
@@ -40,9 +44,7 @@ document.addEventListener('alpine:init', function () {
       // 课程下拉选项（GET /api/courses 公共课程列表）；失败静默降级为「全部课程」
       async loadCourses() {
         try {
-          const resp = await fetch('/api/courses?size=100');
-          const data = await resp.json().catch(() => ({}));
-          if (!resp.ok) return;
+          const data = await ZY.api.get('/api/courses?size=100');
           this.courseOptions = data.items || [];
         } catch (e) { /* 课程下拉加载失败不阻塞搜索 */ }
       },
@@ -53,9 +55,7 @@ document.addEventListener('alpine:init', function () {
       async load(page) {
         this.loading = true; this.error = '';
         try {
-          const resp = await fetch(this.buildUrl(page));
-          const data = await resp.json().catch(() => ({}));
-          if (!resp.ok) throw new Error(data.detail || ('搜索失败 ' + resp.status));
+          const data = await ZY.api.get(this.buildUrl(page));
           const posts = data.posts || {};
           const resources = data.resources || {};
           if (page === 1) {

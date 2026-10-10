@@ -15,6 +15,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import any_, func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.embeddings import get_embedding
@@ -55,6 +56,7 @@ def _resource_item(resource: Resource, file_type: str, nickname: str) -> dict:
         "download_count": resource.download_count,
         "fav_count": resource.fav_count,
         "download_cost": resource.download_cost,
+        "approved_at": resource.approved_at,  # §20.5 B3：上架时间（存量数据为 None）
         "created_at": resource.created_at,
     }
 
@@ -280,6 +282,11 @@ async def download_resource(
             logger.warning(
                 "免费下载奖励跳过（Redis 不可用）resource_id=%s", resource.id, exc_info=True
             )
+    # §20.5 B1：下载计数加行锁串行化并发自增；锁序与上方扣分一致（users 行 → resources 行），
+    # populate_existing 强制发出 SELECT ... FOR UPDATE（不命中身份映射缓存）
+    resource = await db.get(
+        Resource, resource_id, with_for_update=True, populate_existing=True
+    )
     resource.download_count += 1
     await db.commit()
     doc = await db.get(Document, resource.document_id)
@@ -323,6 +330,22 @@ async def rate_resource(
                 user_id=user.id, resource_id=resource.id, stars=payload.stars
             )
         )
+        try:
+            await db.flush()
+        except IntegrityError:
+            # §20.5 B1：并发首评撞 (user_id, resource_id) 唯一约束 → rollback 后
+            # 走 update 路径（幂等覆盖语义），不出 500
+            await db.rollback()
+            existing = (
+                await db.execute(
+                    select(ResourceRating).where(
+                        ResourceRating.resource_id == resource_id,
+                        ResourceRating.user_id == user.id,
+                    )
+                )
+            ).scalar_one()
+            existing.stars = payload.stars
+            resource = await db.get(Resource, resource_id)  # rollback 后重取，避免过期属性
     else:
         existing.stars = payload.stars
     await db.flush()
@@ -505,8 +528,9 @@ async def clone_resource(
         db.add_all(Chunk(**d) for d in derived)
     await db.commit()
     if derived:
-        # 克隆 chunks 已落库：失效目标个人课程 BM25 语料缓存（v0.9）
-        invalidate_bm25(course.id, "personal", user.id)
+        # 克隆 chunks 已落库：失效目标个人课程 BM25 语料缓存（v0.9；
+        # v1.1 起含 Redis 版本戳跨进程失效，§20.5 B2）
+        await invalidate_bm25(course.id, "personal", user.id)
     return JSONResponse(
         {"document_id": new_doc.id, "course_id": course.id, "cloned": True},
         status_code=201,

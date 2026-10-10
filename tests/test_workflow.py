@@ -326,7 +326,11 @@ def _patch_external(monkeypatch):
     bm25_calls: list[tuple] = []
     monkeypatch.setattr(workflow, "get_embedding", lambda: embedding)
     monkeypatch.setattr(workflow, "get_vector_store", lambda: store)
-    monkeypatch.setattr(workflow, "invalidate_bm25", lambda *a: bm25_calls.append(a))
+
+    async def _invalidate_bm25(*args):  # §20.5 B2：失效改异步（Redis 版本戳）
+        bm25_calls.append(args)
+
+    monkeypatch.setattr(workflow, "invalidate_bm25", _invalidate_bm25)
     monkeypatch.setattr(growth, "get_redis", lambda: redis)
     return embedding, store, redis, bm25_calls
 
@@ -639,8 +643,9 @@ async def test_final_verdict_approve_derives_public_copy(monkeypatch):
     )
     assert score == SCORE_UPLOAD_APPROVED and new_doc_id is not None
 
-    # 状态机终结
+    # 状态机终结（§20.5 B3：终审通过回填上架时间 approved_at）
     assert resource.review_status == "approved"
+    assert resource.approved_at is not None
     assert task.stage == "done" and task.finished_at is not None
 
     # 派生文档：复用对象存储原件，scope/status 切换，个人库原件不动
@@ -745,6 +750,7 @@ async def test_direct_verdict_approve_from_co_review(monkeypatch):
     )
     assert score == SCORE_UPLOAD_APPROVED and new_doc_id is not None
     assert task.stage == "done" and resource.review_status == "approved"
+    assert resource.approved_at is not None  # §20.5 B3：直审复用终审路径同样回填上架时间
     (record,) = [o for o in session.added if isinstance(o, ReviewRecord)]
     assert record.stage == "final"  # 终审记录由 final_verdict 写入，不重复插
 

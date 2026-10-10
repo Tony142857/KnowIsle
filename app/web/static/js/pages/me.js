@@ -1,6 +1,8 @@
-/* 个人中心页交互（me.html，v1.0 CSP 外置）。
+/* 个人中心页交互（me.html，v1.1 CSP 外置）。
  * mePage —— 成长看板 / AI 额度 / 自定义 Key / 通知 / 收藏 / 关注 六个区块的统一数据源。
- * 注意：本文件须在 Alpine 启动前执行（模板 head 块内同步加载，勿加 defer）。 */
+ * 注意：本文件须在 Alpine 启动前执行（模板 head 块内同步加载，勿加 defer）。
+ * v1.1：删除私有 api() 封装，统一走 ZY.api；列表时间统一 ZY.relTime（模板侧）；
+ * 兑换/保存 Key/删除 Key/取消收藏/取消关注成功均给 ZY.toast 反馈。 */
 (function () {
   'use strict';
 
@@ -41,17 +43,10 @@
         this.loadFavs(); this.loadFollows();
       },
 
-      async api(url, options) {
-        const resp = await fetch(url, options);
-        const data = resp.status === 204 ? {} : await resp.json().catch(() => ({}));
-        if (!resp.ok && resp.status !== 204) throw new Error(data.detail || ('请求失败 ' + resp.status));
-        return data;
-      },
-
       async loadLogs() {
         this.logsLoading = true; this.logsError = '';
         try {
-          const data = await this.api('/api/users/me/score-logs?page=1&size=20');
+          const data = await ZY.api.get('/api/users/me/score-logs?page=1&size=20');
           this.logs = data.items || [];
           this.logsLoaded = true;
         } catch (e) { this.logsError = e.message; }
@@ -61,7 +56,7 @@
       async loadQuota() {
         this.quotaError = '';
         try {
-          this.quota = await this.api('/api/users/me/quota');
+          this.quota = await ZY.api.get('/api/users/me/quota');
         } catch (e) { this.quotaError = e.message; }
       },
 
@@ -69,11 +64,9 @@
         if (!(this.exchangeCount >= 1)) { this.quotaError = '兑换次数须 ≥ 1'; return; }
         this.loading = true; this.quotaError = ''; this.exchangeMsg = '';
         try {
-          const data = await this.api('/api/users/me/quota/exchange', {
-            method: 'POST', headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({count: this.exchangeCount}),
-          });
+          const data = await ZY.api.post('/api/users/me/quota/exchange', {count: this.exchangeCount});
           this.exchangeMsg = '兑换成功：+' + (data.bonus_balance - (this.quota ? this.quota.bonus_balance : 0)) + ' 次额度';
+          ZY.toast('兑换成功', 'success');
           await this.loadQuota();
         } catch (e) { this.quotaError = e.message; }
         finally { this.loading = false; }
@@ -82,7 +75,7 @@
       async loadKey() {
         this.keyError = '';
         try {
-          this.keyInfo = await this.api('/api/users/me/llm-key');
+          this.keyInfo = await ZY.api.get('/api/users/me/llm-key');
         } catch (e) { this.keyError = e.message; }
       },
 
@@ -102,18 +95,16 @@
         if (!this.keyForm.api_key.trim()) { this.keyError = '请填写 API Key'; return; }
         this.loading = true;
         try {
-          await this.api('/api/users/me/llm-key', {
-            method: 'PUT', headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({
-              base_url: this.keyForm.base_url.trim(),
-              api_key: this.keyForm.api_key.trim(),
-              model_short: this.keyForm.model_short.trim() || null,
-              model_medium: this.keyForm.model_medium.trim() || null,
-              model_long: this.keyForm.model_long.trim() || null,
-            }),
+          await ZY.api.put('/api/users/me/llm-key', {
+            base_url: this.keyForm.base_url.trim(),
+            api_key: this.keyForm.api_key.trim(),
+            model_short: this.keyForm.model_short.trim() || null,
+            model_medium: this.keyForm.model_medium.trim() || null,
+            model_long: this.keyForm.model_long.trim() || null,
           });
           this.keyEditing = false;
           this.keyForm.api_key = '';
+          ZY.toast('Key 已保存', 'success');
           await this.loadKey();
           await this.loadQuota();
         } catch (e) { this.keyError = e.message; }
@@ -133,8 +124,9 @@
       async doDeleteKey() {
         this.loading = true; this.keyError = '';
         try {
-          await this.api('/api/users/me/llm-key', {method: 'DELETE'});
+          await ZY.api.del('/api/users/me/llm-key');
           this.keyEditing = false;
+          ZY.toast('已删除自定义 Key', 'success');
           await this.loadKey();
           await this.loadQuota();
         } catch (e) { this.keyError = e.message; }
@@ -144,7 +136,7 @@
       async loadNotifs() {
         this.notifsLoading = true; this.notifsError = '';
         try {
-          const data = await this.api('/api/notifications?page=1&size=20');
+          const data = await ZY.api.get('/api/notifications?page=1&size=20');
           this.notifs = data.items || [];
           this.notifsLoaded = true;
         } catch (e) { this.notifsError = e.message; }
@@ -154,10 +146,9 @@
       async markAllRead() {
         this.loading = true;
         try {
-          await this.api('/api/notifications/read', {
-            method: 'POST', headers: {'Content-Type': 'application/json'}, body: '{}',
-          });
+          await ZY.api.post('/api/notifications/read', {});
           for (const n of this.notifs) n.is_read = true;
+          ZY.toast('已全部标记为已读', 'success');
         } catch (e) { this.notifsError = e.message; }
         finally { this.loading = false; }
       },
@@ -165,10 +156,7 @@
       async openNotif(n) {
         if (!n.is_read) {
           try {
-            await this.api('/api/notifications/read', {
-              method: 'POST', headers: {'Content-Type': 'application/json'},
-              body: JSON.stringify({ids: [n.id]}),
-            });
+            await ZY.api.post('/api/notifications/read', {ids: [n.id]});
             n.is_read = true;
           } catch (e) { /* 已读标记失败不阻塞跳转 */ }
         }
@@ -178,7 +166,7 @@
       async loadFavs() {
         this.favsLoading = true; this.favsError = '';
         try {
-          const data = await this.api('/api/favorites?page=1&size=50');
+          const data = await ZY.api.get('/api/favorites?page=1&size=50');
           this.favs = data.items || [];
           this.favsLoaded = true;
         } catch (e) { this.favsError = e.message; }
@@ -188,11 +176,9 @@
       async unfavorite(f) {
         this.loading = true; this.favsError = '';
         try {
-          await this.api('/api/favorites', {
-            method: 'DELETE', headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({target_type: f.target_type, target_id: f.target_id}),
-          });
+          await ZY.api.del('/api/favorites', {target_type: f.target_type, target_id: f.target_id});
           this.favs = this.favs.filter(x => x !== f);
+          ZY.toast('已取消收藏', 'success');
         } catch (e) { this.favsError = e.message; }
         finally { this.loading = false; }
       },
@@ -200,7 +186,7 @@
       async loadFollows() {
         this.followsLoading = true; this.followsError = '';
         try {
-          const data = await this.api('/api/follows?page=1&size=50');
+          const data = await ZY.api.get('/api/follows?page=1&size=50');
           this.follows = data.items || [];
           this.followsLoaded = true;
         } catch (e) { this.followsError = e.message; }
@@ -210,11 +196,9 @@
       async unfollow(f) {
         this.loading = true; this.followsError = '';
         try {
-          await this.api('/api/follows', {
-            method: 'DELETE', headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({target_type: f.target_type, target_id: f.target_id}),
-          });
+          await ZY.api.del('/api/follows', {target_type: f.target_type, target_id: f.target_id});
           this.follows = this.follows.filter(x => x !== f);
+          ZY.toast('已取消关注', 'success');
         } catch (e) { this.followsError = e.message; }
         finally { this.loading = false; }
       },

@@ -12,12 +12,12 @@
 
   <div class="grid gap-6 lg:grid-cols-2">
     {# ===== 成长看板卡（SSR 注入等级进度，积分明细 fetch 渲染） ===== #}
-    <div class="rounded-card border border-slate-200 bg-white p-4 shadow-card sm:p-6 lg:col-span-2">
+    <div class="card p-4 sm:p-6 lg:col-span-2">
       <div class="flex flex-wrap items-center gap-4">
         {% if user.avatar_url %}
-        <img src="{{ user.avatar_url }}" alt="" class="w-14 h-14 rounded-full object-cover">
+        <img src="{{ user.avatar_url }}" alt="" class="w-14 h-14 rounded-full object-cover ring-2 ring-brand-100">
         {% else %}
-        <span class="w-14 h-14 rounded-full bg-brand-100 text-brand-700 flex items-center justify-center text-xl font-medium">
+        <span class="w-14 h-14 rounded-full bg-brand-100 text-brand-700 flex items-center justify-center text-xl font-medium ring-2 ring-brand-100">
           {{ user.nickname[:1] }}
         </span>
         {% endif %}
@@ -26,7 +26,7 @@
             {{ user.nickname }}
             <span class="rounded bg-brand-600 px-2 py-0.5 text-xs text-white">Lv{{ growth.level }}</span>
             {% if user.role == 'admin' %}
-            <span class="rounded bg-amber-100 px-1.5 py-0.5 text-[10px] text-amber-700">管理员</span>
+            <span class="badge badge-accent">管理员</span>
             {% endif %}
           </p>
           <p class="mt-0.5 text-sm text-slate-500">
@@ -61,15 +61,17 @@
       </div>
       {% endif %}
 
-      {# 等级进度条 #}
+      {# 等级进度条（Alpine 挂载后从 0 动画到目标宽度；reduced-motion 由全局规则兜底） #}
       <div class="mt-4">
         {% if growth.next_threshold is not none %}
         <div class="flex justify-between text-xs text-slate-400">
           <span>Lv{{ growth.level }}</span>
           <span>距 Lv{{ growth.level + 1 }} 还差 {{ growth.remaining }} 分（{{ growth.next_threshold }} 分升级）</span>
         </div>
-        <div class="mt-1 h-2 overflow-hidden rounded-full bg-slate-100">
-          <div class="h-full rounded-full bg-brand-500 transition-all" style="width: {{ growth.progress }}%"></div>
+        <div class="mt-1 h-2 overflow-hidden rounded-full bg-slate-100"
+             x-data="{w: 0}" x-init="$nextTick(() => { w = {{ growth.progress }} })">
+          <div class="h-full rounded-full bg-brand-500 transition-all duration-700 ease-island"
+               :style="'width: ' + w + '%'"></div>
         </div>
         {% else %}
         <p class="text-xs text-slate-400">已达最高等级 Lv{{ growth.level }} 🎉</p>
@@ -79,7 +81,11 @@
       {# 积分明细（近 20 条，fetch 渲染，delta 正负着色） #}
       <div class="mt-6 border-t border-slate-100 pt-4">
         <h2 class="text-sm font-semibold text-slate-700">积分明细</h2>
-        <p x-show="logsLoading" x-cloak class="mt-3 text-sm text-slate-400">加载中…</p>
+        <div x-show="logsLoading" x-cloak class="mt-3 space-y-2" aria-hidden="true">
+          <div class="skeleton h-8 rounded-md"></div>
+          <div class="skeleton h-8 rounded-md"></div>
+          <div class="skeleton h-8 rounded-md"></div>
+        </div>
         <p x-show="logsError" x-text="logsError" x-cloak
            class="mt-3 rounded bg-red-50 px-3 py-2 text-sm text-red-600"></p>
         <p x-show="logsLoaded && !logs.length" x-cloak class="mt-3 text-sm text-slate-400">
@@ -94,7 +100,7 @@
               <span class="min-w-0 flex-1 truncate text-slate-600"
                     x-text="reasonLabel(log.reason)"></span>
               <span class="shrink-0 text-xs text-slate-400"
-                    x-text="(log.created_at || '').slice(0, 16).replace('T', ' ')"></span>
+                    x-text="ZY.relTime(log.created_at)"></span>
             </li>
           </template>
         </ul>
@@ -102,11 +108,15 @@
     </div>
 
     {# ===== AI 额度卡 ===== #}
-    <div class="rounded-card border border-slate-200 bg-white p-4 shadow-card sm:p-6">
+    <div class="card p-4 sm:p-6">
       <h2 class="text-sm font-semibold text-slate-700">AI 额度</h2>
       <p x-show="quotaError" x-text="quotaError" x-cloak
          class="mt-3 rounded bg-red-50 px-3 py-2 text-sm text-red-600"></p>
-      <p x-show="!quota && !quotaError" class="mt-3 text-sm text-slate-400">加载中…</p>
+      <div x-show="!quota && !quotaError" class="mt-3 space-y-2" aria-hidden="true">
+        <div class="skeleton h-5 rounded-md"></div>
+        <div class="skeleton h-5 rounded-md"></div>
+        <div class="skeleton h-5 rounded-md"></div>
+      </div>
       <template x-if="quota">
         <div>
           <dl class="mt-3 space-y-2 text-sm">
@@ -129,22 +139,20 @@
           </dl>
           <div class="mt-4 flex flex-wrap items-center gap-2 border-t border-slate-100 pt-4">
             <input type="number" x-model.number="exchangeCount" min="1" max="100"
-                   class="w-24 rounded border border-slate-300 px-3 py-1.5 text-sm">
-            <button @click="exchange()" :disabled="loading"
-                    class="rounded bg-sky-600 px-3 py-1.5 text-sm text-white hover:bg-sky-700 disabled:opacity-50">
-              兑换额度
-            </button>
+                   aria-label="兑换次数"
+                   class="input-base w-24">
+            <button @click="exchange()" :disabled="loading" class="btn btn-primary">兑换额度</button>
             <span class="text-xs text-slate-400"
                   x-text="'预计花费 ' + (exchangeCount > 0 ? exchangeCount * quota.exchange_rate : 0) + ' 贡献分'"></span>
           </div>
           <p x-show="exchangeMsg" x-text="exchangeMsg" x-cloak
-             class="mt-2 rounded bg-emerald-50 px-3 py-2 text-sm text-emerald-700"></p>
+             class="mt-2 rounded bg-brand-50 px-3 py-2 text-sm text-brand-700"></p>
         </div>
       </template>
     </div>
 
     {# ===== 自定义 Key 卡（Key 加密存储，永不回显） ===== #}
-    <div class="rounded-card border border-slate-200 bg-white p-4 shadow-card sm:p-6">
+    <div class="card p-4 sm:p-6">
       <h2 class="text-sm font-semibold text-slate-700">自定义模型 Key</h2>
       <p class="mt-1 text-xs text-slate-400">配置后 AI 问答走你自己的通道，不占用平台额度。Key 加密存储，永不回显。</p>
       <p x-show="keyError" x-text="keyError" x-cloak
@@ -171,56 +179,48 @@
           </div>
           <div class="flex justify-between">
             <dt class="text-slate-500">更新时间</dt>
-            <dd class="text-slate-700" x-text="(keyInfo.updated_at || '').slice(0, 16).replace('T', ' ')"></dd>
+            <dd class="text-slate-700" x-text="ZY.relTime(keyInfo.updated_at)"></dd>
           </div>
         </dl>
         <div class="mt-4 flex gap-2 border-t border-slate-100 pt-4">
-          <button @click="startEdit()"
-                  class="rounded border border-slate-300 px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-100">
-            修改
-          </button>
-          <button @click="deleteKey()" :disabled="loading"
-                  class="rounded border border-red-200 px-3 py-1.5 text-sm text-red-600 hover:bg-red-50 disabled:opacity-50">
-            删除
-          </button>
+          <button @click="startEdit()" class="btn btn-ghost">修改</button>
+          <button @click="deleteKey()" :disabled="loading" class="btn btn-danger">删除</button>
         </div>
       </div>
 
       {# 未配置或编辑中：配置表单 #}
       <div x-show="!keyInfo || !keyInfo.configured || keyEditing" x-cloak class="mt-3 space-y-2">
         <input type="text" x-model="keyForm.base_url" placeholder="Base URL，如 https://api.deepseek.com/v1"
-               class="w-full rounded border border-slate-300 px-3 py-2 text-sm">
+               aria-label="Base URL" class="input-base">
         <input type="password" x-model="keyForm.api_key" placeholder="API Key（保存后不再回显）"
-               class="w-full rounded border border-slate-300 px-3 py-2 text-sm">
+               aria-label="API Key" class="input-base">
         <input type="text" x-model="keyForm.model_short" placeholder="短文本模型（选填，如 deepseek-chat）"
-               class="w-full rounded border border-slate-300 px-3 py-2 text-sm">
+               aria-label="短文本模型" class="input-base">
         <input type="text" x-model="keyForm.model_medium" placeholder="中文本模型（选填）"
-               class="w-full rounded border border-slate-300 px-3 py-2 text-sm">
+               aria-label="中文本模型" class="input-base">
         <input type="text" x-model="keyForm.model_long" placeholder="长文本模型（选填）"
-               class="w-full rounded border border-slate-300 px-3 py-2 text-sm">
+               aria-label="长文本模型" class="input-base">
         <div class="flex gap-2 pt-1">
-          <button @click="saveKey()" :disabled="loading"
-                  class="rounded bg-sky-600 px-3 py-1.5 text-sm text-white hover:bg-sky-700 disabled:opacity-50">
-            保存
-          </button>
-          <button x-show="keyEditing" @click="keyEditing = false; keyError = ''"
-                  class="rounded border border-slate-300 px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-100">
-            取消
-          </button>
+          <button @click="saveKey()" :disabled="loading" class="btn btn-primary">保存</button>
+          <button x-show="keyEditing" @click="keyEditing = false; keyError = ''" class="btn btn-ghost">取消</button>
         </div>
       </div>
     </div>
 
     {# ===== 通知卡 ===== #}
-    <div class="rounded-card border border-slate-200 bg-white p-4 shadow-card sm:p-6 lg:col-span-2">
+    <div class="card p-4 sm:p-6 lg:col-span-2">
       <div class="flex items-center gap-3">
         <h2 class="text-sm font-semibold text-slate-700">站内通知</h2>
         <button x-show="notifs.some(n => !n.is_read)" x-cloak @click="markAllRead()" :disabled="loading"
-                class="ml-auto text-xs text-sky-600 hover:underline disabled:opacity-50">
+                class="ml-auto text-xs text-brand-600 hover:underline disabled:opacity-50">
           全部已读
         </button>
       </div>
-      <p x-show="notifsLoading" x-cloak class="mt-3 text-sm text-slate-400">加载中…</p>
+      <div x-show="notifsLoading" x-cloak class="mt-3 space-y-2" aria-hidden="true">
+        <div class="skeleton h-8 rounded-md"></div>
+        <div class="skeleton h-8 rounded-md"></div>
+        <div class="skeleton h-8 rounded-md"></div>
+      </div>
       <p x-show="notifsError" x-text="notifsError" x-cloak
          class="mt-3 rounded bg-red-50 px-3 py-2 text-sm text-red-600"></p>
       <p x-show="notifsLoaded && !notifs.length" x-cloak class="mt-3 text-sm text-slate-400">暂无通知。</p>
@@ -238,19 +238,22 @@
                  class="mt-0.5 line-clamp-2 text-xs text-slate-400"></p>
             </div>
             <span class="shrink-0 text-xs text-slate-400"
-                  x-text="(n.created_at || '').slice(0, 16).replace('T', ' ')"></span>
+                  x-text="ZY.relTime(n.created_at)"></span>
           </li>
         </template>
       </ul>
     </div>
 
     {# ===== 我的收藏卡（v0.6）：资源 / 帖子分组，可取消收藏 ===== #}
-    <div class="rounded-card border border-slate-200 bg-white p-4 shadow-card sm:p-6 lg:col-span-2">
+    <div class="card p-4 sm:p-6 lg:col-span-2">
       <h2 class="text-sm font-semibold text-slate-700">我的收藏</h2>
-      <p x-show="favsLoading" x-cloak class="mt-3 text-sm text-slate-400">加载中…</p>
+      <div x-show="favsLoading" x-cloak class="mt-3 space-y-2" aria-hidden="true">
+        <div class="skeleton h-8 rounded-md"></div>
+        <div class="skeleton h-8 rounded-md"></div>
+      </div>
       <p x-show="favsError" x-text="favsError" x-cloak
          class="mt-3 rounded bg-red-50 px-3 py-2 text-sm text-red-600"></p>
-      <div x-show="favsLoaded && !favs.length" x-cloak class="mt-4 flex flex-col items-center py-6 text-center">
+      <div x-show="favsLoaded && !favs.length" x-cloak class="empty-state mt-4 flex flex-col items-center">
         <svg class="h-10 w-10 text-slate-300" fill="none" stroke="currentColor" stroke-width="1.5"
              viewBox="0 0 24 24" aria-hidden="true">
           <path stroke-linecap="round" stroke-linejoin="round"
@@ -259,10 +262,7 @@
         <p class="mt-3 text-sm text-slate-500">
           暂无收藏。在资源详情页 / 帖子详情页点击「收藏」即可加入。
         </p>
-        <a href="/majors"
-           class="mt-3 rounded-md bg-brand-600 px-4 py-1.5 text-sm text-white transition-colors hover:bg-brand-700">
-          去课程空间逛逛
-        </a>
+        <a href="/majors" class="btn btn-primary mt-3">去课程空间逛逛</a>
       </div>
       <div x-show="favResources.length" x-cloak class="mt-3">
         <h3 class="text-xs font-medium text-slate-500">资料</h3>
@@ -270,12 +270,12 @@
           <template x-for="f in favResources" :key="'r' + f.target_id">
             <li class="flex items-center gap-3 py-2">
               <a :href="'/resources/' + f.target_id"
-                 class="min-w-0 flex-1 truncate text-sky-700 hover:underline"
+                 class="min-w-0 flex-1 truncate text-brand-700 hover:underline"
                  x-text="f.target ? f.target.title : '资源 #' + f.target_id"></a>
               <span class="shrink-0 text-xs text-slate-400"
                     x-text="f.target ? (f.target.course_name || '') + ' · 下载 ' + f.target.download_count : ''"></span>
               <span class="shrink-0 text-xs text-slate-400"
-                    x-text="(f.created_at || '').slice(0, 10)"></span>
+                    x-text="ZY.relTime(f.created_at)"></span>
               <button @click="unfavorite(f)" :disabled="loading"
                       class="shrink-0 rounded border border-slate-300 px-2 py-0.5 text-xs text-slate-500 hover:bg-slate-100 disabled:opacity-50">
                 取消收藏
@@ -290,12 +290,12 @@
           <template x-for="f in favPosts" :key="'p' + f.target_id">
             <li class="flex items-center gap-3 py-2">
               <a :href="'/posts/' + f.target_id"
-                 class="min-w-0 flex-1 truncate text-sky-700 hover:underline"
+                 class="min-w-0 flex-1 truncate text-brand-700 hover:underline"
                  x-text="f.target ? f.target.title : '帖子 #' + f.target_id"></a>
               <span class="shrink-0 text-xs text-slate-400"
                     x-text="f.target ? boardLabel(f.target.board) + ' · 浏览 ' + f.target.view_count : ''"></span>
               <span class="shrink-0 text-xs text-slate-400"
-                    x-text="(f.created_at || '').slice(0, 10)"></span>
+                    x-text="ZY.relTime(f.created_at)"></span>
               <button @click="unfavorite(f)" :disabled="loading"
                       class="shrink-0 rounded border border-slate-300 px-2 py-0.5 text-xs text-slate-500 hover:bg-slate-100 disabled:opacity-50">
                 取消收藏
@@ -307,12 +307,15 @@
     </div>
 
     {# ===== 我的关注卡（v0.6）：课程 / 用户分组，可取消关注 ===== #}
-    <div class="rounded-card border border-slate-200 bg-white p-4 shadow-card sm:p-6 lg:col-span-2">
+    <div class="card p-4 sm:p-6 lg:col-span-2">
       <h2 class="text-sm font-semibold text-slate-700">我的关注</h2>
-      <p x-show="followsLoading" x-cloak class="mt-3 text-sm text-slate-400">加载中…</p>
+      <div x-show="followsLoading" x-cloak class="mt-3 space-y-2" aria-hidden="true">
+        <div class="skeleton h-8 rounded-md"></div>
+        <div class="skeleton h-8 rounded-md"></div>
+      </div>
       <p x-show="followsError" x-text="followsError" x-cloak
          class="mt-3 rounded bg-red-50 px-3 py-2 text-sm text-red-600"></p>
-      <div x-show="followsLoaded && !follows.length" x-cloak class="mt-4 flex flex-col items-center py-6 text-center">
+      <div x-show="followsLoaded && !follows.length" x-cloak class="empty-state mt-4 flex flex-col items-center">
         <svg class="h-10 w-10 text-slate-300" fill="none" stroke="currentColor" stroke-width="1.5"
              viewBox="0 0 24 24" aria-hidden="true">
           <path stroke-linecap="round" stroke-linejoin="round"
@@ -322,7 +325,7 @@
           暂无关注。在课程空间页点击「关注课程」即可订阅动态。
         </p>
         <a href="/majors"
-           class="mt-3 rounded-md border border-brand-200 px-4 py-1.5 text-sm text-brand-700 transition-colors hover:bg-brand-50">
+           class="mt-3 inline-block rounded-md border border-brand-200 px-4 py-1.5 text-sm text-brand-700 transition-colors hover:bg-brand-50">
           去找感兴趣的课程
         </a>
       </div>
@@ -332,12 +335,12 @@
           <template x-for="f in followCourses" :key="'c' + f.target_id">
             <li class="flex items-center gap-3 py-2">
               <a :href="'/courses/' + f.target_id"
-                 class="min-w-0 flex-1 truncate text-sky-700 hover:underline"
+                 class="min-w-0 flex-1 truncate text-brand-700 hover:underline"
                  x-text="f.target ? f.target.name : '课程 #' + f.target_id"></a>
               <span class="shrink-0 text-xs text-slate-400"
                     x-text="f.target ? (f.target.major_name || '') : ''"></span>
               <span class="shrink-0 text-xs text-slate-400"
-                    x-text="(f.created_at || '').slice(0, 10)"></span>
+                    x-text="ZY.relTime(f.created_at)"></span>
               <button @click="unfollow(f)" :disabled="loading"
                       class="shrink-0 rounded border border-slate-300 px-2 py-0.5 text-xs text-slate-500 hover:bg-slate-100 disabled:opacity-50">
                 取消关注
@@ -356,7 +359,7 @@
               <span class="shrink-0 text-xs text-slate-400"
                     x-text="f.target ? 'Lv' + f.target.level + ' · 贡献 ' + f.target.score : ''"></span>
               <span class="shrink-0 text-xs text-slate-400"
-                    x-text="(f.created_at || '').slice(0, 10)"></span>
+                    x-text="ZY.relTime(f.created_at)"></span>
               <button @click="unfollow(f)" :disabled="loading"
                       class="shrink-0 rounded border border-slate-300 px-2 py-0.5 text-xs text-slate-500 hover:bg-slate-100 disabled:opacity-50">
                 取消关注

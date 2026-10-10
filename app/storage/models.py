@@ -4,6 +4,7 @@ PostgreSQL 16，Alembic 管理迁移。主键统一 BIGINT GENERATED ALWAYS AS I
 """
 
 from datetime import date, datetime
+from typing import Any
 
 from sqlalchemy import (
     BigInteger,
@@ -178,6 +179,12 @@ class Document(Base):
         Index("idx_documents_md5", "md5"),
         Index("idx_documents_owner", "owner_id"),
         Index("idx_documents_storage_key", "storage_key"),
+        # §20.5 B1（迁移⑦）：个人库按 (owner_id, md5) 去重的并发兜底；
+        # 公共派生副本同 owner 同 md5，必须 partial
+        Index(
+            "uq_documents_owner_md5_personal", "owner_id", "md5",
+            unique=True, postgresql_where=text("scope='personal'"),
+        ),
     )
 
     id: Mapped[int] = _id()
@@ -247,6 +254,9 @@ class Resource(Base):
     rating: Mapped[float | None] = mapped_column(Numeric(3, 2))
     rating_count: Mapped[int] = mapped_column(Integer, server_default="0", nullable=False)
     download_cost: Mapped[int] = mapped_column(Integer, server_default="0", nullable=False)
+    approved_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True)
+    )  # §20.5 B3（迁移⑧）：上架时间（终审/直审通过回填；NULL=未上架/存量数据）
     created_at: Mapped[datetime] = _created_at()
 
 
@@ -571,7 +581,8 @@ class PlatformConfig(Base):
 
     id: Mapped[int] = _id()
     key: Mapped[str] = mapped_column(Text, unique=True, nullable=False)
-    value: Mapped[int] = mapped_column(JSONB, nullable=False)
+    # §20.5 B4：JSONB 列可承载任意 JSON 值（当前 CONFIG_SPECS 全为整数），标注修正为 Any
+    value: Mapped[Any] = mapped_column(JSONB, nullable=False)
     updated_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False

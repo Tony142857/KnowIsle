@@ -7,7 +7,7 @@
 {% endblock %}
 {% block content %}
 <div x-data="reviewPage({{ course_id | tojson }})" x-init="init()">
-  <div class="mb-4">
+  <div class="mb-4 animate-fade-up">
     <a href="/library" class="text-sm text-brand-600 transition-colors hover:text-brand-700 hover:underline">← 返回个人知识库</a>
     <div class="mt-2 flex flex-wrap items-center gap-3">
       <h1 class="text-2xl font-bold text-slate-800">复习工具</h1>
@@ -16,10 +16,10 @@
   </div>
 
   {# 课程与章节选择 #}
-  <div class="rounded-card border border-slate-200 bg-white p-4 shadow-card">
+  <div class="card p-4">
     <div class="flex flex-wrap items-center gap-2">
       <select x-model="courseKey" @change="onCourseChange()"
-              class="rounded-md border border-slate-300 px-3 py-2 text-sm transition-colors focus:border-brand-500 focus:outline-none">
+              class="input-base !w-auto">
         <option value="">请选择课程</option>
         <optgroup label="个人知识库" x-show="personalCourses.length">
           <template x-for="c in personalCourses" :key="'p' + c.id">
@@ -32,7 +32,8 @@
           </template>
         </optgroup>
       </select>
-      <span x-show="coursesLoading" class="text-xs text-slate-400">课程加载中…</span>
+      {# 课程加载态：骨架条（消灭文字态） #}
+      <span x-show="coursesLoading" class="skeleton inline-block h-4 w-28 rounded-md align-middle" aria-hidden="true"></span>
       <span x-show="coursesError" x-text="coursesError" x-cloak
             class="text-xs text-red-600"></span>
     </div>
@@ -40,16 +41,22 @@
     {# 章节多选（大纲范围）；无章节课程按全课程生成 #}
     <div x-show="courseKey" x-cloak class="mt-3">
       <p class="text-xs font-medium text-slate-500">选择章节（不选默认全课程）</p>
-      <p x-show="chaptersLoading" class="mt-2 text-xs text-slate-400">章节加载中…</p>
+      {# 章节加载态：骨架徽章 #}
+      <div x-show="chaptersLoading" class="mt-2 flex flex-wrap gap-2" aria-hidden="true">
+        <span class="skeleton h-8 w-20 rounded-md"></span>
+        <span class="skeleton h-8 w-24 rounded-md"></span>
+        <span class="skeleton h-8 w-16 rounded-md"></span>
+      </div>
       <div x-show="!chaptersLoading && !chapters.length" x-cloak
            class="mt-2 text-xs text-slate-400">该课程暂无章节，将按全课程范围生成。</div>
       <div class="mt-2 flex flex-wrap gap-2">
         <template x-for="ch in chapters" :key="ch.id">
-          <label class="cursor-pointer rounded-md border px-3 py-1.5 text-sm transition-colors"
+          <label class="cursor-pointer rounded-md border px-3 py-1.5 text-sm transition-colors duration-island ease-island
+                        has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-brand-400"
                  :class="selectedChapters.includes(ch.id)
                          ? 'border-brand-300 bg-brand-50 text-brand-700'
                          : 'border-slate-200 text-slate-600 hover:text-brand-700'">
-            <input type="checkbox" class="hidden" :value="ch.id"
+            <input type="checkbox" class="sr-only" :value="ch.id"
                    @change="toggleChapter(ch.id)">
             <span x-text="ch.label"></span>
           </label>
@@ -59,22 +66,31 @@
   </div>
 
   {# 复习大纲 #}
-  <div class="mt-4 rounded-card border border-slate-200 bg-white p-4 shadow-card">
+  <div class="card mt-4 p-4">
     <div class="flex flex-wrap items-center gap-3">
       <h2 class="text-base font-semibold text-slate-800">复习大纲</h2>
       <button @click="generateOutline()" :disabled="!courseKey || outlineState === 'loading'"
-              class="ml-auto rounded-lg bg-brand-600 px-4 py-2 text-sm text-white transition-colors hover:bg-brand-700 disabled:opacity-50"
+              class="btn btn-primary ml-auto"
               x-text="outlineState === 'loading' ? '生成中…' : '生成复习大纲'"></button>
     </div>
 
     <p x-show="outlineState === 'error'" x-text="outlineError" x-cloak
-       class="mt-3 rounded bg-red-50 px-3 py-2 text-sm text-red-600"></p>
+       class="mt-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600"></p>
     <p x-show="outlineState === 'idle'" class="mt-3 text-sm text-slate-400">
       选择课程（可多选章节）后点击生成，产出核心考点 / 易混概念 / 典型题型结构化提纲。
     </p>
-    <p x-show="outlineState === 'loading'" x-cloak class="mt-3 text-sm text-slate-400">
-      AI 正在梳理章节资料，通常需要十几秒…
-    </p>
+    {# 生成中：typing 指示 + 骨架行（替换单行灰字） #}
+    <div x-show="outlineState === 'loading'" x-cloak class="mt-3 space-y-2" aria-label="AI 正在生成大纲">
+      <div class="flex items-center gap-1.5 py-1">
+        <span class="typing-dot animate-pulse-dot" style="animation-delay:0s"></span>
+        <span class="typing-dot animate-pulse-dot" style="animation-delay:0.15s"></span>
+        <span class="typing-dot animate-pulse-dot" style="animation-delay:0.3s"></span>
+        <span class="ml-1 text-xs text-slate-400">AI 正在梳理章节资料，通常需要十几秒…</span>
+      </div>
+      <div class="skeleton h-4 w-full rounded-md"></div>
+      <div class="skeleton h-4 w-11/12 rounded-md"></div>
+      <div class="skeleton h-4 w-2/3 rounded-md"></div>
+    </div>
 
     <div x-show="outlineState === 'done'" x-cloak class="mt-3 animate-fade-up">
       <!-- Markdown 渲染挂载点（ZY.md.render，class 名 md-body 勿改）：大纲变化时整段重渲染 -->
@@ -87,41 +103,51 @@
   </div>
 
   {# 考点习题（按章生成） #}
-  <div class="mt-4 rounded-card border border-slate-200 bg-white p-4 shadow-card">
+  <div class="card mt-4 p-4">
     <div class="flex flex-wrap items-center gap-3">
       <h2 class="text-base font-semibold text-slate-800">考点习题</h2>
       <div class="ml-auto flex items-center gap-2">
-        <select x-model="quizChapterId"
-                class="rounded-md border border-slate-300 px-3 py-2 text-sm transition-colors focus:border-brand-500 focus:outline-none">
+        <select x-model="quizChapterId" class="input-base !w-auto !py-2">
           <option value="">选择章节</option>
           <template x-for="ch in chapters" :key="ch.id">
             <option :value="ch.id" x-text="ch.label"></option>
           </template>
         </select>
         <input type="number" x-model.number="quizCount" min="1" max="10"
-               class="w-20 rounded-md border border-slate-300 px-3 py-2 text-sm transition-colors focus:border-brand-500 focus:outline-none" title="题数 1~10">
+               class="input-base !w-20 !py-2" title="题数 1~10">
         <button @click="generateQuiz()"
                 :disabled="!courseKey || !quizChapterId || quizState === 'loading'"
-                class="rounded-lg bg-brand-600 px-4 py-2 text-sm text-white transition-colors hover:bg-brand-700 disabled:opacity-50"
+                class="btn btn-primary"
                 x-text="quizState === 'loading' ? '出题中…' : '生成习题'"></button>
       </div>
     </div>
 
     <p x-show="quizState === 'error'" x-text="quizError" x-cloak
-       class="mt-3 rounded bg-red-50 px-3 py-2 text-sm text-red-600"></p>
+       class="mt-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600"></p>
     <p x-show="quizState === 'idle'" class="mt-3 text-sm text-slate-400">
       选择章节与题数（1~10），AI 按章节资料出单选 / 简答题，答案与解析默认折叠。
     </p>
-    <p x-show="quizState === 'loading'" x-cloak class="mt-3 text-sm text-slate-400">
-      AI 正在出题，请稍候…
-    </p>
+    {# 出题中：typing 指示 + 骨架卡（替换单行灰字） #}
+    <div x-show="quizState === 'loading'" x-cloak class="mt-3 space-y-3" aria-label="AI 正在出题">
+      <div class="flex items-center gap-1.5 py-1">
+        <span class="typing-dot animate-pulse-dot" style="animation-delay:0s"></span>
+        <span class="typing-dot animate-pulse-dot" style="animation-delay:0.15s"></span>
+        <span class="typing-dot animate-pulse-dot" style="animation-delay:0.3s"></span>
+        <span class="ml-1 text-xs text-slate-400">AI 正在出题，请稍候…</span>
+      </div>
+      <div class="rounded-card border border-slate-100 p-4">
+        <div class="skeleton h-4 w-2/3 rounded-md"></div>
+        <div class="skeleton mt-3 h-3 w-full rounded-md"></div>
+        <div class="skeleton mt-2 h-3 w-5/6 rounded-md"></div>
+      </div>
+    </div>
 
     <div x-show="quizState === 'done'" x-cloak class="mt-3 space-y-3">
       <template x-for="(q, i) in questions" :key="i">
         <div x-data="{open: false}"
-             class="animate-fade-up rounded-card border border-slate-200 bg-white p-4 shadow-card">
+             class="card animate-fade-up p-4">
           <div class="flex items-start gap-2">
-            <span class="shrink-0 rounded bg-brand-50 px-2 py-0.5 text-xs text-brand-700"
+            <span class="badge badge-brand shrink-0"
                   x-text="q.type === 'single_choice' ? '单选' : (q.type === 'calculation' ? '计算' : '简答')"></span>
             <p class="text-sm font-medium text-slate-800" x-text="(i + 1) + '. ' + q.question"></p>
           </div>
@@ -129,7 +155,7 @@
           <div x-show="q.options && q.options.length" class="mt-3 space-y-2">
             <template x-for="(opt, j) in q.options" :key="j">
               <button type="button" @click="pick(i, j)"
-                      class="block w-full rounded-lg border px-3 py-2 text-left text-sm transition-colors"
+                      class="block w-full rounded-lg border px-3 py-2 text-left text-sm transition-colors duration-island ease-island"
                       :class="picked[i] === j
                               ? 'border-brand-300 bg-brand-50 text-brand-800 ring-2 ring-brand-300'
                               : 'border-slate-200 text-slate-600 hover:border-brand-200 hover:text-brand-700'">

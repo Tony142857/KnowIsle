@@ -91,3 +91,11 @@ def test_worker_settings_registers_cron():
     assert any(
         job.coroutine.__name__ == "review_timeout_scan" for job in WorkerSettings.cron_jobs
     )
+
+
+def test_worker_settings_notify_stub_removed():
+    """§20.5 B3（v1.1）：notify_worker 占位任务已移除，注册表不再含 send_notification。"""
+    from app.workers.settings import WorkerSettings
+
+    names = [f.__name__ for f in WorkerSettings.functions]
+    assert "send_notification" not in names

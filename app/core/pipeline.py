@@ -64,6 +64,23 @@ async def check_course_access(
     return course
 
 
+async def _recall_scope(
+    session: AsyncSession,
+    query: str,
+    query_embedding: list[float],
+    course_id: int,
+    scope: str,
+    owner_id: int | None,
+) -> tuple[list[dict], list[int] | None]:
+    """单路检索（§5.3）：章节粗召回 → 范围内精排；coarse 返回 None 时降级全课程（§8.3）。"""
+    chapter_ids = await coarse_recall(session, query_embedding, course_id, scope)
+    hits = await fine_search(
+        session, query, query_embedding, scope, course_id,
+        owner_id=owner_id, chapter_ids=chapter_ids,
+    )
+    return hits, chapter_ids
+
+
 async def retrieve(
     session: AsyncSession, query: str, user: User, course_id: int, scope: str
 ) -> tuple[list[dict], list[int] | None]:
@@ -75,26 +92,25 @@ async def retrieve(
     [query_embedding] = await get_embedding().embed([query])
 
     if scope in ("personal", "public"):
-        chapter_ids = await coarse_recall(session, query_embedding, course_id, scope)
-        hits = await fine_search(
-            session, query, query_embedding, scope, course_id,
-            owner_id=user.id, chapter_ids=chapter_ids,
+        return await _recall_scope(
+            session, query, query_embedding, course_id, scope,
+            owner_id=user.id if scope == "personal" else None,
         )
-        return hits, chapter_ids
 
-    # mixed：双库检索，个人库结果加权 1.2 后 RRF 融合（§5.3）。
+    # mixed：双库并行检索（§20.5 B2：双路均走章节粗召回+精排，与 personal/public
+    # 同款逻辑），个人库结果以显式权重 1.2 RRF 融合（§5.3）。
     # 注：同一 AsyncSession 不支持并发操作，两路串行执行（单连接会话限制）。
-    personal_hits = await fine_search(
-        session, query, query_embedding, "personal", course_id, owner_id=user.id
+    personal_hits, personal_chapters = await _recall_scope(
+        session, query, query_embedding, course_id, "personal", owner_id=user.id
     )
-    public_hits = await fine_search(
-        session, query, query_embedding, "public", course_id, owner_id=None
+    public_hits, public_chapters = await _recall_scope(
+        session, query, query_embedding, course_id, "public", owner_id=None
     )
     fused = rrf_fuse(
         [h["chunk"] for h in personal_hits],
         [h["chunk"] for h in public_hits],
-        weight_semantic=1.2,
-        weight_bm25=1.0,
+        weight_a=1.2,
+        weight_b=1.0,
         top_k=5,
     )
     by_id = {h["chunk"].chunk_id: h["chunk"] for h in personal_hits + public_hits}
@@ -103,7 +119,9 @@ async def retrieve(
         for chunk_id, score in fused
         if chunk_id in by_id
     ]
-    return hits, None
+    # qa_logs.coarse_chapters 在 mixed 下含双路章节（并集，个人库在前）
+    coarse_ids = list(dict.fromkeys((personal_chapters or []) + (public_chapters or [])))
+    return hits, coarse_ids or None
 
 
 async def _build_citation_items(

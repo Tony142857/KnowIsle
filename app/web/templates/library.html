@@ -9,11 +9,11 @@
 {# 解析状态徽章：解析中 / 已完成 / 失败 #}
 {% macro status_badge(status) %}
 {% if status == 'parsed' %}
-<span class="rounded bg-emerald-50 px-2 py-0.5 text-xs text-emerald-700">已完成</span>
+<span class="badge badge-brand">已完成</span>
 {% elif status == 'failed' %}
-<span class="rounded bg-red-50 px-2 py-0.5 text-xs text-red-600">解析失败</span>
+<span class="badge bg-red-50 text-red-600">解析失败</span>
 {% else %}
-<span class="rounded bg-amber-50 px-2 py-0.5 text-xs text-amber-700">解析中</span>
+<span class="badge badge-slate">解析中</span>
 {% endif %}
 {% endmacro %}
 
@@ -21,25 +21,25 @@
 {% macro review_badge(res) %}
 {% if res.review_status == 'approved' %}
 <a href="/resources/{{ res.resource_id }}"
-   class="shrink-0 rounded bg-sky-50 px-2 py-0.5 text-xs text-sky-700 hover:underline">已上架</a>
+   class="badge badge-brand hover:underline">已上架</a>
 {% elif res.review_status == 'co_reviewing' %}
-<span class="shrink-0 rounded bg-violet-50 px-2 py-0.5 text-xs text-violet-700">审核中</span>
+<span class="badge badge-accent">审核中</span>
 {% elif res.review_status == 'pending' %}
-<span class="shrink-0 rounded bg-amber-50 px-2 py-0.5 text-xs text-amber-700">预检中</span>
+<span class="badge badge-slate">预检中</span>
 {% else %}
-<span class="shrink-0 rounded bg-red-50 px-2 py-0.5 text-xs text-red-600">已驳回</span>
+<span class="badge bg-red-50 text-red-600">已驳回</span>
 {% endif %}
 {% endmacro %}
 
-{# 课程卡片：章节列表 / 文档列表 / 添加章节 / 上传资料 / AI 问答入口 #}
+{# 课程卡片：章节徽章 / 文档列表 / 添加章节 / 上传资料 / AI 问答入口 #}
 {% macro course_card(item, resource_map) %}
 {% set c = item.course %}
 {% set type_labels = {'pdf_textbook': 'PDF 教材', 'ppt': 'PPT', 'word': 'Word', 'markdown': 'Markdown'} %}
-<div class="animate-fade-up rounded-card border border-slate-200 bg-white p-4 shadow-card card-hover">
+<div class="card card-hover animate-fade-up p-4">
   <div class="flex flex-wrap items-center gap-3">
     <h3 class="text-base font-semibold text-slate-800">{{ c.name }}</h3>
     {% if c.status != 'active' %}
-    <span class="rounded bg-amber-100 px-2 py-0.5 text-xs text-amber-700">
+    <span class="badge {{ 'badge-accent' if c.status == 'pending' else 'badge-slate' }}">
       {{ '待审批' if c.status == 'pending' else '已停用' }}
     </span>
     {% endif %}
@@ -49,46 +49,44 @@
       <a href="/library/review?course_id={{ c.id }}" class="text-brand-600 transition-colors hover:text-brand-700 hover:underline">复习工具</a>
       <button @click="chapterFormFor = chapterFormFor === {{ c.id }} ? null : {{ c.id }}; chapterTitle = ''"
               class="text-slate-500 transition-colors hover:text-brand-700">添加章节</button>
-      <button @click="uploadFormFor = uploadFormFor === {{ c.id }} ? null : {{ c.id }}; uploadChapterId = ''; uploadFile = null"
+      <button @click="uploadFormFor = uploadFormFor === {{ c.id }} ? null : {{ c.id }}; uploadFile = null"
               class="text-slate-500 transition-colors hover:text-brand-700">上传资料</button>
     </div>
   </div>
 
-  {# 章节（一级展示，用于上传挂载） #}
-  {% if item.chapters %}
-  <p class="mt-2 text-xs text-slate-400">
-    章节：{% for ch in item.chapters %}{{ ch.title }}{{ ' · ' if not loop.last }}{% endfor %}
-  </p>
-  {% endif %}
+  {# 章节徽章（一级展示，用于上传挂载；id 供新建章节后客户端追加） #}
+  <div id="chapter-list-{{ c.id }}" class="mt-2 flex flex-wrap items-center gap-1.5">
+    {% for ch in item.chapters %}
+    <span class="badge badge-slate">{{ ch.title }}</span>
+    {% endfor %}
+  </div>
 
-  {# 添加章节（简单一级） #}
+  {# 添加章节（简单一级，成功局部插入徽章 + toast） #}
   <div x-show="chapterFormFor === {{ c.id }}" x-cloak
        class="mt-3 flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 p-3">
     <input type="text" x-model="chapterTitle" placeholder="章节标题"
-           class="flex-1 rounded-md border border-slate-300 px-2 py-1.5 text-sm transition-colors focus:border-brand-500 focus:outline-none">
+           class="input-base flex-1 !py-1.5">
     <button @click="createChapter({{ c.id }})" :disabled="loading"
-            class="rounded-md bg-brand-600 px-3 py-1.5 text-sm text-white transition-colors hover:bg-brand-700 disabled:opacity-50">
+            class="btn btn-primary !px-3 !py-1.5">
       添加
     </button>
   </div>
 
-  {# 上传资料：选章节（可选）+ 文件选择 → POST /api/documents #}
+  {# 上传资料：文件选择 → POST /api/documents；上传中 shimmer 进度反馈（章节由解析自动构建，v1.1 起移除人工挂载下拉） #}
   <div x-show="uploadFormFor === {{ c.id }}" x-cloak
        class="mt-3 space-y-2 rounded-lg border border-slate-200 bg-slate-50 p-3">
     <div class="flex flex-wrap items-center gap-2">
-      <select x-model="uploadChapterId"
-              class="rounded-md border border-slate-300 px-2 py-1.5 text-sm transition-colors focus:border-brand-500 focus:outline-none">
-        <option value="">不挂载章节</option>
-        {% for ch in item.chapters %}
-        <option value="{{ ch.id }}">{{ ch.title }}</option>
-        {% endfor %}
-      </select>
       <input type="file" @change="uploadFile = $event.target.files[0] || null"
              class="text-sm text-slate-500 file:mr-2 file:rounded-md file:border-0 file:bg-brand-50 file:px-3 file:py-1.5 file:text-sm file:text-brand-700 file:transition-colors hover:file:bg-brand-100">
       <button @click="upload({{ c.id }})" :disabled="loading"
-              class="rounded-md bg-brand-600 px-3 py-1.5 text-sm text-white transition-colors hover:bg-brand-700 disabled:opacity-50">
+              class="btn btn-primary !px-3 !py-1.5"
+              x-text="uploading ? '上传中…' : '上传'">
         上传
       </button>
+    </div>
+    {# 上传中：不定态 shimmer 进度条（multipart 无进度事件，用扫光反馈） #}
+    <div x-show="uploading" x-cloak class="h-1.5 w-full overflow-hidden rounded-full bg-brand-50">
+      <div class="skeleton block h-full w-full rounded-full"></div>
     </div>
     <p class="text-xs text-slate-400">支持 PDF 教材 / PPT / Word / Markdown，上传后自动解析入库。</p>
   </div>
@@ -98,55 +96,65 @@
   <ul class="mt-3 divide-y divide-slate-100">
     {% for d in item.documents %}
     {% set res = resource_map.get(d.id) %}
-    <li class="flex flex-wrap items-center gap-x-3 gap-y-1 py-2 text-sm">
+    <li class="flex flex-col gap-1 py-2.5 text-sm sm:flex-row sm:items-center sm:gap-x-3">
       <span class="min-w-0 flex-1 truncate text-slate-700" title="{{ d.file_name }}">{{ d.file_name }}</span>
-      <span class="shrink-0 text-xs text-slate-400">{{ type_labels.get(d.file_type, d.file_type) }}</span>
-      {{ status_badge(d.status) }}
-      {% if res %}{{ review_badge(res) }}{% endif %}
-      <span class="shrink-0 text-xs text-slate-400">{{ d.created_at.strftime('%Y-%m-%d %H:%M') }}</span>
-      <a href="/documents/{{ d.id }}/source" target="_blank"
-         class="shrink-0 text-xs text-sky-600 hover:underline">原文溯源</a>
-      {# 已解析且未在审/未上架（或已驳回允许重投）的文档可投稿 #}
-      {% if d.status == 'parsed' and (not res or res.review_status == 'rejected') %}
-      <button @click="openSubmit({{ d.id }}, {{ d.file_name|tojson|forceescape }})"
-              class="shrink-0 text-xs text-sky-600 hover:underline">
-        {{ '重新投稿' if res else '投稿到公共库' }}
-      </button>
-      {% endif %}
+      <span class="flex flex-wrap items-center gap-x-2 gap-y-1">
+        <span class="badge badge-slate">{{ type_labels.get(d.file_type, d.file_type) }}</span>
+        {{ status_badge(d.status) }}
+        {% if res %}{{ review_badge(res) }}{% endif %}
+        {# 本次会话内新投稿：局部挂「审核中」徽章（投稿 modal 成功后置位，免整页刷新） #}
+        <span x-show="submitted[{{ d.id }}]" x-cloak class="badge badge-accent">审核中</span>
+        <span class="text-xs text-slate-400" data-rel-time="{{ d.created_at.isoformat() }}"
+              title="{{ d.created_at.strftime('%Y-%m-%d %H:%M') }}">{{ d.created_at.strftime('%Y-%m-%d %H:%M') }}</span>
+        <a href="/documents/{{ d.id }}/source" target="_blank"
+           class="text-xs text-brand-600 transition-colors hover:text-brand-700 hover:underline">原文溯源</a>
+        {# 已解析且未在审/未上架（或已驳回允许重投）的文档可投稿 #}
+        {% if d.status == 'parsed' and (not res or res.review_status == 'rejected') %}
+        <button x-show="!submitted[{{ d.id }}]"
+                @click="openSubmit({{ d.id }}, {{ d.file_name|tojson|forceescape }})"
+                class="text-xs text-brand-600 transition-colors hover:text-brand-700 hover:underline">
+          {{ '重新投稿' if res else '投稿到公共库' }}
+        </button>
+        {% endif %}
+      </span>
     </li>
     {% endfor %}
     <template x-for="d in (pending[{{ c.id }}] || [])" :key="d.id">
-      <li class="flex flex-wrap items-center gap-x-3 gap-y-1 py-2 text-sm">
+      <li class="flex flex-col gap-1 py-2.5 text-sm sm:flex-row sm:items-center sm:gap-x-3">
         <span class="min-w-0 flex-1 truncate text-slate-700" x-text="d.file_name"></span>
-        {# 解析中：不定态 shimmer 进度条（轮询期间视觉反馈） #}
-        <span x-show="d.status === 'parsing'"
-              class="h-1.5 w-24 shrink-0 overflow-hidden rounded-full">
-          <span class="skeleton block h-full w-full rounded-full"></span>
+        <span class="flex flex-wrap items-center gap-x-2 gap-y-1">
+          {# 解析中：不定态 shimmer 进度条（轮询期间视觉反馈） #}
+          <span x-show="d.status === 'parsing'"
+                class="h-1.5 w-24 shrink-0 overflow-hidden rounded-full bg-brand-50">
+            <span class="skeleton block h-full w-full rounded-full"></span>
+          </span>
+          <span class="badge"
+                :class="d.status === 'parsed' ? 'badge-brand'
+                      : (d.status === 'failed' ? 'bg-red-50 text-red-600' : 'badge-slate')"
+                x-text="statusLabel(d.status)"></span>
+          <span class="text-xs text-slate-400">刚刚</span>
+          <a :href="'/documents/' + d.id + '/source'" target="_blank"
+             class="text-xs text-brand-600 transition-colors hover:text-brand-700 hover:underline">原文溯源</a>
         </span>
-        <span class="shrink-0 rounded px-2 py-0.5 text-xs"
-              :class="d.status === 'parsed' ? 'bg-emerald-50 text-emerald-700'
-                    : (d.status === 'failed' ? 'bg-red-50 text-red-600' : 'bg-amber-50 text-amber-700')"
-              x-text="statusLabel(d.status)"></span>
-        <span class="shrink-0 text-xs text-slate-400">刚刚</span>
-        <a :href="'/documents/' + d.id + '/source'" target="_blank"
-           class="shrink-0 text-xs text-brand-600 transition-colors hover:text-brand-700 hover:underline">原文溯源</a>
       </li>
     </template>
   </ul>
   {% else %}
   <ul class="mt-3">
     <template x-for="d in (pending[{{ c.id }}] || [])" :key="d.id">
-      <li class="flex flex-wrap items-center gap-x-3 gap-y-1 py-2 text-sm">
+      <li class="flex flex-col gap-1 py-2.5 text-sm sm:flex-row sm:items-center sm:gap-x-3">
         <span class="min-w-0 flex-1 truncate text-slate-700" x-text="d.file_name"></span>
-        <span x-show="d.status === 'parsing'"
-              class="h-1.5 w-24 shrink-0 overflow-hidden rounded-full">
-          <span class="skeleton block h-full w-full rounded-full"></span>
+        <span class="flex flex-wrap items-center gap-x-2 gap-y-1">
+          <span x-show="d.status === 'parsing'"
+                class="h-1.5 w-24 shrink-0 overflow-hidden rounded-full bg-brand-50">
+            <span class="skeleton block h-full w-full rounded-full"></span>
+          </span>
+          <span class="badge"
+                :class="d.status === 'parsed' ? 'badge-brand'
+                      : (d.status === 'failed' ? 'bg-red-50 text-red-600' : 'badge-slate')"
+                x-text="statusLabel(d.status)"></span>
+          <span class="text-xs text-slate-400">刚刚</span>
         </span>
-        <span class="shrink-0 rounded px-2 py-0.5 text-xs"
-              :class="d.status === 'parsed' ? 'bg-emerald-50 text-emerald-700'
-                    : (d.status === 'failed' ? 'bg-red-50 text-red-600' : 'bg-amber-50 text-amber-700')"
-              x-text="statusLabel(d.status)"></span>
-        <span class="shrink-0 text-xs text-slate-400">刚刚</span>
       </li>
     </template>
   </ul>
@@ -163,61 +171,56 @@
     <h1 class="text-2xl font-bold text-slate-800">个人知识库</h1>
     <p class="text-sm text-slate-400">私有资料上传 → 解析入库 → AI 问答与原文溯源</p>
     <div class="ml-auto flex gap-2">
-      <a href="/library/review"
-         class="rounded-md border border-slate-300 px-3 py-1.5 text-sm text-slate-600 transition-colors hover:bg-slate-100">
-        复习工具
-      </a>
+      <a href="/library/review" class="btn btn-ghost">复习工具</a>
       <button @click="showSemesterForm = !showSemesterForm; showCourseForm = false"
-              class="rounded-md border border-slate-300 px-3 py-1.5 text-sm text-slate-600 transition-colors hover:bg-slate-100">
+              class="btn btn-ghost">
         新建学期
       </button>
       <button @click="showCourseForm = !showCourseForm; showSemesterForm = false"
-              class="rounded-md bg-brand-600 px-3 py-1.5 text-sm text-white transition-colors hover:bg-brand-700">
+              class="btn btn-primary">
         新建课程
       </button>
     </div>
   </div>
 
   <p x-show="error" x-text="error" x-cloak
-     class="mb-4 rounded bg-red-50 px-3 py-2 text-sm text-red-600"></p>
+     class="mb-4 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600"></p>
 
-  {# 新建学期 #}
+  {# 新建学期（成功客户端追加学期分组 + toast，免整页刷新） #}
   <div x-show="showSemesterForm" x-cloak
-       class="mb-4 flex items-center gap-2 rounded-card border border-slate-200 bg-white p-4 shadow-card">
+       class="card mb-4 flex items-center gap-2 p-4">
     <input type="text" x-model="semesterName" placeholder="学期名称，如 2025 秋"
-           class="flex-1 rounded-md border border-slate-300 px-3 py-2 text-sm transition-colors focus:border-brand-500 focus:outline-none">
-    <button @click="createSemester()" :disabled="loading"
-            class="rounded-md bg-brand-600 px-4 py-2 text-sm text-white transition-colors hover:bg-brand-700 disabled:opacity-50">
+           class="input-base flex-1">
+    <button @click="createSemester()" :disabled="loading" class="btn btn-primary">
       创建
     </button>
   </div>
 
-  {# 新建课程（选学期） #}
+  {# 新建课程（选学期；成功客户端追加课程卡片 + toast） #}
   <div x-show="showCourseForm" x-cloak
-       class="mb-4 space-y-2 rounded-card border border-slate-200 bg-white p-4 shadow-card">
+       class="card mb-4 space-y-2 p-4">
     <div class="flex flex-wrap items-center gap-2">
       <input type="text" x-model="courseName" placeholder="课程名称，如 数据结构"
-             class="flex-1 rounded-md border border-slate-300 px-3 py-2 text-sm transition-colors focus:border-brand-500 focus:outline-none">
-      <select x-model="courseSemesterId"
-              class="rounded-md border border-slate-300 px-3 py-2 text-sm transition-colors focus:border-brand-500 focus:outline-none">
+             class="input-base flex-1">
+      <select id="course-semester-select" x-model="courseSemesterId"
+              class="input-base !w-auto">
         <option value="">不分组</option>
         {% for s in semesters %}
         <option value="{{ s.id }}">{{ s.name }}</option>
         {% endfor %}
       </select>
-      <button @click="createCourse()" :disabled="loading"
-              class="rounded-md bg-brand-600 px-4 py-2 text-sm text-white transition-colors hover:bg-brand-700 disabled:opacity-50">
+      <button @click="createCourse()" :disabled="loading" class="btn btn-primary">
         创建
       </button>
     </div>
     <input type="text" x-model="courseDesc" placeholder="课程简介（选填）"
-           class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm transition-colors focus:border-brand-500 focus:outline-none">
+           class="input-base">
   </div>
 
   {% if not semester_groups and not uncategorized %}
   {# 空状态引导：上传前需先有一门课程，CTA 直接展开新建课程表单 #}
-  <div class="rounded-card border border-dashed border-slate-300 bg-white py-16 text-center shadow-card">
-    <svg class="mx-auto h-12 w-12 text-slate-300" fill="none" stroke="currentColor" stroke-width="1.5"
+  <div id="library-empty" class="empty-state bg-white py-16">
+    <svg class="mx-auto h-12 w-12 text-brand-200" fill="none" stroke="currentColor" stroke-width="1.5"
          viewBox="0 0 24 24" aria-hidden="true">
       <path stroke-linecap="round" stroke-linejoin="round"
             d="M12 6.25v11.5m0-11.5C10.83 5.06 8.98 4.5 6.75 4.5c-1.32 0-2.58.22-3.75.62v13.13c1.17-.4 2.43-.62 3.75-.62 2.23 0 4.08.56 5.25 1.75m0-11.5c1.17-1.19 3.02-1.75 5.25-1.75 1.32 0 2.58.22 3.75.62v13.13c-1.17-.4-2.43-.62-3.75-.62-2.23 0-4.08.56-5.25 1.75"/>
@@ -227,64 +230,61 @@
       先创建一门课程，再上传课件 / 教材，解析完成后即可开始 AI 问答。
     </p>
     <button @click="showCourseForm = true; showSemesterForm = false"
-            class="mt-5 rounded-md bg-brand-600 px-5 py-2.5 text-sm text-white transition-colors hover:bg-brand-700">
+            class="btn btn-primary mt-5 !px-5 !py-2.5">
       上传第一份资料
     </button>
   </div>
   {% endif %}
 
-  {# 学期分组 #}
+  {# 学期分组（新建学期成功由 library.js 追加 section 到本容器） #}
+  <div id="semester-groups">
   {% for group in semester_groups %}
-  <section class="mb-8">
+  <section class="mb-8" id="sem-section-{{ group.semester.id }}">
     <h2 class="mb-3 flex items-center gap-2 text-lg font-semibold text-slate-700">
       {{ group.semester.name }}
       <span class="text-xs font-normal text-slate-400">{{ group.courses|length }} 门课程</span>
     </h2>
-    {% if group.courses %}
-    <div class="grid items-start gap-4 md:grid-cols-2">
+    <div class="grid items-start gap-4 md:grid-cols-2" id="course-grid-{{ group.semester.id }}">
       {% for item in group.courses %}{{ course_card(item, resource_map) }}{% endfor %}
+      {% if not group.courses %}
+      <p data-empty-hint class="text-sm text-slate-400">该学期暂无课程，点击右上角「新建课程」添加。</p>
+      {% endif %}
     </div>
-    {% else %}
-    <p class="text-sm text-slate-400">该学期暂无课程，点击右上角「新建课程」添加。</p>
-    {% endif %}
   </section>
   {% endfor %}
+  </div>
 
-  {# 未分组课程 #}
-  {% if uncategorized %}
-  <section class="mb-8">
+  {# 未分组课程（恒渲染容器，供新课程客户端插入；无内容时整段隐藏） #}
+  <section class="mb-8 {% if not uncategorized %}hidden{% endif %}" id="sem-section-none">
     <h2 class="mb-3 text-lg font-semibold text-slate-700">未分组</h2>
-    <div class="grid items-start gap-4 md:grid-cols-2">
+    <div class="grid items-start gap-4 md:grid-cols-2" id="course-grid-none">
       {% for item in uncategorized %}{{ course_card(item, resource_map) }}{% endfor %}
     </div>
   </section>
-  {% endif %}
 
-  {# 投稿到公共库 modal：标题 / 简介 / 目标课程 / 章节 #}
-  <div x-show="submitOpen" x-cloak
-       class="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4"
-       @keydown.escape.window="submitOpen = false">
-    <div class="w-full max-w-lg animate-fade-up rounded-card bg-white p-5 shadow-lift" @click.outside="submitOpen = false">
-      <h2 class="text-base font-semibold text-slate-800">投稿到公共库</h2>
+  {# 投稿到公共库 modal：标题 / 简介 / 目标课程 / 章节。
+     a11y（v1.1 F4）：role=dialog / aria-modal / 焦点圈定 / Esc 关闭 / 焦点还原，
+     由 library.js init 经 ZY.bindModalA11y 接入 #}
+  <div x-show="submitOpen" x-cloak x-ref="submitModal"
+       role="dialog" aria-modal="true" aria-labelledby="submit-modal-title"
+       class="fixed inset-0 z-50 flex items-center justify-center bg-brand-950/40 p-4 animate-fade-in">
+    <div class="w-full max-w-lg animate-scale-in rounded-card bg-white p-5 shadow-lift" @click.outside="submitOpen = false">
+      <h2 id="submit-modal-title" class="text-base font-semibold text-slate-800">投稿到公共库</h2>
       <p class="mt-1 text-xs text-slate-400">投稿后进入自动预检与三级审核，通过后全站可见。</p>
 
       <p x-show="submitError" x-text="submitError" x-cloak
-         class="mt-3 rounded bg-red-50 px-3 py-2 text-sm text-red-600"></p>
-      <p x-show="submitDone" x-cloak
-         class="mt-3 rounded bg-emerald-50 px-3 py-2 text-sm text-emerald-700">已提交审核（页面即将刷新）</p>
+         class="mt-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600"></p>
 
       <label class="mt-4 block text-xs font-medium text-slate-500">标题</label>
-      <input type="text" x-model="submitTitle" maxlength="128"
-             class="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm transition-colors focus:border-brand-500 focus:outline-none">
+      <input type="text" x-model="submitTitle" maxlength="128" class="input-base mt-1">
 
       <label class="mt-3 block text-xs font-medium text-slate-500">简介（选填）</label>
       <textarea x-model="submitDesc" rows="3" maxlength="512"
                 placeholder="资料内容、适用场景的简要说明"
-                class="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm transition-colors focus:border-brand-500 focus:outline-none"></textarea>
+                class="input-base mt-1"></textarea>
 
       <label class="mt-3 block text-xs font-medium text-slate-500">目标公共课程</label>
-      <select x-model="submitCourseId" @change="loadChapters()"
-              class="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm transition-colors focus:border-brand-500 focus:outline-none">
+      <select x-model="submitCourseId" @change="loadChapters()" class="input-base mt-1">
         <option value="">请选择课程</option>
         <template x-for="g in courseGroups" :key="g.major">
           <optgroup :label="g.major">
@@ -297,7 +297,7 @@
 
       <label class="mt-3 block text-xs font-medium text-slate-500">挂载章节（选填）</label>
       <select x-model="submitChapterId" :disabled="!submitCourseId"
-              class="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm transition-colors focus:border-brand-500 focus:outline-none disabled:opacity-50">
+              class="input-base mt-1 disabled:opacity-50">
         <option value="">不指定章节</option>
         <template x-for="ch in submitChapters" :key="ch.id">
           <option :value="ch.id" x-text="ch.label"></option>
@@ -305,12 +305,9 @@
       </select>
 
       <div class="mt-5 flex justify-end gap-2">
-        <button @click="submitOpen = false"
-                class="rounded-md border border-slate-300 px-4 py-2 text-sm text-slate-600 transition-colors hover:bg-slate-100">
-          取消
-        </button>
-        <button @click="submitResource()" :disabled="loading || submitDone"
-                class="rounded-md bg-brand-600 px-4 py-2 text-sm text-white transition-colors hover:bg-brand-700 disabled:opacity-50">
+        <button @click="submitOpen = false" class="btn btn-ghost">取消</button>
+        <button @click="submitResource()" :disabled="loading" class="btn btn-primary"
+                x-text="loading ? '提交中…' : '提交投稿'">
           提交投稿
         </button>
       </div>

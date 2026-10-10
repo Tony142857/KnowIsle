@@ -11,6 +11,7 @@ from types import SimpleNamespace
 import pytest
 from cryptography.fernet import Fernet, InvalidToken
 from fastapi import HTTPException
+from sqlalchemy.exc import IntegrityError
 
 from app.core.llm import router as llm_router
 from app.core.llm.router import ModelTier
@@ -156,6 +157,7 @@ async def test_get_user_client_no_record_returns_none(monkeypatch):
 
 # ---------------------------------------------------------------------------
 # 额度 DB 链路（ensure / check / consume，identity/quota.py）：FakeSession 内存替身
+# §20.5 B1：consume_quota 为行锁内「检查+扣减」一体的原子操作
 # ---------------------------------------------------------------------------
 
 
@@ -166,22 +168,48 @@ class _QuotaResult:
     def scalar_one_or_none(self):
         return self._row
 
+    def scalar_one(self):
+        return self._row
+
 
 class FakeQuotaSession:
-    """最小 AsyncSession 替身：execute 返回预置额度行，add/flush 记录副作用。"""
+    """最小 AsyncSession 替身：execute 按序出队预置额度行，add/flush 记录副作用。
 
-    def __init__(self, row=None):
-        self._row = row
+    fail_flush=True 时首次 flush 抛 IntegrityError（模拟并发建行撞唯一约束）。
+    """
+
+    def __init__(self, row=None, rows=None, fail_flush=False):
+        self._rows = list(rows) if rows is not None else [row]
+        self._fail_flush = fail_flush
         self.added: list = []
         self.flushed = False
+        self.expunged: list = []
 
     async def execute(self, _stmt):
-        return _QuotaResult(self._row)
+        return _QuotaResult(self._rows.pop(0))
 
     def add(self, obj):
         self.added.append(obj)
 
+    def expunge(self, obj):
+        self.expunged.append(obj)
+        if obj in self.added:
+            self.added.remove(obj)
+
+    def begin_nested(self):
+        class _Nested:
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, exc_type, *_exc):
+                return False
+
+        return _Nested()
+
     async def flush(self):
+        if self._fail_flush:
+            self._fail_flush = False
+            raise IntegrityError("INSERT", {}, Exception("duplicate key"))
         self.flushed = True
 
 
@@ -238,3 +266,23 @@ async def test_consume_quota_deducts_bonus_after_free_exhausted():
     row = SimpleNamespace(used=30, daily_limit=30, bonus_balance=2)
     await consume_quota(FakeQuotaSession(row), SimpleNamespace(id=7))
     assert row.used == 30 and row.bonus_balance == 1
+
+
+async def test_consume_quota_429_when_exhausted():
+    """§20.5 B1：原子扣减在锁内复检——预检后额度被并发耗尽时抛 429，不超扣。"""
+    row = SimpleNamespace(used=30, daily_limit=30, bonus_balance=0)
+    with pytest.raises(HTTPException) as exc_info:
+        await consume_quota(FakeQuotaSession(row), SimpleNamespace(id=7))
+    assert exc_info.value.status_code == 429
+    assert (row.used, row.bonus_balance) == (30, 0)  # 未扣减
+
+
+async def test_consume_quota_concurrent_row_creation(monkeypatch):
+    """§20.5 B1：并发建行撞唯一约束 → SAVEPOINT 回退 + expunge 本地插入，
+    加锁重读对方已建行后正常扣减。"""
+    monkeypatch.setattr(quota, "get_config", _fake_daily_limit)
+    winner = SimpleNamespace(used=5, daily_limit=30, bonus_balance=0)
+    session = FakeQuotaSession(rows=[None, winner], fail_flush=True)
+    await consume_quota(session, SimpleNamespace(id=7))
+    assert winner.used == 6  # 扣在对方建的行上
+    assert len(session.expunged) == 1  # 本地 pending 插入已回退

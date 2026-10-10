@@ -219,26 +219,52 @@ async def test_retrieve_public_degrades_when_coarse_none(monkeypatch):
 
 
 async def test_retrieve_mixed_fuses_with_personal_boost(monkeypatch):
-    """mixed：双库串行检索，个人库加权 1.2 后 RRF 融合，个人块压过公共块。"""
+    """mixed（§20.5 B2）：双库各自粗召回+精排，个人库显式加权 1.2 后 RRF 融合，
+    个人块压过公共块；返回的粗召回章节含双路并集。"""
     monkeypatch.setattr(pipeline, "get_embedding", lambda: FakeEmbedding())
     calls = []
     per_chunk = _chunk("per_d1_00001")
     pub_chunk = _chunk("pub_d1_00001")
 
+    async def fake_coarse(session, query_embedding, course_id, scope):
+        return [3, 4] if scope == "personal" else [4, 5]
+
     async def fake_fine(session, query, query_embedding, scope, course_id,
                         owner_id=None, chapter_ids=None):
-        calls.append((scope, owner_id))
+        calls.append((scope, owner_id, chapter_ids))
         if scope == "personal":
             return [{"chunk": per_chunk, "score": 0.5}]
         return [{"chunk": pub_chunk, "score": 0.9}]
 
+    monkeypatch.setattr(pipeline, "coarse_recall", fake_coarse)
     monkeypatch.setattr(pipeline, "fine_search", fake_fine)
     session = FakeSession(_course(scope="public", owner_id=None))
     hits, chapter_ids = await pipeline.retrieve(session, "q", _user(7), 7, "mixed")
-    assert chapter_ids is None
-    assert calls == [("personal", 7), ("public", None)]
+    assert chapter_ids == [3, 4, 5]  # 双路章节并集（个人库在前），落库 coarse_chapters 用
+    assert calls == [("personal", 7, [3, 4]), ("public", None, [4, 5])]
     assert [h["chunk"].chunk_id for h in hits] == ["per_d1_00001", "pub_d1_00001"]
     assert hits[0]["score"] > hits[1]["score"]
+
+
+async def test_retrieve_mixed_coarse_none_degrades(monkeypatch):
+    """mixed 双路均无章节摘要：chapter_ids=None 降级全课程精排（§8.3）。"""
+    monkeypatch.setattr(pipeline, "get_embedding", lambda: FakeEmbedding())
+    seen = []
+
+    async def fake_coarse(session, query_embedding, course_id, scope):
+        return None
+
+    async def fake_fine(session, query, query_embedding, scope, course_id,
+                        owner_id=None, chapter_ids=None):
+        seen.append((scope, chapter_ids))
+        return []
+
+    monkeypatch.setattr(pipeline, "coarse_recall", fake_coarse)
+    monkeypatch.setattr(pipeline, "fine_search", fake_fine)
+    session = FakeSession(_course(scope="public", owner_id=None))
+    hits, chapter_ids = await pipeline.retrieve(session, "q", _user(7), 7, "mixed")
+    assert hits == [] and chapter_ids is None
+    assert seen == [("personal", None), ("public", None)]
 
 
 async def test_retrieve_raises_404_for_missing_course():

@@ -99,6 +99,23 @@ class FakeSession:
                 self._next_id += 1
                 obj.id = self._next_id
 
+    def begin_nested(self):
+        """SAVEPOINT 替身（§20.5 B1 额度原子扣减用）：异步上下文管理器，无实际操作。"""
+
+        class _Nested:
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *_exc):
+                return False
+
+        return _Nested()
+
+    def expunge(self, obj):
+        """ORM expunge 替身：记录后丢弃（并发建行回退路径用）。"""
+        if obj in self.added:
+            self.added.remove(obj)
+
     async def flush(self):
         self._assign_ids()
 
@@ -160,6 +177,7 @@ class FakeRedis:
 
     async def incr(self, key):
         self.counters[key] = self.counters.get(key, 0) + 1
+        self.kv[key] = str(self.counters[key])  # 与真实 Redis 一致：INCR 后 GET 可读
         return self.counters[key]
 
     async def expire(self, key, seconds):
@@ -281,6 +299,15 @@ def async_value(value):
     return _fn
 
 
+def recording_async(calls: list):
+    """生成记录调用参数的异步替身（替换 invalidate_bm25 等异步失效函数，§20.5 B2）。"""
+
+    async def _fn(*args):
+        calls.append(args)
+
+    return _fn
+
+
 # ---------------------------------------------------------------------------
 # 实体工厂（SimpleNamespace：属性读写自由，足够路由/模板使用）
 # ---------------------------------------------------------------------------
@@ -334,7 +361,8 @@ def make_resource(resource_id=21, uploader_id=9, review_status="approved", **ove
         "id": resource_id, "document_id": 11, "course_id": 5, "uploader_id": uploader_id,
         "title": "操作系统笔记", "description": "描述", "chapter_id": None,
         "review_status": review_status, "download_count": 3, "fav_count": 1,
-        "rating": None, "rating_count": 0, "download_cost": 0, "created_at": NOW,
+        "rating": None, "rating_count": 0, "download_cost": 0,
+        "approved_at": None, "created_at": NOW,
     }
     data.update(overrides)
     return SimpleNamespace(**data)

@@ -58,7 +58,7 @@ def test_feed_logged_in_without_follows():
 
 
 def test_feed_logged_in_with_followed_course_resources():
-    resource = make_resource(21, title="操作系统笔记")
+    resource = make_resource(21, title="操作系统笔记", approved_at=NOW)
     session = FakeSession(results=[
         FakeResult(rows=[5]),                        # 关注的课程 ID
         FakeResult(rows=[(resource, "操作系统")]),   # 关注课程的上架资源
@@ -73,6 +73,7 @@ def test_feed_logged_in_with_followed_course_resources():
     assert item["course_id"] == 5 and item["course_name"] == "操作系统"
     assert item["url"] == "/resources/21"
     assert "created_at" in item
+    assert "approved_at" in item  # §20.5 B3：按上架时间排序（approved_at DESC NULLS LAST）
 
 
 def test_feed_hot_posts_sorted_by_score_then_time():

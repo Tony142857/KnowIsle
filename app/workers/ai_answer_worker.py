@@ -2,10 +2,14 @@
 
 以「标题 + 正文前 500 字」为 query 检索本课程公共库（pipeline.retrieve），
 按 pipeline.py 的格式组装上下文，SHORT 档非流式生成；成功写 posts.ai_first_answer
-并通知提问者，失败由 ARQ 重试（全局 max_tries=3），末次重试置 Redis failed 状态。
+并通知提问者。§20.5 B3（v1.1）：课程被禁用/删除等永久性错误（retrieve 抛
+HTTPException）不再占用重试——直接置 Redis failed 状态早退；其余瞬时异常
+由 ARQ 重试（全局 max_tries=3），末次重试置 Redis failed 状态。
 """
 
 import logging
+
+from fastapi import HTTPException
 
 from app.community.posts import AI_ANSWER_KEY_TTL, ai_answer_key
 from app.core.llm.prompts import AI_FIRST_ANSWER_PROMPT
@@ -31,8 +35,13 @@ async def generate_ai_first_answer(ctx: dict, post_id: int) -> None:
         if post is None or post.board != "qa" or post.ai_first_answer:
             await redis.delete(key)  # 早退路径清理 pending 键，避免残留至 TTL 过期
             return
+        author = await session.get(User, post.author_id)
+        if author is None:
+            # 作者账号不存在（永久性）：置 failed 早退，不重试
+            logger.warning("AI 首答永久失败：作者不存在 post_id=%s", post_id)
+            await redis.set(key, "failed", ex=AI_ANSWER_KEY_TTL)
+            return
         try:
-            author = await session.get(User, post.author_id)
             question = f"{post.title}\n{post.content[:_QUERY_CONTENT_LIMIT]}"
             hits, _ = await retrieve(session, question, author, post.course_id, "public")
             context = "\n\n".join(
@@ -56,6 +65,13 @@ async def generate_ai_first_answer(ctx: dict, post_id: int) -> None:
             await session.commit()
             await redis.delete(key)
             logger.info("AI 首答生成完成 post_id=%s", post_id)
+        except HTTPException as exc:
+            # §20.5 B3：课程被禁用/越权等永久性错误，重试无意义 → 置 failed 早退
+            await session.rollback()
+            logger.warning(
+                "AI 首答永久失败（不重试）post_id=%s detail=%s", post_id, exc.detail
+            )
+            await redis.set(key, "failed", ex=AI_ANSWER_KEY_TTL)
         except Exception:
             await session.rollback()
             if ctx.get("job_try", 1) >= _MAX_TRIES:

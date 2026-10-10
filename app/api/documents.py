@@ -8,6 +8,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Form, HTTPException, UploadFile
 from pydantic import BaseModel, Field
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.platform_config import get_config
@@ -64,11 +65,16 @@ async def upload_document(
 ):
     """上传资料到个人库：存对象存储 → 建档 → ARQ 入队异步解析（202 即返，轮询状态）。
 
-    chapter_id 为 v0.4 人工挂载章节预留参数；v0.3 章节由 tree_builder 自动构建。
+    §20.5 B3（v1.1）：chapter_id 为历史预留参数，章节由解析自动构建、不支持
+    人工挂载——传入非空 chapter_id 显式 422，不再静默丢弃。
     """
     # 信用阶梯处罚门控（v0.8）：低信用上传走 Redis 冷却 429
     cooldown = await get_config(db, "credit_rate_limit_cooldown_seconds")
     await check_action_cooldown(user, "upload", cooldown)
+    if chapter_id is not None:
+        raise HTTPException(
+            status_code=422, detail="章节由解析自动构建，不支持人工挂载"
+        )
     course = await db.get(Course, course_id)
     if course is None or course.scope != "personal" or course.owner_id != user.id:
         raise HTTPException(status_code=404, detail="Not Found")
@@ -136,7 +142,21 @@ async def upload_document(
         status="parsing",
     )
     db.add(doc)
-    await db.commit()
+    try:
+        await db.commit()
+    except IntegrityError:
+        # §20.5 B1（迁移⑦）：并发上传同一文件撞部分唯一索引 → 回落既有去重查询，
+        # 幂等返回对方已建的文档（不出 500）
+        await db.rollback()
+        existing = (
+            await db.execute(
+                select(Document).where(Document.owner_id == user.id, Document.md5 == md5)
+            )
+        ).scalars().first()
+        if existing is not None:
+            logger.info("并发上传撞唯一索引，回落去重 document_id=%s", existing.id)
+            return {"document_id": existing.id, "status": existing.status, "dedup": True}
+        raise
 
     pool = await get_arq_pool()
     try:

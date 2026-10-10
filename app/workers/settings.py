@@ -10,7 +10,6 @@ from app.config import get_settings
 from app.workers import (
     ai_answer_worker,
     experience_summary_worker,
-    notify_worker,
     parse_worker,
     preview_worker,
     review_timeout_worker,
@@ -26,7 +25,6 @@ class WorkerSettings:
         review_worker.precheck_submission,
         preview_worker.convert_preview,
         summary_worker.backfill_chapter_summaries,
-        notify_worker.send_notification,
         settle_worker.settle_scores,
         review_timeout_worker.review_timeout_scan,
         ai_answer_worker.generate_ai_first_answer,

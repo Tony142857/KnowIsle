@@ -1,64 +1,72 @@
 {% extends "base.html" %}
 {% block title %}{{ major.name }} · 课程空间 · 知屿{% endblock %}
+{% block head %}
+{# 页面脚本须在 Alpine（defer）启动前执行：head 块内同步加载，勿加 defer #}
+<script src="/static/js/pages/major_detail.js"></script>
+{% endblock %}
 {% block content %}
-<div class="mb-6">
-  <a href="/majors" class="text-sm text-sky-600 hover:underline">← 全部专业</a>
+<div class="mb-6 animate-fade-up">
+  <a href="/majors" class="text-sm text-brand-600 transition-colors hover:text-brand-700 hover:underline">← 全部专业</a>
   <h1 class="mt-2 text-2xl font-bold text-slate-800">{{ major.name }}</h1>
   {% if major.code %}<p class="mt-1 text-sm text-slate-400">专业代码 {{ major.code }}</p>{% endif %}
 </div>
 
-{% if courses %}
-<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+{# 课程卡片网格：admin 直建成功后由 major_detail.js 客户端追加卡片（免整页刷新） #}
+<div id="course-grid" class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
   {% for c in courses %}
   <a href="/courses/{{ c.id }}"
-     class="block rounded-lg border border-slate-200 bg-white p-5 hover:border-sky-300 hover:shadow-sm transition">
+     class="card card-hover animate-fade-up block p-5">
     <h2 class="font-semibold text-slate-700">{{ c.name }}</h2>
-    <p class="mt-2 text-sm text-slate-500 line-clamp-2">{{ c.description or '暂无简介' }}</p>
+    <p class="mt-2 line-clamp-2 text-sm text-slate-500">{{ c.description or '暂无简介' }}</p>
   </a>
   {% endfor %}
 </div>
-{% else %}
-<div class="rounded-lg border border-dashed border-slate-300 bg-white p-12 text-center text-slate-400">
-  该专业暂无课程空间
+<div id="course-empty" class="empty-state bg-white py-16 {% if courses %}hidden{% endif %}">
+  <svg class="mx-auto h-12 w-12 text-brand-200" fill="none" stroke="currentColor" stroke-width="1.5"
+       viewBox="0 0 24 24" aria-hidden="true">
+    <path stroke-linecap="round" stroke-linejoin="round"
+          d="M12 6.25v11.5m0-11.5C10.83 5.06 8.98 4.5 6.75 4.5c-1.32 0-2.58.22-3.75.62v13.13c1.17-.4 2.43-.62 3.75-.62 2.23 0 4.08.56 5.25 1.75m0-11.5c1.17-1.19 3.02-1.75 5.25-1.75 1.32 0 2.58.22 3.75.62v13.13c-1.17-.4-2.43-.62-3.75-.62-2.23 0-4.08.56-5.25 1.75"/>
+  </svg>
+  <p class="mt-4 text-slate-600">该专业暂无课程空间</p>
+  {% if user %}
+  <p class="mt-1 text-sm text-slate-400">在下方{{ '创建' if user.role == 'admin' else '申请开通' }}第一个课程空间。</p>
+  {% else %}
+  <p class="mt-1 text-sm text-slate-400">
+    <a href="/login" class="text-brand-600 transition-colors hover:text-brand-700 hover:underline">登录</a>
+    后可申请开通课程空间。
+  </p>
+  {% endif %}
 </div>
-{% endif %}
 
-{# 课程空间开通：管理员直接创建（active）；学生提交申请（pending，§4.1） #}
+{# 课程空间开通：管理员直接创建（active）；学生提交申请（pending，§4.1）。
+   交互逻辑外置 pages/major_detail.js：ZY.api 提交 + toast + 局部更新（消灭整页 reload） #}
 {% if user %}
-<div class="mt-8 rounded-lg border border-slate-200 bg-white p-5"
-     x-data="{ name: '', description: '', msg: '', error: '',
-       async submit() {
-         this.msg = ''; this.error = '';
-         const resp = await fetch('/api/courses', {
-           method: 'POST', headers: {'Content-Type': 'application/json'},
-           body: JSON.stringify({name: this.name, description: this.description || null,
-                                 major_id: {{ major.id }}}),
-         });
-         const data = await resp.json().catch(() => ({}));
-         if (resp.ok) {
-           this.msg = data.applied ? '已提交开通申请，等待管理员审批' : '课程空间已创建';
-           setTimeout(() => window.location.reload(), 800);
-         } else { this.error = data.detail || ('创建失败 ' + resp.status); }
-       } }">
+<div class="card mt-8 p-5" x-data="courseApply({{ major.id }}, {{ 'true' if user.role == 'admin' else 'false' }})">
   <h2 class="font-semibold text-slate-700">
     {{ '创建课程空间' if user.role == 'admin' else '申请开通课程空间' }}
   </h2>
-  <div class="mt-3 flex flex-col sm:flex-row gap-3">
+  <div class="mt-3 flex flex-col gap-3 sm:flex-row">
     <input type="text" x-model="name" placeholder="课程名称" required
-           class="flex-1 rounded border border-slate-300 px-3 py-2 text-sm">
+           class="input-base flex-1">
     <input type="text" x-model="description" placeholder="简介（选填）"
-           class="flex-1 rounded border border-slate-300 px-3 py-2 text-sm">
-    <button @click="submit()"
-            class="rounded bg-sky-600 px-4 py-2 text-sm text-white hover:bg-sky-700">
-      {{ '创建' if user.role == 'admin' else '提交申请' }}
+           class="input-base flex-1">
+    <button @click="submit()" :disabled="loading" class="btn btn-primary">
+      <span x-text="loading ? '提交中…' : '{{ '创建' if user.role == 'admin' else '提交申请' }}'"></span>
     </button>
   </div>
-  <p x-show="msg" x-text="msg" class="mt-2 text-sm text-green-600"></p>
-  <p x-show="error" x-text="error" class="mt-2 text-sm text-red-600"></p>
+  <p x-show="error" x-text="error" x-cloak class="mt-2 text-sm text-red-600"></p>
+  {# 学生申请成功：pending 不可见，本地状态提示（不入网格） #}
+  <p x-show="applied" x-cloak
+     class="mt-3 rounded-lg bg-brand-50 px-3 py-2 text-sm text-brand-700">
+    已提交开通申请，管理员审批通过后课程空间将出现在上方列表。
+  </p>
 </div>
+{% elif not courses %}
+{# 未登录引导已在空状态卡内，避免重复 #}
 {% else %}
 <p class="mt-8 text-sm text-slate-400">
-  <a href="/login" class="text-sky-600 hover:underline">登录</a> 后可申请开通课程空间
+  <a href="/login" class="text-brand-600 transition-colors hover:text-brand-700 hover:underline">登录</a>
+  后可申请开通课程空间
 </p>
 {% endif %}
 {% endblock %}

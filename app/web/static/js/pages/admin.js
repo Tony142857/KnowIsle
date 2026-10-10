@@ -1,27 +1,11 @@
-/* 管理后台交互（admin.html，v1.0 CSP 外置）。
- * adminApi/adminPost —— 统一 fetch 封装；majorImport / adminCourses / createCourse /
- * adminUsers / userRow / adminConfig / adminReports / adminDashboard —— 六个 Tab 的数据源。
- * 注意：本文件须在 Alpine 启动前执行（模板 head 块内同步加载，勿加 defer）。 */
+/* 管理后台交互（admin.html，v1.1 CSP 外置）。
+ * majorImport / adminCourses / createCourse / adminUsers / userRow / adminConfig /
+ * adminReports / adminDashboard —— 六个 Tab 的数据源。
+ * 注意：本文件须在 Alpine 启动前执行（模板 head 块内同步加载，勿加 defer）。
+ * v1.1：删除私有 adminApi/adminPost 封装（全站第三套），统一走 ZY.api；
+ * 保存 / 任命 / 裁决 / 处理成功均给 ZY.toast 反馈；时间统一 ZY.relTime（模板侧）。 */
 (function () {
   'use strict';
-
-  // 管理后台统一 fetch 封装：204 视为成功空响应，错误抛出 detail
-  async function adminApi(url, options) {
-    const resp = await fetch(url, options);
-    const data = resp.status === 204 ? {} : await resp.json().catch(() => ({}));
-    if (!resp.ok && resp.status !== 204) {
-      const detail = typeof data.detail === 'string' ? data.detail : JSON.stringify(data.detail);
-      throw new Error(detail || ('请求失败 ' + resp.status));
-    }
-    return data;
-  }
-  function adminPost(url, method, body) {
-    return adminApi(url, {
-      method: method,
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify(body),
-    });
-  }
 
   // 专业批量导入：优先按 JSON 解析，失败按逐行「名称,代码」解析
   function majorImport() {
@@ -45,9 +29,10 @@
         try {
           const items = this.parseItems();
           if (!items.length || items.some(it => !it.name)) throw new Error('存在空名称行，请检查格式');
-          const data = await adminPost('/api/admin/majors', 'POST', {items: items});
+          const data = await ZY.api.post('/api/admin/majors', {items: items});
           this.result = '导入完成：新增 ' + data.created + ' 个，跳过已存在 ' + data.skipped + ' 个';
           this.text = '';
+          ZY.toast('专业导入完成', 'success');
         } catch (e) { this.error = e.message; }
         finally { this.loading = false; }
       },
@@ -62,7 +47,7 @@
       async load() {
         this.loading = true; this.error = '';
         try {
-          const data = await adminApi('/api/admin/courses?size=100'
+          const data = await ZY.api.get('/api/admin/courses?size=100'
             + (this.status ? '&status=' + this.status : ''));
           this.items = data.items || [];
           this.total = data.total || 0;
@@ -86,8 +71,9 @@
       async applyStatus(c, status) {
         this.loading = true; this.error = '';
         try {
-          await adminPost('/api/admin/courses/' + c.id, 'PATCH', {status: status});
+          await ZY.api.patch('/api/admin/courses/' + c.id, {status: status});
           c.status = status;
+          ZY.toast(status === 'active' ? '课程已开通' : '课程已停用', 'success');
         } catch (e) { this.error = e.message; }
         finally { this.loading = false; }
       },
@@ -101,7 +87,7 @@
       loading: false, error: '', result: '',
       async loadMajors() {
         try {
-          const data = await adminApi('/api/majors');
+          const data = await ZY.api.get('/api/majors');
           this.majors = data.items || [];
         } catch (e) { this.error = e.message; }
       },
@@ -111,13 +97,14 @@
         if (!this.form.major_id) { this.error = '请选择所属专业'; return; }
         this.loading = true;
         try {
-          const data = await adminPost('/api/courses', 'POST', {
+          const data = await ZY.api.post('/api/courses', {
             name: this.form.name.trim(),
             major_id: Number(this.form.major_id),
             description: this.form.description.trim() || null,
           });
           this.result = '已创建并开通：' + data.name;
           this.form = {name: '', major_id: '', description: ''};
+          ZY.toast('课程已创建并开通', 'success');
         } catch (e) { this.error = e.message; }
         finally { this.loading = false; }
       },
@@ -131,7 +118,7 @@
       async load() {
         this.loading = true; this.error = '';
         try {
-          const data = await adminApi('/api/admin/users?size=50'
+          const data = await ZY.api.get('/api/admin/users?size=50'
             + (this.q.trim() ? '&q=' + encodeURIComponent(this.q.trim()) : ''));
           this.items = data.items || [];
           this.total = data.total || 0;
@@ -153,9 +140,10 @@
         if (this.role === this.u.role) { this.error = '角色未变更'; this.msg = ''; return; }
         this.loading = true; this.error = ''; this.msg = '';
         try {
-          const data = await adminPost('/api/admin/users/' + this.u.id + '/role', 'PUT', {role: this.role});
+          const data = await ZY.api.put('/api/admin/users/' + this.u.id + '/role', {role: this.role});
           this.u.role = data.role;
           this.msg = '已任命为「' + this.roleLabel(data.role) + '」';
+          ZY.toast(this.msg, 'success');
         } catch (e) { this.error = e.message; this.role = this.u.role; }
         finally { this.loading = false; }
       },
@@ -165,13 +153,14 @@
         if (!this.reason.trim()) { this.error = '请填写裁决理由'; return; }
         this.loading = true;
         try {
-          const data = await adminPost('/api/admin/users/' + this.u.id + '/credit', 'POST', {
+          const data = await ZY.api.post('/api/admin/users/' + this.u.id + '/credit', {
             delta: this.delta, reason: this.reason.trim(),
           });
           this.u.credit = data.credit;
           this.msg = '信用裁决已提交：' + (data.delta >= 0 ? '+' : '') + data.delta
             + '，当前信用分 ' + data.credit;
           this.delta = null; this.reason = '';
+          ZY.toast('信用裁决已提交', 'success');
           if (this.logs !== null) await this.loadLogs();
         } catch (e) { this.error = e.message; }
         finally { this.loading = false; }
@@ -179,7 +168,7 @@
       async loadLogs() {
         this.logsLoading = true; this.error = '';
         try {
-          const data = await adminApi('/api/admin/users/' + this.u.id + '/credit-logs');
+          const data = await ZY.api.get('/api/admin/users/' + this.u.id + '/credit-logs');
           this.logs = data.items || [];
         } catch (e) { this.error = e.message; }
         finally { this.logsLoading = false; }
@@ -195,7 +184,7 @@
       async load() {
         this.loading = true; this.error = '';
         try {
-          const data = await adminApi('/api/admin/config');
+          const data = await ZY.api.get('/api/admin/config');
           this.items = data.items || [];
           this.drafts = {};
           for (const item of this.items) this.drafts[item.key] = item.value;
@@ -207,10 +196,11 @@
         this.rowErrors = {...this.rowErrors, [item.key]: ''};
         this.rowMsgs = {...this.rowMsgs, [item.key]: ''};
         try {
-          const data = await adminPost('/api/admin/config/' + item.key, 'PUT',
-                                       {value: Number(this.drafts[item.key])});
+          const data = await ZY.api.put('/api/admin/config/' + item.key,
+                                        {value: Number(this.drafts[item.key])});
           this.rowMsgs = {...this.rowMsgs,
                           [item.key]: '已保存：' + data.previous + ' → ' + data.value};
+          ZY.toast('配置已保存', 'success');
           await this.load();
         } catch (e) {
           this.rowErrors = {...this.rowErrors, [item.key]: e.message};
@@ -243,7 +233,7 @@
         try {
           let url = '/api/admin/reports?page=' + this.page + '&size=' + this.size;
           if (this.status) url += '&status=' + this.status;
-          const data = await adminApi(url);
+          const data = await ZY.api.get(url);
           this.items = data.items || [];
           this.total = data.total || 0;
           this.loaded = true;
@@ -269,8 +259,9 @@
         try {
           const body = {action: action};
           if (note && note.trim()) body.note = note.trim();
-          await adminPost('/api/admin/reports/' + r.id + '/handle', 'POST', body);
+          await ZY.api.post('/api/admin/reports/' + r.id + '/handle', body);
           this.msg = '已提交处理结果';
+          ZY.toast('已提交处理结果', 'success');
           await this.load(this.page);
         } catch (e) { this.error = e.message; }
         finally { this.loading = false; }
@@ -296,7 +287,7 @@
       async load() {
         this.loading = true; this.error = '';
         try {
-          this.data = await adminApi('/api/admin/dashboard');
+          this.data = await ZY.api.get('/api/admin/dashboard');
           this.$nextTick(() => this.renderChart());
         } catch (e) { this.error = e.message; }
         finally { this.loading = false; }
@@ -307,6 +298,8 @@
         if (!this.chart) this.chart = echarts.init(el);
         const t = this.data.trend || {};
         this.chart.setOption({
+          // 翡翠绿主色 + 琥珀点缀（brand-600 / brand-400 / accent-500）
+          color: ['#059669', '#34d399', '#dd9424'],
           tooltip: {trigger: 'axis'},
           legend: {data: ['问答', '发帖', '上传']},
           grid: {left: 48, right: 16, top: 32, bottom: 24},
@@ -322,8 +315,6 @@
     };
   }
 
-  window.adminApi = adminApi;
-  window.adminPost = adminPost;
   window.majorImport = majorImport;
   window.adminCourses = adminCourses;
   window.createCourse = createCourse;

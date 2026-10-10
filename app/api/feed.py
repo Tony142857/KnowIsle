@@ -55,7 +55,8 @@ async def _new_resources(db: AsyncSession, user: User) -> list[dict]:
                 Resource.review_status == "approved",
                 Resource.course_id.in_(course_ids),
             )
-            .order_by(Resource.created_at.desc(), Resource.id.desc())
+            # §20.5 B3（迁移⑧）：按上架时间倒序（存量数据 approved_at 为 NULL 排最后）
+            .order_by(Resource.approved_at.desc().nulls_last(), Resource.id.desc())
             .limit(FEED_SIZE)
         )
     ).all()
@@ -65,6 +66,7 @@ async def _new_resources(db: AsyncSession, user: User) -> list[dict]:
             "title": r.title,
             "course_id": r.course_id,
             "course_name": course_name,
+            "approved_at": r.approved_at,
             "created_at": r.created_at,
             "url": f"/resources/{r.id}",
         }

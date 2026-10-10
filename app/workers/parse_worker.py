@@ -91,8 +91,8 @@ async def _run_pipeline(session: AsyncSession, doc: Document) -> list:
     )
     doc.status = "parsed"
     await session.commit()
-    # chunks 已落库：失效该课程 BM25 语料缓存（v0.9），下次检索重建
-    invalidate_bm25(doc.course_id, doc.scope, doc.owner_id)
+    # chunks 已落库：失效该课程 BM25 语料缓存（v0.9；v1.1 起含 Redis 版本戳跨进程失效）
+    await invalidate_bm25(doc.course_id, doc.scope, doc.owner_id)
     return blocks
 
 

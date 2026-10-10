@@ -264,11 +264,18 @@ def test_rrf_fuse_orders_and_weights():
 
 
 def test_rrf_fuse_weighted_personal_boost():
-    """mixed 模式个人库加权 1.2：同 rank 的个人块应压过公共块。"""
+    """§20.5 B2：mixed 模式个人库显式加权 1.2——同 rank 的个人块应压过公共块。"""
     personal = [_hit("per_d1_00001")]
     public = [_hit("pub_d1_00001")]
-    fused = rrf_fuse(personal, public, weight_semantic=1.2, weight_bm25=1.0, top_k=2)
+    fused = rrf_fuse(personal, public, weight_a=1.2, weight_b=1.0, top_k=2)
     assert fused[0][0] == "per_d1_00001"
+
+
+def test_rrf_fuse_default_weights_unchanged():
+    """默认权重保持 0.65 / 0.35：list_a（语义）同 rank 压过 list_b（BM25）。"""
+    fused = rrf_fuse([_hit("a")], [_hit("b")], top_k=2)
+    assert fused[0][0] == "a"
+    assert dict(fused)["a"] == pytest.approx(dict(fused)["b"] * (0.65 / 0.35))
 
 
 def test_tokenize_bigram_and_words():

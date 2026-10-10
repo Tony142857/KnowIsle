@@ -14,11 +14,15 @@ import app.core.retrieval.coarse as coarse
 import app.core.retrieval.fine as fine
 from app.storage.vector_store import COLLECTION_PERSONAL, COLLECTION_PUBLIC
 
+from .fakestack import FakeRedis
+
 
 @pytest.fixture(autouse=True)
-def _clear_bm25_cache():
-    """每个用例前后清空 BM25 进程内缓存，避免相互污染。"""
+def _clear_bm25_cache(monkeypatch):
+    """每个用例前后清空 BM25 进程内缓存，避免相互污染；
+    版本戳走内存 Redis（§20.5 B2）。"""
     fine._bm25_cache.clear()
+    monkeypatch.setattr(fine, "get_redis", lambda: FakeRedis())
     yield
     fine._bm25_cache.clear()
 
