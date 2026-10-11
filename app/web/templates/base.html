@@ -263,7 +263,8 @@
 
   {# 全局确认对话框（confirmModal 组件，components.js）：页面内任意组件
      $dispatch('zy-ask', {title, message, confirmText, withInput, requireInput,
-     placeholder, onConfirm}) 即可弹出，替代原生 confirm/prompt。
+     placeholder, danger, onConfirm}) 即可弹出，替代原生 confirm/prompt；
+     danger: true 启用红色危险变体（warn 图标 + btn-danger 确认按钮）。
      a11y（v1.1 F4）：role=dialog / aria-modal / 焦点圈定 / Esc 关闭 / 焦点还原，
      由 confirmModal init 接入 ZY.bindModalA11y 自动完成 #}
   <div x-data="confirmModal()" @zy-ask.window="ask($event.detail)">
@@ -271,7 +272,15 @@
          role="dialog" aria-modal="true" aria-labelledby="zy-confirm-title"
          class="fixed inset-0 z-50 flex items-center justify-center bg-brand-950/40 p-4 animate-fade-in">
       <div class="w-full max-w-sm rounded-card bg-white p-5 shadow-lift animate-scale-in" @click.outside="close()">
-        <h2 id="zy-confirm-title" class="text-base font-semibold text-slate-800" x-text="title"></h2>
+        <h2 id="zy-confirm-title" class="flex items-center gap-1.5 text-base font-semibold text-slate-800">
+          {# 危险变体警示图标（danger: true 时显示） #}
+          <svg x-show="danger" x-cloak class="h-5 w-5 shrink-0 text-red-500" viewBox="0 0 24 24"
+               fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+            <path stroke-linecap="round" stroke-linejoin="round"
+                  d="M12 9v4m0 4h.01M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0Z"/>
+          </svg>
+          <span x-text="title"></span>
+        </h2>
         <p x-show="message" x-text="message" x-cloak class="mt-2 text-sm leading-6 text-slate-600"></p>
         <input x-show="withInput" x-model="input" type="text" :placeholder="placeholder"
                @keydown.enter.prevent="confirm()"
@@ -279,7 +288,8 @@
         <div class="mt-4 flex justify-end gap-2">
           <button @click="close()" :disabled="loading" class="btn btn-ghost">取消</button>
           <button @click="confirm()" :disabled="loading || (requireInput && !input.trim())"
-                  class="btn btn-primary" x-text="confirmText"></button>
+                  class="btn" :class="[danger ? 'btn-danger' : 'btn-primary', { 'btn-loading': loading }]"
+                  x-text="confirmText"></button>
         </div>
       </div>
     </div>

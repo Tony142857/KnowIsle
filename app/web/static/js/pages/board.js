@@ -20,7 +20,7 @@
     if (!tpl) return null;
     const node = tpl.content.firstElementChild.cloneNode(true);
 
-    if (p.status === 'featured') node.classList.add('border-l-4', 'border-l-accent-400');
+    if (p.status === 'featured') node.classList.add('card-accent-left');
     const title = slot(node, 'title');
     title.href = '/posts/' + p.id;
     title.textContent = p.title;
@@ -65,9 +65,10 @@
     const time = slot(node, 'time');
     time.textContent = ZY.relTime(p.created_at);
     if (p.created_at) time.title = String(p.created_at).slice(0, 16).replace('T', ' ');
-    slot(node, 'views').textContent = '浏览 ' + p.view_count;
-    slot(node, 'comments').textContent = '评论 ' + p.comment_count;
-    slot(node, 'votes').textContent = '赞 ' + p.vote_score;
+    // 元信息数字槽位（图标已在模板内渲染，这里只填数字，与 SSR 宏对齐）
+    slot(node, 'views').textContent = p.view_count;
+    slot(node, 'comments').textContent = p.comment_count;
+    slot(node, 'votes').textContent = p.vote_score;
 
     const tagsHost = slot(node, 'tags');
     for (const t of p.tags || []) {
@@ -96,10 +97,14 @@
           this.$nextTick(() => {
             const host = document.getElementById('board-fallback-list');
             if (!host) return;
-            for (const p of this.items) {
+            // 首屏 stagger 入场：第 2/3/4 张依次延迟（与 SSR 循环同一口径）
+            const delays = ['', 'd-80', 'd-150', 'd-300'];
+            this.items.forEach((p, i) => {
               const card = buildCard(p, board);
-              if (card) host.appendChild(card);
-            }
+              if (!card) return;
+              if (i > 0 && i <= 3) card.classList.add(delays[i]);
+              host.appendChild(card);
+            });
           });
         } catch (e) { this.error = e.message; }
         finally { this.loading = false; }

@@ -135,8 +135,8 @@
         this.loading = true; this.error = '';
         try {
           const data = await ZY.api.post('/api/posts/comments/' + commentId + '/accept', {});
-          // 局部标记本卡：emerald 边框 + 「✓ 已采纳」徽章；广播事件让其余评论隐藏采纳按钮、帖头亮徽章
-          this.$root.classList.add('border-emerald-300', 'ring-1', 'ring-emerald-200');
+          // 局部标记本卡：brand 边框 + 已采纳徽章；广播事件让其余评论隐藏采纳按钮、帖头亮徽章
+          this.$root.classList.add('border-brand-300', 'ring-1', 'ring-brand-200');
           const badge = this.$root.querySelector(':scope > .comment-head [data-slot="accepted-badge"]');
           if (badge) badge.hidden = false;
           window.dispatchEvent(new CustomEvent('zy:accepted'));
@@ -161,8 +161,7 @@
     h.className = 'text-sm font-semibold ' + (palette === 'accent' ? 'text-accent-800' : 'text-brand-800');
     h.textContent = title;
     const note = document.createElement('span');
-    note.className = 'rounded px-2 py-0.5 text-xs ' +
-      (palette === 'accent' ? 'bg-accent-100 text-accent-700' : 'bg-amber-100 text-amber-700');
+    note.className = 'rounded px-2 py-0.5 text-xs bg-accent-100 text-accent-700';
     note.textContent = 'AI 生成，仅供参考';
     head.append(badge, h, note);
     return head;
@@ -179,7 +178,7 @@
     for (const c of citations) {
       const a = document.createElement('a');
       a.href = '/documents/' + c.document_id + '/source#' + c.chunk_id;
-      a.className = 'block rounded-lg border border-slate-200 bg-white p-3 text-xs card-hover';
+      a.className = 'block rounded-lg border border-brand-100 bg-white/80 p-3 text-xs card-hover';
       const id = document.createElement('span');
       id.className = 'font-mono text-slate-400';
       id.textContent = c.chunk_id;

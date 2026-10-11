@@ -1,5 +1,8 @@
 {% extends "base.html" %}
 {% block title %}个人中心 · 知屿 KnowIsle{% endblock %}
+{% from "_icons.html" import icon %}
+{% from "_illustrations.html" import illo %}
+{% from "_page_header.html" import page_header %}
 
 {% block head %}
 {# 页面脚本须在 Alpine（defer）启动前执行：head 块内同步加载，勿加 defer #}
@@ -8,23 +11,25 @@
 
 {% block content %}
 <div x-data="mePage()" x-init="loadAll()" class="animate-fade-up">
-  <h1 class="mb-6 text-2xl font-bold text-slate-800">个人中心</h1>
+  {{ page_header('个人中心', subtitle='成长看板、AI 额度与收藏关注一站管理', icon='user') }}
 
   <div class="grid gap-6 lg:grid-cols-2">
-    {# ===== 成长看板卡（SSR 注入等级进度，积分明细 fetch 渲染） ===== #}
-    <div class="card p-4 sm:p-6 lg:col-span-2">
-      <div class="flex flex-wrap items-center gap-4">
+    {# ===== 成长看板卡（card-tinted 渐变重点卡；SSR 注入等级进度，积分明细 fetch 渲染） ===== #}
+    <div class="card card-tinted p-4 sm:p-6 lg:col-span-2">
+      <div class="flex flex-wrap items-center gap-4 sm:gap-6">
         {% if user.avatar_url %}
-        <img src="{{ user.avatar_url }}" alt="" class="w-14 h-14 rounded-full object-cover ring-2 ring-brand-100">
+        <img src="{{ user.avatar_url }}" alt="" class="h-20 w-20 rounded-full object-cover shadow-card ring-4 ring-white">
         {% else %}
-        <span class="w-14 h-14 rounded-full bg-brand-100 text-brand-700 flex items-center justify-center text-xl font-medium ring-2 ring-brand-100">
+        <span class="flex h-20 w-20 items-center justify-center rounded-full bg-brand-100 text-2xl font-semibold text-brand-700 shadow-card ring-4 ring-white">
           {{ user.nickname[:1] }}
         </span>
         {% endif %}
         <div>
-          <p class="flex items-center gap-2 text-lg font-semibold text-slate-800">
+          <p class="flex flex-wrap items-center gap-2 text-lg font-semibold text-slate-800">
             {{ user.nickname }}
-            <span class="rounded bg-brand-600 px-2 py-0.5 text-xs text-white">Lv{{ growth.level }}</span>
+            <span class="inline-flex items-center gap-1 rounded-full bg-brand-600 px-2 py-0.5 text-xs font-medium text-white">
+              {{ icon('trophy', 'w-3 h-3') }} Lv{{ growth.level }}
+            </span>
             {% if user.role == 'admin' %}
             <span class="badge badge-accent">管理员</span>
             {% endif %}
@@ -34,29 +39,33 @@
             {% if major %}{{ major.name }}{% endif %}
           </p>
         </div>
-        {# 成长看板数字卡：等级 / 贡献分 / 信用分（大号数字 + 小标签） #}
+        {# 成长看板数字卡：等级 / 贡献分 / 信用分（白底 + 图标 + 大号数字 + 小标签） #}
         <dl class="ml-auto grid grid-cols-3 gap-3">
-          <div class="rounded-card border border-slate-100 bg-slate-50 px-4 py-3 text-center">
-            <dd class="text-2xl font-bold text-brand-700">Lv{{ growth.level }}</dd>
+          <div class="flex min-w-24 flex-col items-center rounded-card border border-brand-100 bg-white/80 px-4 py-3 text-center shadow-card">
+            <span class="text-brand-500">{{ icon('trophy', 'w-4 h-4') }}</span>
+            <dd class="mt-1 text-2xl font-bold text-brand-700">Lv{{ growth.level }}</dd>
             <dt class="mt-0.5 text-xs text-slate-400">等级</dt>
           </div>
-          <div class="rounded-card border border-slate-100 bg-slate-50 px-4 py-3 text-center">
-            <dd class="text-2xl font-bold text-slate-800">{{ user.score }}</dd>
+          <div class="flex min-w-24 flex-col items-center rounded-card border border-brand-100 bg-white/80 px-4 py-3 text-center shadow-card">
+            <span class="text-accent-500">{{ icon('star', 'w-4 h-4') }}</span>
+            <dd class="mt-1 text-2xl font-bold text-slate-800">{{ user.score }}</dd>
             <dt class="mt-0.5 text-xs text-slate-400">贡献分</dt>
           </div>
-          <div class="rounded-card border border-slate-100 bg-slate-50 px-4 py-3 text-center">
-            <dd class="text-2xl font-bold {{ 'text-emerald-600' if user.credit >= 80 else 'text-red-600' }}">{{ user.credit }}</dd>
+          <div class="flex min-w-24 flex-col items-center rounded-card border border-brand-100 bg-white/80 px-4 py-3 text-center shadow-card">
+            <span class="{{ 'text-brand-500' if user.credit >= 80 else 'text-red-500' }}">{{ icon('shield', 'w-4 h-4') }}</span>
+            <dd class="mt-1 text-2xl font-bold {{ 'text-brand-600' if user.credit >= 80 else 'text-red-600' }}">{{ user.credit }}</dd>
             <dt class="mt-0.5 text-xs text-slate-400">信用分</dt>
           </div>
         </dl>
       </div>
-      {# 处罚状态提示（v0.8）：禁言中显示解除时间；信用偏低显示冷却限制提醒 #}
+      {# 处罚状态提示（v0.8）：禁言中显示解除时间；信用偏低显示冷却限制提醒（语义色走 red / accent 令牌） #}
       {% if user.status == 'muted' and user.muted_until %}
       <div class="mt-4 rounded-md border border-red-200 bg-red-50 px-4 py-2.5 text-sm text-red-700">
         禁言中，至 {{ user.muted_until.strftime('%Y-%m-%d %H:%M') }} 解除。期间无法发帖、评论与上传资料。
       </div>
       {% elif user.status != 'muted' and user.credit < 80 %}
-      <div class="mt-4 rounded-md border border-amber-200 bg-amber-50 px-4 py-2.5 text-sm text-amber-700">
+      <div class="mt-4 flex items-start gap-2 rounded-md border border-accent-200 bg-accent-50 px-4 py-2.5 text-sm text-accent-700">
+        <span class="mt-0.5 shrink-0">{{ icon('warn', 'w-4 h-4') }}</span>
         信用偏低（当前 {{ user.credit }} 分）：发帖 / 评论 / 上传将有冷却限制。
       </div>
       {% endif %}
@@ -70,17 +79,22 @@
         </div>
         <div class="mt-1 h-2 overflow-hidden rounded-full bg-slate-100"
              x-data="{w: 0}" x-init="$nextTick(() => { w = {{ growth.progress }} })">
-          <div class="h-full rounded-full bg-brand-500 transition-all duration-700 ease-island"
+          <div class="h-full rounded-full bg-gradient-to-r from-brand-400 to-brand-600 transition-all duration-700 ease-island"
                :style="'width: ' + w + '%'"></div>
         </div>
         {% else %}
-        <p class="text-xs text-slate-400">已达最高等级 Lv{{ growth.level }} 🎉</p>
+        <p class="flex items-center gap-1.5 text-xs text-slate-400">
+          <span class="text-accent-500">{{ icon('trophy', 'w-3.5 h-3.5') }}</span>
+          已达最高等级 Lv{{ growth.level }}
+        </p>
         {% endif %}
       </div>
 
       {# 积分明细（近 20 条，fetch 渲染，delta 正负着色） #}
       <div class="mt-6 border-t border-slate-100 pt-4">
-        <h2 class="text-sm font-semibold text-slate-700">积分明细</h2>
+        <h2 class="flex items-center gap-2 text-card-title text-slate-800">
+          <span class="text-brand-600">{{ icon('list', 'w-4 h-4') }}</span>积分明细
+        </h2>
         <div x-show="logsLoading" x-cloak class="mt-3 space-y-2" aria-hidden="true">
           <div class="skeleton h-8 rounded-md"></div>
           <div class="skeleton h-8 rounded-md"></div>
@@ -95,7 +109,7 @@
           <template x-for="log in logs" :key="log.created_at + String(log.delta) + log.reason">
             <li class="flex items-center gap-3 py-2">
               <span class="w-14 shrink-0 text-right font-medium"
-                    :class="log.delta >= 0 ? 'text-emerald-600' : 'text-red-600'"
+                    :class="log.delta >= 0 ? 'text-brand-600' : 'text-red-600'"
                     x-text="(log.delta >= 0 ? '+' : '') + log.delta"></span>
               <span class="min-w-0 flex-1 truncate text-slate-600"
                     x-text="reasonLabel(log.reason)"></span>
@@ -109,7 +123,9 @@
 
     {# ===== AI 额度卡 ===== #}
     <div class="card p-4 sm:p-6">
-      <h2 class="text-sm font-semibold text-slate-700">AI 额度</h2>
+      <h2 class="flex items-center gap-2 text-card-title text-slate-800">
+        <span class="text-brand-600">{{ icon('sparkles', 'w-4 h-4') }}</span>AI 额度
+      </h2>
       <p x-show="quotaError" x-text="quotaError" x-cloak
          class="mt-3 rounded bg-red-50 px-3 py-2 text-sm text-red-600"></p>
       <div x-show="!quota && !quotaError" class="mt-3 space-y-2" aria-hidden="true">
@@ -153,7 +169,9 @@
 
     {# ===== 自定义 Key 卡（Key 加密存储，永不回显） ===== #}
     <div class="card p-4 sm:p-6">
-      <h2 class="text-sm font-semibold text-slate-700">自定义模型 Key</h2>
+      <h2 class="flex items-center gap-2 text-card-title text-slate-800">
+        <span class="text-brand-600">{{ icon('key', 'w-4 h-4') }}</span>自定义模型 Key
+      </h2>
       <p class="mt-1 text-xs text-slate-400">配置后 AI 问答走你自己的通道，不占用平台额度。Key 加密存储，永不回显。</p>
       <p x-show="keyError" x-text="keyError" x-cloak
          class="mt-3 rounded bg-red-50 px-3 py-2 text-sm text-red-600"></p>
@@ -210,7 +228,9 @@
     {# ===== 通知卡 ===== #}
     <div class="card p-4 sm:p-6 lg:col-span-2">
       <div class="flex items-center gap-3">
-        <h2 class="text-sm font-semibold text-slate-700">站内通知</h2>
+        <h2 class="flex items-center gap-2 text-card-title text-slate-800">
+          <span class="text-brand-600">{{ icon('bell', 'w-4 h-4') }}</span>站内通知
+        </h2>
         <button x-show="notifs.some(n => !n.is_read)" x-cloak @click="markAllRead()" :disabled="loading"
                 class="ml-auto text-xs text-brand-600 hover:underline disabled:opacity-50">
           全部已读
@@ -223,7 +243,14 @@
       </div>
       <p x-show="notifsError" x-text="notifsError" x-cloak
          class="mt-3 rounded bg-red-50 px-3 py-2 text-sm text-red-600"></p>
-      <p x-show="notifsLoaded && !notifs.length" x-cloak class="mt-3 text-sm text-slate-400">暂无通知。</p>
+      {# 空状态：插画 + 引导文案 + CTA #}
+      <div x-show="notifsLoaded && !notifs.length" x-cloak class="empty-state mt-4 flex flex-col items-center">
+        {{ illo('inbox', 'w-24 h-24') }}
+        <p class="mt-3 text-sm text-slate-500">
+          暂无通知。去问答区互动，被回复、被采纳都会在这里提醒你。
+        </p>
+        <a href="/boards/qa" class="btn btn-secondary mt-3">去知屿问答逛逛</a>
+      </div>
       <ul x-show="notifs.length" x-cloak class="mt-3 divide-y divide-slate-100">
         <template x-for="n in notifs" :key="n.id">
           <li @click="openNotif(n)"
@@ -246,7 +273,9 @@
 
     {# ===== 我的收藏卡（v0.6）：资源 / 帖子分组，可取消收藏 ===== #}
     <div class="card p-4 sm:p-6 lg:col-span-2">
-      <h2 class="text-sm font-semibold text-slate-700">我的收藏</h2>
+      <h2 class="flex items-center gap-2 text-card-title text-slate-800">
+        <span class="text-brand-600">{{ icon('bookmark', 'w-4 h-4') }}</span>我的收藏
+      </h2>
       <div x-show="favsLoading" x-cloak class="mt-3 space-y-2" aria-hidden="true">
         <div class="skeleton h-8 rounded-md"></div>
         <div class="skeleton h-8 rounded-md"></div>
@@ -254,18 +283,17 @@
       <p x-show="favsError" x-text="favsError" x-cloak
          class="mt-3 rounded bg-red-50 px-3 py-2 text-sm text-red-600"></p>
       <div x-show="favsLoaded && !favs.length" x-cloak class="empty-state mt-4 flex flex-col items-center">
-        <svg class="h-10 w-10 text-slate-300" fill="none" stroke="currentColor" stroke-width="1.5"
-             viewBox="0 0 24 24" aria-hidden="true">
-          <path stroke-linecap="round" stroke-linejoin="round"
-                d="M17.6 3.6c1.8 0 3.4 1.5 3.4 3.4v12.2a.6.6 0 0 1-.96.48L12 14.9l-8.04 4.78A.6.6 0 0 1 3 19.2V7c0-1.9 1.6-3.4 3.4-3.4h11.2z"/>
-        </svg>
+        {{ illo('shelf', 'w-24 h-24') }}
         <p class="mt-3 text-sm text-slate-500">
           暂无收藏。在资源详情页 / 帖子详情页点击「收藏」即可加入。
         </p>
         <a href="/majors" class="btn btn-primary mt-3">去课程空间逛逛</a>
       </div>
       <div x-show="favResources.length" x-cloak class="mt-3">
-        <h3 class="text-xs font-medium text-slate-500">资料</h3>
+        <h3 class="flex items-center gap-1.5 text-xs font-semibold text-slate-500">
+          <span class="h-3 w-0.5 rounded-full bg-brand-400"></span>资料
+          <span class="badge badge-slate" x-text="favResources.length"></span>
+        </h3>
         <ul class="mt-1 divide-y divide-slate-100 text-sm">
           <template x-for="f in favResources" :key="'r' + f.target_id">
             <li class="flex items-center gap-3 py-2">
@@ -285,7 +313,10 @@
         </ul>
       </div>
       <div x-show="favPosts.length" x-cloak class="mt-3">
-        <h3 class="text-xs font-medium text-slate-500">帖子</h3>
+        <h3 class="flex items-center gap-1.5 text-xs font-semibold text-slate-500">
+          <span class="h-3 w-0.5 rounded-full bg-brand-400"></span>帖子
+          <span class="badge badge-slate" x-text="favPosts.length"></span>
+        </h3>
         <ul class="mt-1 divide-y divide-slate-100 text-sm">
           <template x-for="f in favPosts" :key="'p' + f.target_id">
             <li class="flex items-center gap-3 py-2">
@@ -308,7 +339,9 @@
 
     {# ===== 我的关注卡（v0.6）：课程 / 用户分组，可取消关注 ===== #}
     <div class="card p-4 sm:p-6 lg:col-span-2">
-      <h2 class="text-sm font-semibold text-slate-700">我的关注</h2>
+      <h2 class="flex items-center gap-2 text-card-title text-slate-800">
+        <span class="text-brand-600">{{ icon('graduation-cap', 'w-4 h-4') }}</span>我的关注
+      </h2>
       <div x-show="followsLoading" x-cloak class="mt-3 space-y-2" aria-hidden="true">
         <div class="skeleton h-8 rounded-md"></div>
         <div class="skeleton h-8 rounded-md"></div>
@@ -316,21 +349,17 @@
       <p x-show="followsError" x-text="followsError" x-cloak
          class="mt-3 rounded bg-red-50 px-3 py-2 text-sm text-red-600"></p>
       <div x-show="followsLoaded && !follows.length" x-cloak class="empty-state mt-4 flex flex-col items-center">
-        <svg class="h-10 w-10 text-slate-300" fill="none" stroke="currentColor" stroke-width="1.5"
-             viewBox="0 0 24 24" aria-hidden="true">
-          <path stroke-linecap="round" stroke-linejoin="round"
-                d="M12 3 2 8l10 5 10-5-10-5zM6 10.5V15c0 1.7 2.7 3 6 3s6-1.3 6-3v-4.5M19 12v6m-3-3h6"/>
-        </svg>
+        {{ illo('island', 'w-24 h-24') }}
         <p class="mt-3 text-sm text-slate-500">
           暂无关注。在课程空间页点击「关注课程」即可订阅动态。
         </p>
-        <a href="/majors"
-           class="mt-3 inline-block rounded-md border border-brand-200 px-4 py-1.5 text-sm text-brand-700 transition-colors hover:bg-brand-50">
-          去找感兴趣的课程
-        </a>
+        <a href="/majors" class="btn btn-secondary mt-3">去找感兴趣的课程</a>
       </div>
       <div x-show="followCourses.length" x-cloak class="mt-3">
-        <h3 class="text-xs font-medium text-slate-500">课程</h3>
+        <h3 class="flex items-center gap-1.5 text-xs font-semibold text-slate-500">
+          <span class="h-3 w-0.5 rounded-full bg-brand-400"></span>课程
+          <span class="badge badge-slate" x-text="followCourses.length"></span>
+        </h3>
         <ul class="mt-1 divide-y divide-slate-100 text-sm">
           <template x-for="f in followCourses" :key="'c' + f.target_id">
             <li class="flex items-center gap-3 py-2">
@@ -350,7 +379,10 @@
         </ul>
       </div>
       <div x-show="followUsers.length" x-cloak class="mt-3">
-        <h3 class="text-xs font-medium text-slate-500">用户</h3>
+        <h3 class="flex items-center gap-1.5 text-xs font-semibold text-slate-500">
+          <span class="h-3 w-0.5 rounded-full bg-brand-400"></span>用户
+          <span class="badge badge-slate" x-text="followUsers.length"></span>
+        </h3>
         <ul class="mt-1 divide-y divide-slate-100 text-sm">
           <template x-for="f in followUsers" :key="'u' + f.target_id">
             <li class="flex items-center gap-3 py-2">

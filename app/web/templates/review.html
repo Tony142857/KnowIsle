@@ -1,5 +1,8 @@
 {% extends "base.html" %}
 {% from "_precheck.html" import precheck_panel %}
+{% from "_icons.html" import icon %}
+{% from "_illustrations.html" import illo %}
+{% from "_page_header.html" import page_header %}
 {% block title %}协审工作台 · 知屿 KnowIsle{% endblock %}
 
 {% block head %}
@@ -8,10 +11,9 @@
 {% endblock %}
 
 {% block content %}
-<div class="mb-6 animate-fade-up">
-  <h1 class="text-2xl font-bold text-slate-800">协审工作台</h1>
-  <p class="mt-1 text-sm text-slate-400">公共库投稿的协审任务：查看预检结果与在线预览后提交你的意见</p>
-</div>
+{{ page_header('协审工作台',
+               subtitle='公共库投稿的协审任务：查看预检结果与在线预览后提交你的意见',
+               icon='clipboard') }}
 
 <div class="flex flex-col lg:flex-row gap-6">
   {# 任务队列（服务端 query 参数 ?task= 选中）；链接带 id 供裁决成功后局部移除 #}
@@ -48,16 +50,14 @@
   <section class="flex-1 min-w-0">
     {% if not selected %}
     <div class="empty-state py-16">
-      <svg class="mx-auto h-12 w-12 text-slate-300" fill="none" stroke="currentColor" stroke-width="1.5"
-           viewBox="0 0 24 24" aria-hidden="true">
-        <path stroke-linecap="round" stroke-linejoin="round"
-              d="M9 12h6m-6 4h4M7 3h10a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z"/>
-      </svg>
+      {{ illo('inbox', 'mx-auto w-28 h-28') }}
       {% if tasks %}
       <p class="mt-4 text-slate-600">从左侧选择一条任务开始协审</p>
+      <a href="/review?task={{ tasks[0].task_id }}" class="btn btn-primary mt-4">开始协审第一条</a>
       {% else %}
       <p class="mt-4 text-slate-600">你的协审队列是空的</p>
       <p class="mt-1 text-sm text-slate-400">有新的投稿指派给你时会出现在这里。</p>
+      <a href="/majors" class="btn btn-secondary mt-4">去课程空间逛逛</a>
       {% endif %}
     </div>
     {% else %}
@@ -85,18 +85,20 @@
       {# 预检结果 #}
       <div class="mt-4">{{ precheck_panel(selected.precheck) }}</div>
 
-      {# 已有协审意见（时间线样式：左侧竖线 + 裁决色圆点） #}
+      {# 已有协审意见（时间线样式：左侧竖线 + 裁决色圆点图标） #}
       {% if selected.records %}
       <div class="card mt-4 p-4">
         <h3 class="text-sm font-semibold text-slate-700">已提交意见</h3>
         <ol class="mt-3 space-y-3 border-l-2 border-slate-100 pl-4">
           {% for r in selected.records %}
           <li class="relative text-xs text-slate-600">
-            <span class="absolute -left-[23px] top-1 h-2.5 w-2.5 rounded-full ring-4 ring-white
-                         {{ 'bg-emerald-500' if r.verdict == 'approve' else 'bg-red-500' }}"
-                  aria-hidden="true"></span>
+            <span class="absolute -left-[27px] -top-0.5 flex h-5 w-5 items-center justify-center rounded-full ring-2 ring-white
+                         {{ 'bg-brand-500' if r.verdict == 'approve' else 'bg-red-500' }}"
+                  aria-hidden="true">
+              {{ icon('check' if r.verdict == 'approve' else 'x', 'w-3 h-3 text-white') }}
+            </span>
             <span class="rounded px-1.5 py-0.5
-                         {{ 'bg-emerald-50 text-emerald-700' if r.verdict == 'approve' else 'bg-red-50 text-red-600' }}">
+                         {{ 'bg-brand-50 text-brand-700' if r.verdict == 'approve' else 'bg-red-50 text-red-600' }}">
               {{ '通过' if r.verdict == 'approve' else '驳回' }}
             </span>
             <span class="ml-1 text-slate-500">{{ r.reviewer }}</span>
@@ -123,7 +125,7 @@
         </div>
       </div>
 
-      {# 裁决表单（按钮层级：通过实心 emerald / 驳回实心 red） #}
+      {# 裁决表单（按钮层级：通过实心 brand / 驳回实心 red） #}
       <div class="card mt-4 p-4">
         <h3 class="text-sm font-semibold text-slate-700">我的协审意见</h3>
         <p x-show="error" x-text="error" x-cloak
@@ -137,7 +139,7 @@
                   class="input-base mt-3"></textarea>
         <div class="mt-3 flex gap-2">
           <button @click="submit('approve')" :disabled="loading"
-                  class="rounded-md bg-emerald-600 px-4 py-2 text-sm text-white transition-colors hover:bg-emerald-700 disabled:opacity-50">
+                  class="rounded-md bg-brand-600 px-4 py-2 text-sm text-white transition-colors hover:bg-brand-700 disabled:opacity-50">
             通过
           </button>
           <button @click="submit('reject')" :disabled="loading"

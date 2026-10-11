@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% block title %}登录 · 知屿 KnowIsle{% endblock %}
+{% from "_icons.html" import icon %}
 {% block head %}
 {# 页面交互外置（CSP 兼容）；非 defer 以保证在 Alpine 启动前完成组件注册 #}
 <script src="/static/js/pages/login.js"></script>
@@ -56,6 +57,24 @@
       </svg>
     </div>
 
+    {# ===== 移动端紧凑品牌头条（<md 时桌面分屏面板隐藏的替代，card-tinted 风格） ===== #}
+    <div class="relative overflow-hidden border-b border-brand-100 bg-gradient-to-br from-brand-50 via-white to-brand-50/60 px-5 py-4 md:hidden">
+      <div class="flex items-center gap-3">
+        <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-brand-600/10 text-brand-600">
+          {{ icon('lighthouse', 'h-5 w-5') }}
+        </span>
+        <div>
+          <p class="text-xs font-medium tracking-widest text-brand-600">知屿 KnowIsle</p>
+          <p class="mt-0.5 text-sm font-semibold text-slate-700">每门课程是一座知识岛屿</p>
+        </div>
+      </div>
+      {# 小海浪装饰（右下角，纯 SVG） #}
+      <svg class="pointer-events-none absolute bottom-0 right-0 h-5 w-24 text-brand-200/70" viewBox="0 0 96 20"
+           preserveAspectRatio="none" aria-hidden="true">
+        <path fill="currentColor" d="M0,12 C16,4 32,18 48,10 C64,2 80,14 96,8 L96,20 L0,20 Z"/>
+      </svg>
+    </div>
+
     {# ===== 表单卡 ===== #}
     <div class="p-6 sm:p-8">
       <h1 class="text-xl font-bold text-center text-slate-800">登录知屿</h1>
@@ -91,8 +110,14 @@
 
       {# 第一步：学号 + 校园邮箱，发送验证码 #}
       <div class="mt-6 space-y-4">
-        <input type="text" x-model="student_no" placeholder="学号" :disabled="step > 1" class="input-base">
-        <input type="email" x-model="email" placeholder="校园邮箱（@edu.cn）" :disabled="step > 1" class="input-base">
+        <div>
+          <label for="login-student-no" class="text-xs font-medium text-slate-500">学号</label>
+          <input id="login-student-no" type="text" x-model="student_no" placeholder="学号" :disabled="step > 1" class="input-base mt-1">
+        </div>
+        <div>
+          <label for="login-email" class="text-xs font-medium text-slate-500">校园邮箱</label>
+          <input id="login-email" type="email" x-model="email" placeholder="校园邮箱（@edu.cn）" :disabled="step > 1" class="input-base mt-1">
+        </div>
         <button x-show="step === 1" @click="sendCode()" :disabled="loading || cooldown > 0"
                 class="btn btn-primary w-full !py-2.5">
           <span x-text="loading ? '发送中…' : (cooldown > 0 ? '重新发送（' + cooldown + 's）' : '发送验证码')">发送验证码</span>
@@ -101,8 +126,11 @@
 
       {# 第二步：输入验证码（附 60s 冷却的重发入口） #}
       <div x-show="step >= 2" x-cloak class="mt-4 space-y-4">
-        <input type="text" x-model="code" placeholder="6 位验证码" maxlength="6"
-               inputmode="numeric" autocomplete="one-time-code" class="input-base">
+        <div>
+          <label for="login-code" class="text-xs font-medium text-slate-500">验证码</label>
+          <input id="login-code" type="text" x-model="code" placeholder="6 位验证码" maxlength="6"
+                 inputmode="numeric" autocomplete="one-time-code" class="input-base mt-1">
+        </div>
         <button @click="sendCode()" :disabled="loading || cooldown > 0"
                 class="text-xs text-slate-400 transition-colors hover:text-brand-700 disabled:opacity-50 disabled:hover:text-slate-400">
           <span x-text="cooldown > 0 ? '没收到？' + cooldown + 's 后可重发' : '没收到验证码？重新发送'"></span>
@@ -112,15 +140,27 @@
       {# 第三步（仅首次登录）：补全学籍资料后建档（§3.1） #}
       <div x-show="step === 3" x-cloak class="mt-4 space-y-4 rounded-lg border border-brand-100 bg-brand-50/40 p-4">
         <p class="text-sm font-medium text-slate-700">首次登录，请补全资料建档</p>
-        <input type="text" x-model="real_name" placeholder="真实姓名（仅认证核验用，不公开）" class="input-base !bg-white">
-        <input type="text" x-model="nickname" placeholder="昵称（社区内展示，唯一）" class="input-base !bg-white">
-        <input type="text" x-model="grade" placeholder="年级（如 2023级，选填）" class="input-base !bg-white">
-        <select x-model="major_id" class="input-base !bg-white">
-          <option value="">选择专业（选填）</option>
-          <template x-for="m in majors" :key="m.id">
-            <option :value="m.id" x-text="m.name"></option>
-          </template>
-        </select>
+        <div>
+          <label for="login-real-name" class="text-xs font-medium text-slate-500">真实姓名</label>
+          <input id="login-real-name" type="text" x-model="real_name" placeholder="真实姓名（仅认证核验用，不公开）" class="input-base mt-1 !bg-white">
+        </div>
+        <div>
+          <label for="login-nickname" class="text-xs font-medium text-slate-500">昵称</label>
+          <input id="login-nickname" type="text" x-model="nickname" placeholder="昵称（社区内展示，唯一）" class="input-base mt-1 !bg-white">
+        </div>
+        <div>
+          <label for="login-grade" class="text-xs font-medium text-slate-500">年级（选填）</label>
+          <input id="login-grade" type="text" x-model="grade" placeholder="年级（如 2023级，选填）" class="input-base mt-1 !bg-white">
+        </div>
+        <div>
+          <label for="login-major" class="text-xs font-medium text-slate-500">专业（选填）</label>
+          <select id="login-major" x-model="major_id" class="input-base mt-1 !bg-white">
+            <option value="">选择专业（选填）</option>
+            <template x-for="m in majors" :key="m.id">
+              <option :value="m.id" x-text="m.name"></option>
+            </template>
+          </select>
+        </div>
       </div>
 
       <button x-show="step >= 2" x-cloak @click="verify()" :disabled="loading"

@@ -1,13 +1,14 @@
 # 知屿 KnowIsle · 智能课程知识社区
 
 > 以学生社区为驱动、以结构化 RAG-AI 为学习引擎的大学课程知识平台。
-> 详细设计见《知屿-智能课程知识社区-项目文档.md》（v3.6.0）。
+> 详细设计见《知屿-智能课程知识社区-项目文档.md》（v3.8.0）。
 > 进度跟踪见 [docs/开发进度与目标.md](docs/开发进度与目标.md)（每迭代更新）。
 
 技术栈：FastAPI + Jinja2/HTMX/Tailwind · PostgreSQL 16 · Redis 7 · SeaweedFS（S3） · Chroma · ARQ · Docker Compose
 
 ## 当前状态
 
+**v1.2 前端视觉精致化**（2026-10-11，feature 分支，纯模板/静态资源层、不动后端）：**设计体系 v3**（设计令牌 v3——text-title/text-card-title 字级阶梯 + gap-section 间距令牌；main.css 新增 .card-tinted 渐变重点卡 / .card-accent-left 精华边条 / .btn 按下压缩 / .btn-loading 内置 spinner / .d-80·150·300 延迟工具类）· **图标与插画体系**（`_icons.html` 图标字典宏 64 枚集中管理，▲▼★☆✓ Unicode 图标全站清零、投票/收藏/评分改 SVG pill；`_illustrations.html` 四个岛屿系空状态插画；`_page_header.html` 页头宏替换全站 9 处复制粘贴页头）· **全站 21 模板逐页精雕**（专业/课程卡图标徽标化、个人中心成长看板渐变头卡、帖子卡元信息图标化、评论树降噪、管理后台中文表头去 uppercase + 指标卡品牌色分层 + 窄屏卡片降级、搜索结果卡类型图标、个人库文件类型图标、登录页移动端品牌头条）· **微交互**（列表 stagger 入场、toast 进度条 + 滑出退场、confirmModal danger 变体）· **一致性清账**（emerald-/amber- 硬编码清零、内联 style 属性清零、评分星星 aria 语义修正、标签云频次 aria-label）· 容器内 ruff + pytest 538 例全绿，镜像 knowisle-app:1.2.0，git tag v1.2
 **v1.1 优化版本**（2026-10-10，feature 分支）：**前端全面升级「翡翠绿·海岛」设计语言**（设计令牌 v2：brand 翡翠绿十档 + accent 暖沙十档 + 卡片阴影/圆角/动效令牌；main.css 公共组件类 .btn/.badge/.card/.input-base/.empty-state/.skeleton；全站 21 模板改版——导航药丸高亮、首页 Hero 海浪 + 数字滚动、登录/404 重设计、列表卡片化 + 相对时间 ZY.relTime、消灭整页 reload 与"加载中…"文字态改骨架屏）· **交互统一与可访问性**（全站 fetch 收口 ZY.api 统一错误透传带状态码、confirmModal 替代原生 confirm/prompt、ZY.bindModalA11y 模态框焦点圈定/Esc/焦点还原、:focus-visible 品牌色焦点环、prefers-reduced-motion 降级）· **后端逻辑完善**（AI 额度原子扣减行锁、个人库上传 MD5 部分唯一索引幂等、投票/评分/下载计数竞态收口、RRF 显式权重 0.65/0.35 + mixed 双路粗召回 + BM25 Redis 版本戳跨进程失效、feed 按 approved_at 上架时间排序、AI 首答 HTTPException 早退、上传 chapter_id 显式 422）· 新增迁移⑦⑧（uq_documents_owner_md5_personal、resources.approved_at 回填）· 修复两处真实 bug（ZY.api 401 误跳登录页清空表单、时间炸弹测试）· 测试 519→538 例全绿，镜像 knowisle-app:1.1.0，git tag v1.1
 **v1.0 答辩演示定稿**（2026-10-02，M3 里程碑达成）：**前端体系 v1.0**（设计令牌统一 tailwind.config + main.css、全站 17 模板零内联脚本——页面 JS 外置 `static/js/pages/*.js`、vendor 新增 highlight.js 代码高亮、全局 toast、毛玻璃导航与页脚改版、列表摘要剥离 Markdown 标记）· **安全收尾**（nginx CSP 正式启用——script-src 含 'unsafe-eval' 为 Alpine 标准构建必需、logout 改 POST、Dockerfile 非 root 运行 uid=999）· seed_demo 扩展（9 篇演示帖：预填 AI 首答 + 采纳计分 / 结构化经验帖 + 预填 AI 摘要 + 精华 / 悬赏托管，积分双写配平）· 客户端打包资产完善（NSIS 修复 + 版本 1.0.0 + 一键打包清单，实际打包按 Owner 决定不执行）· 云端部署按 Owner 决定搁置（标注后期增补，v1.0 以本地可交付演示为目标）· 新增 [docs/接口契约.md](docs/接口契约.md)（82 接口逐条契约，代码为准）与 [docs/演示剧本与检查清单.md](docs/演示剧本与检查清单.md)（四幕剧本 + 断网兜底）· 演示主线 E2E 19 项真实环境实跑通过，测试 503→519 例全绿，镜像 knowisle-app:1.0.0
 （此前 v0.9 交付完善，2026-10-02）：复习工具落地（`POST /api/review/outline` 复习大纲 + `POST /api/review/quiz` 考点习题，复用问答双通道/额度/落库口径，新页面 `/library/review`；期末串讲留二期）· 章节树 AI 校验落地（解析后附加层，结论写 worker 日志、异常降级不阻塞主流程）· 协审口径修正（多数决只计当前有效指派人、预览授权收紧 co_review 单阶段）· seed_demo.py 演示种子脚本（4 演示账号 + 3 门公共课程章节树，幂等 + --reset 保护）· 前端体系化改版（CDN 全部本地化钉版本断网可演示、Markdown 渲染统一 + DOMPurify 白名单、移动端汉堡导航与响应式补齐、首页改版 + GET /api/feed）· 合规修复（悬挂 tag 重打、SQLAlchemy `.any()`→`any_()`、死代码/死依赖清理），测试 469→503 例全绿，镜像 knowisle-app:0.9.1

@@ -5,46 +5,36 @@
    同步加载（勿加 defer）：须在 defer 的 Alpine 启动前执行，x-data 才能找到全局工厂函数 #}
 <script src="/static/js/pages/library_chat.js"></script>
 {% endblock %}
+{% from "_icons.html" import icon %}
+{% from "_page_header.html" import page_header %}
 {% block content %}
 {# 惰性数据块：application/json 不会被 CSP 拦截、不会执行，JS 里 JSON.parse 读取 #}
 <script type="application/json" id="page-data">{{ {"course_id": course.id, "default_scope": default_scope} | tojson }}</script>
 <div x-data="chatPage()">
-  <div class="mb-4">
-    {% if course.scope == 'personal' %}
-    <a href="/library" class="text-sm text-brand-600 transition-colors hover:text-brand-700 hover:underline">← 返回个人知识库</a>
-    {% else %}
-    <a href="/courses/{{ course.id }}" class="text-sm text-brand-600 transition-colors hover:text-brand-700 hover:underline">← 返回课程空间</a>
-    {% endif %}
-    <div class="mt-2 flex flex-wrap items-center gap-4">
-      <h1 class="text-2xl font-bold text-slate-800">{{ course.name }} · AI 问答</h1>
-      {# 检索范围三态（§4.3：个人库 / 公共库 / 混合）；公共课程无个人库语料，不展示「个人库」档。
-         分段控件样式；radio 用 sr-only 保持键盘可达，:focus-visible 经 has() 透出焦点环 #}
-      <div class="flex max-w-full items-center gap-1 overflow-x-auto rounded-full border border-brand-100 bg-brand-50/50 p-1 text-sm"
-           role="radiogroup" aria-label="检索范围">
-        {% set scope_options = [('personal', '个人库'), ('public', '公共库'), ('mixed', '混合')]
-           if course.scope == 'personal' else [('public', '公共库'), ('mixed', '混合')] %}
-        {% for key, label in scope_options %}
-        <label class="shrink-0 cursor-pointer rounded-full px-3 py-1 transition-colors duration-island ease-island
-                      has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-brand-400"
-               :class="scope === '{{ key }}' ? 'bg-brand-600 text-white font-medium shadow-sm' : 'text-slate-500 hover:text-brand-700'">
-          <input type="radio" name="scope" value="{{ key }}" x-model="scope" class="sr-only">
-          {{ label }}
-        </label>
-        {% endfor %}
-      </div>
+  {% call page_header(course.name ~ ' · AI 问答',
+                      back_href='/library' if course.scope == 'personal' else '/courses/' ~ course.id,
+                      back_label='返回个人知识库' if course.scope == 'personal' else '返回课程空间') %}
+    {# 检索范围三态（§4.3：个人库 / 公共库 / 混合）；公共课程无个人库语料，不展示「个人库」档。
+       分段控件样式；radio 用 sr-only 保持键盘可达，:focus-visible 经 has() 透出焦点环 #}
+    <div class="flex max-w-full items-center gap-1 overflow-x-auto rounded-full border border-brand-100 bg-brand-50/50 p-1 text-sm"
+         role="radiogroup" aria-label="检索范围">
+      {% set scope_options = [('personal', '个人库'), ('public', '公共库'), ('mixed', '混合')]
+         if course.scope == 'personal' else [('public', '公共库'), ('mixed', '混合')] %}
+      {% for key, label in scope_options %}
+      <label class="shrink-0 cursor-pointer rounded-full px-3 py-1 transition-colors duration-island ease-island
+                    has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-brand-400"
+             :class="scope === '{{ key }}' ? 'bg-brand-600 text-white font-medium shadow-sm' : 'text-slate-500 hover:text-brand-700'">
+        <input type="radio" name="scope" value="{{ key }}" x-model="scope" class="sr-only">
+        {{ label }}
+      </label>
+      {% endfor %}
     </div>
-  </div>
+  {% endcall %}
 
   {# 对话区（小屏降高，避免输入区被首屏挤出） #}
   <div x-ref="msgBox" class="h-[46vh] space-y-4 overflow-y-auto rounded-card border border-slate-200 bg-white p-4 shadow-card sm:h-[58vh]">
     <div x-show="!messages.length" class="py-16 text-center text-sm text-slate-400">
-      <svg class="mx-auto mb-3 h-10 w-10 text-brand-200" fill="none" stroke="currentColor" stroke-width="1.5"
-           viewBox="0 0 24 24" aria-hidden="true">
-        <path stroke-linecap="round" stroke-linejoin="round"
-              d="M8.625 12a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Zm3.75 0a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Zm3.75 0a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Z"/>
-        <path stroke-linecap="round" stroke-linejoin="round"
-              d="M21 12c0 4.556-4.03 8.25-9 8.25a9.76 9.76 0 0 1-2.555-.337A5.972 5.972 0 0 1 5.41 20.97a5.969 5.969 0 0 1-.474-.065 4.48 4.48 0 0 0 .978-2.025c.09-.457-.133-.901-.467-1.226C3.93 16.178 3 14.189 3 12c0-4.556 4.03-8.25 9-8.25s9 3.694 9 8.25Z"/>
-      </svg>
+      {{ icon('chat', 'mx-auto mb-3 h-10 w-10 text-brand-200') }}
       <p>基于本课程资料库向 AI 提问，回答附引用溯源。</p>
       <p class="mt-1 text-xs">示例：这门课第三章的重点是什么？</p>
     </div>
@@ -65,9 +55,9 @@
                避免中途解析半截标记闪烁；首个 token 到达前显示三点打字指示器 #}
             <div x-show="!msg.error && !msg.done && !msg.text"
                  class="flex items-center gap-1.5 py-1.5" aria-label="AI 正在输入">
-              <span class="typing-dot animate-pulse-dot" style="animation-delay:0s"></span>
-              <span class="typing-dot animate-pulse-dot" style="animation-delay:0.15s"></span>
-              <span class="typing-dot animate-pulse-dot" style="animation-delay:0.3s"></span>
+              <span class="typing-dot animate-pulse-dot"></span>
+              <span class="typing-dot animate-pulse-dot d-150"></span>
+              <span class="typing-dot animate-pulse-dot d-300"></span>
             </div>
             <div x-show="!msg.error && !msg.done && msg.text" class="whitespace-pre-wrap text-sm leading-6 text-slate-700"
                  x-text="msg.text"></div>

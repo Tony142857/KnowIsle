@@ -1,14 +1,15 @@
 {% extends "base.html" %}
+{% from "_icons.html" import icon %}
 {% block title %}{{ post.title }} · 知屿 KnowIsle{% endblock %}
 {% block head %}
 {# 页面交互外置（CSP）：同步加载，须先于 defer 的 Alpine 启动（x-data 引用全局函数） #}
 <script src="/static/js/pages/post_detail.js"></script>
 {% endblock %}
 
-{# 评论树递归渲染（楼中楼）；采纳卡以 emerald 边框标识；depth>=4 不再缩进防深层嵌套崩版 #}
+{# 评论树递归渲染（楼中楼）；采纳卡以 brand 边框标识；depth>=4 不再缩进防深层嵌套崩版 #}
 {% macro comment_node(node, post, is_author, logged_in, depth=0) %}
 {% set c = node.comment %}
-<div class="comment-node card p-4 {{ 'border-emerald-300 ring-1 ring-emerald-200' if c.is_accepted else '' }}"
+<div class="comment-node card p-4 {{ 'border-brand-300 ring-1 ring-brand-200' if c.is_accepted else '' }}"
      id="comment-{{ c.id }}"
      x-data="commentBox({{ c.id }}, {{ node.score }}, {{ node.my_vote }},
                         {{ 'true' if logged_in else 'false' }},
@@ -26,7 +27,9 @@
     {% if c.author_id == post.author_id %}
     <span class="rounded bg-slate-100 px-1 py-0.5 text-[10px] text-slate-500">帖主</span>
     {% endif %}
-    <span class="badge badge-brand" data-slot="accepted-badge" {{ '' if c.is_accepted else 'hidden' }}>✓ 已采纳</span>
+    <span class="badge badge-brand" data-slot="accepted-badge" {{ '' if c.is_accepted else 'hidden' }}>
+      {{ icon('check', 'w-3 h-3') }} 已采纳
+    </span>
     {% if c.created_at %}
     <span x-data x-init="$el.textContent = ZY.relTime('{{ c.created_at.isoformat() }}')"
           title="{{ c.created_at.strftime('%Y-%m-%d %H:%M') }}">{{ c.created_at.strftime('%Y-%m-%d %H:%M') }}</span>
@@ -36,26 +39,31 @@
        x-init='ZY.md.renderInto($el, {{ c.content|tojson }})'></div>
 
   <div class="mt-2 flex items-center gap-3 text-xs">
-    {# 点赞 / 点踩（未登录点击跳 /login） #}
+    {# 点赞 / 点踩 pill（未登录点击跳 /login；选中态 brand / red 填充） #}
     <button @click="vote(1)" :disabled="loading" aria-label="点赞评论"
-            :class="myVote === 1 ? 'text-brand-700 font-medium' : 'text-slate-400 hover:text-brand-700'"
-            class="transition-colors disabled:opacity-50">▲ <span x-text="score"></span></button>
+            :class="myVote === 1 ? 'bg-brand-100 text-brand-700 border-transparent' : ''"
+            class="btn btn-ghost px-2.5 py-1 text-xs">
+      {{ icon('thumb-up', 'w-3.5 h-3.5') }}
+      <span x-text="score"></span>
+    </button>
     <button @click="vote(-1)" :disabled="loading" aria-label="点踩评论"
-            :class="myVote === -1 ? 'text-red-600 font-medium' : 'text-slate-400 hover:text-red-600'"
-            class="transition-colors disabled:opacity-50">▼</button>
+            :class="myVote === -1 ? 'bg-red-50 text-red-600 border-red-200' : ''"
+            class="btn btn-ghost px-2.5 py-1 text-xs">
+      {{ icon('thumb-down', 'w-3.5 h-3.5') }}
+    </button>
     {% if logged_in %}
     <button @click="replyOpen = !replyOpen; replyError = ''"
             class="text-slate-400 transition-colors hover:text-brand-700">回复</button>
     {% endif %}
     <button x-show="canAccept" x-cloak @click="accept()" :disabled="loading"
-            class="rounded bg-emerald-600 px-2 py-0.5 text-white transition-colors hover:bg-emerald-700 disabled:opacity-50">
-      采纳
+            class="inline-flex items-center gap-1 rounded bg-brand-600 px-2 py-1 text-white transition-colors hover:bg-brand-700 disabled:opacity-50">
+      {{ icon('check', 'w-3.5 h-3.5') }} 采纳
     </button>
     <span x-show="error" x-text="error" x-cloak class="text-red-600"></span>
   </div>
 
-  {# 楼内回复框（parent_id = 本评论） #}
-  <div x-show="replyOpen" x-cloak class="mt-3 rounded-lg border border-slate-100 bg-slate-50 p-3">
+  {# 楼内回复框（parent_id = 本评论）：细分隔线代替灰盒降噪 #}
+  <div x-show="replyOpen" x-cloak class="mt-3 border-t border-slate-100 pt-3">
     <textarea x-model="replyContent" rows="2" placeholder="写下你的回复…" aria-label="回复内容"
               class="input-base"></textarea>
     <div class="mt-2 flex items-center gap-2">
@@ -80,12 +88,14 @@
     'user': {'nickname': user.nickname, 'avatar_url': user.avatar_url} if user else none} | tojson }}
 </script>
 
-<div class="mb-6">
-  <a href="/boards/{{ post.board }}" class="text-sm text-brand-600 hover:underline">
-    ← {{ {'qa': '知屿问答', 'discuss': '讨论区', 'experience': '经验长廊', 'bounty': '资料求援'}[post.board] }}
+<div class="mb-6 animate-fade-up">
+  <a href="/boards/{{ post.board }}"
+     class="inline-flex items-center gap-1 text-sm text-slate-500 transition-colors duration-island ease-island hover:text-brand-700">
+    {{ icon('arrow-left', 'w-4 h-4') }}
+    {{ {'qa': '知屿问答', 'discuss': '讨论区', 'experience': '经验长廊', 'bounty': '资料求援'}[post.board] }}
   </a>
   <div class="mt-2 flex flex-wrap items-center gap-2">
-    <h1 class="text-2xl font-bold text-slate-800">{{ post.title }}</h1>
+    <h1 class="text-title text-slate-800">{{ post.title }}</h1>
     {% if post.status == 'featured' %}
     <span class="badge badge-accent">精华</span>
     {% endif %}
@@ -101,7 +111,9 @@
     {% if not post.accepted_comment_id %}
     {# 采纳成功后的局部标记（监听 commentBox 广播的 zy:accepted 事件），免整页刷新 #}
     <span x-data="{accepted: false}" @zy:accepted.window="accepted = true" x-show="accepted" x-cloak
-          class="badge badge-brand">✓ {{ '已结算' if post.board == 'bounty' else '已采纳' }}</span>
+          class="badge badge-brand">
+      {{ icon('check', 'w-3 h-3') }} {{ '已结算' if post.board == 'bounty' else '已采纳' }}
+    </span>
     {% endif %}
     {% if post.status == 'closed' %}
     <span class="badge badge-slate">已关闭</span>
@@ -138,24 +150,26 @@
        x-init='ZY.md.renderInto($el, {{ post.content|tojson }})'></div>
   <div class="mt-4 flex items-center gap-3 border-t border-slate-100 pt-4 text-sm">
     <button @click="vote(1)" :disabled="loading" aria-label="点赞帖子"
-            :class="myVote === 1 ? 'border-brand-600 bg-brand-50 text-brand-700' : 'border-slate-300 text-slate-500 hover:border-brand-400 hover:text-brand-700'"
-            class="rounded-md border px-3 py-1.5 transition-colors disabled:opacity-50">
-      ▲ 点赞 <span x-text="score"></span>
+            :class="myVote === 1 ? 'bg-brand-100 text-brand-700 border-transparent' : ''"
+            class="btn btn-ghost">
+      {{ icon('thumb-up', 'w-4 h-4') }}
+      点赞 <span x-text="score"></span>
     </button>
     <button @click="vote(-1)" :disabled="loading" aria-label="点踩帖子"
-            :class="myVote === -1 ? 'border-red-500 bg-red-50 text-red-600' : 'border-slate-300 text-slate-500 hover:border-red-400 hover:text-red-600'"
-            class="rounded-md border px-3 py-1.5 transition-colors disabled:opacity-50">
-      ▼ 点踩
+            :class="myVote === -1 ? 'bg-red-50 text-red-600 border-red-200' : ''"
+            class="btn btn-ghost">
+      {{ icon('thumb-down', 'w-4 h-4') }}
+      点踩
     </button>
     {# 收藏帖子（v0.6）：共享组件 favBox（components.js），未登录跳 /login #}
     <span x-data="favBox('post', {{ post.id }}, {{ 'true' if is_favorited else 'false' }},
                          {{ 'true' if user else 'false' }})">
       <button @click="toggle()" :disabled="loading"
-              :class="favorited
-                ? 'border-amber-400 bg-amber-50 text-amber-700'
-                : 'border-slate-300 text-slate-500 hover:border-amber-400 hover:text-amber-700'"
-              class="rounded-md border px-3 py-1.5 transition-colors disabled:opacity-50">
-        <span x-text="favorited ? '★ 已收藏' : '☆ 收藏'"></span>
+              :class="favorited ? 'bg-accent-100 text-accent-700 border-transparent' : ''"
+              class="btn btn-ghost">
+        <span x-show="favorited" x-cloak>{{ icon('star-solid', 'w-4 h-4') }}</span>
+        <span x-show="!favorited" x-cloak>{{ icon('star', 'w-4 h-4') }}</span>
+        <span x-text="favorited ? '已收藏' : '收藏'"></span>
       </button>
       <span x-show="error" x-text="error" x-cloak class="ml-2 text-xs text-red-600"></span>
     </span>
@@ -163,11 +177,11 @@
     {% if can_feature %}
     <span x-data="featureBox({{ post.id }}, {{ 'true' if post.status == 'featured' else 'false' }})">
       <button @click="toggle()" :disabled="loading"
-              :class="featured
-                ? 'border-amber-500 bg-amber-100 text-amber-800'
-                : 'border-slate-300 text-slate-500 hover:border-amber-400 hover:text-amber-700'"
-              class="rounded-md border px-3 py-1.5 transition-colors disabled:opacity-50">
-        <span x-text="featured ? '★ 精华' : '☆ 设为精华'"></span>
+              :class="featured ? 'bg-accent-100 text-accent-700 border-transparent' : ''"
+              class="btn btn-ghost">
+        <span x-show="featured" x-cloak>{{ icon('star-solid', 'w-4 h-4') }}</span>
+        <span x-show="!featured" x-cloak>{{ icon('star', 'w-4 h-4') }}</span>
+        <span x-text="featured ? '精华' : '设为精华'"></span>
       </button>
       <span x-show="error" x-text="error" x-cloak class="ml-2 text-xs text-red-600"></span>
     </span>
@@ -183,7 +197,7 @@
   <div class="flex items-center gap-2">
     <span class="rounded bg-brand-600 px-1.5 py-0.5 text-[10px] font-semibold tracking-wide text-white">AI</span>
     <h2 class="text-sm font-semibold text-brand-800">AI 助教首答</h2>
-    <span class="rounded bg-amber-100 px-2 py-0.5 text-xs text-amber-700">AI 生成，仅供参考</span>
+    <span class="rounded bg-accent-100 px-2 py-0.5 text-xs text-accent-700">AI 生成，仅供参考</span>
   </div>
   {# 文本段 + 引用锚点拼成整段 Markdown，客户端一次性渲染（引用转为溯源链接） #}
   {% set md_ns = namespace(text='') %}
@@ -202,7 +216,7 @@
     <div class="mt-2 grid gap-2 sm:grid-cols-2">
       {% for c in ai_citations %}
       <a href="/documents/{{ c.document_id }}/source#{{ c.chunk_id }}"
-         class="block rounded-lg border border-slate-200 bg-white p-3 text-xs card-hover">
+         class="block rounded-lg border border-brand-100 bg-white/80 p-3 text-xs card-hover">
         <span class="font-mono text-slate-400">{{ c.chunk_id }}</span>
         <p class="mt-1 text-slate-600">
           {% if c.chapter %}{{ c.chapter }}{% endif %}
@@ -222,7 +236,7 @@
   <div class="flex items-center gap-2">
     <span class="rounded bg-brand-600 px-1.5 py-0.5 text-[10px] font-semibold tracking-wide text-white">AI</span>
     <h2 class="text-sm font-semibold text-brand-800">AI 助教首答</h2>
-    <span class="rounded bg-amber-100 px-2 py-0.5 text-xs text-amber-700">AI 生成，仅供参考</span>
+    <span class="rounded bg-accent-100 px-2 py-0.5 text-xs text-accent-700">AI 生成，仅供参考</span>
   </div>
   <p class="mt-3 flex items-center gap-2 text-sm text-slate-500">
     <span class="inline-block h-4 w-4 animate-spin rounded-full border-2 border-brand-300 border-t-brand-600"></span>
@@ -278,7 +292,7 @@
 
   {% if user %}
   {% if post.status != 'closed' %}
-  <div class="card mt-4 p-4" x-data="commentComposer()">
+  <div class="card mt-4 p-4" id="comment-composer" x-data="commentComposer()">
     <textarea x-model="content" rows="3" placeholder="写下你的回答 / 看法…" aria-label="评论内容"
               class="input-base"></textarea>
     <div class="mt-2 flex items-center gap-2">
@@ -305,12 +319,13 @@
   </div>
   {% else %}
   <div class="empty-state mt-4" id="comment-empty">
-    <svg class="mx-auto h-8 w-8 text-slate-300" fill="none" stroke="currentColor" stroke-width="1.5"
-         viewBox="0 0 24 24" aria-hidden="true">
-      <path stroke-linecap="round" stroke-linejoin="round"
-            d="M8 10h8m-8 4h5M7 20l-3 3V5a2 2 0 012-2h12a2 2 0 012 2v12a2 2 0 01-2 2H7z"/>
-    </svg>
-    <p class="mt-2 text-sm text-slate-400">暂无评论。</p>
+    {{ icon('message', 'mx-auto w-10 h-10 text-brand-200') }}
+    <p class="mt-2 text-sm text-slate-400">暂无评论，来抢沙发分享你的看法吧。</p>
+    {% if user and post.status != 'closed' %}
+    <a href="#comment-composer" class="btn btn-primary mt-4">写下第一条评论</a>
+    {% elif not user %}
+    <a href="/login" class="btn btn-primary mt-4">登录后评论</a>
+    {% endif %}
   </div>
   {% endif %}
 </section>
@@ -323,26 +338,33 @@
       <span data-slot="avatar"></span>
       <span class="text-slate-600" data-slot="nickname"></span>
       <span class="rounded bg-slate-100 px-1 py-0.5 text-[10px] text-slate-500" data-slot="op-badge" hidden>帖主</span>
-      <span class="badge badge-brand" data-slot="accepted-badge" hidden>✓ 已采纳</span>
+      <span class="badge badge-brand" data-slot="accepted-badge" hidden>
+        {{ icon('check', 'w-3 h-3') }} 已采纳
+      </span>
       <span data-slot="time"></span>
     </div>
     <div class="md-body mt-2 text-sm text-slate-700" data-slot="body"></div>
     <div class="mt-2 flex items-center gap-3 text-xs">
       <button @click="vote(1)" :disabled="loading" aria-label="点赞评论"
-              :class="myVote === 1 ? 'text-brand-700 font-medium' : 'text-slate-400 hover:text-brand-700'"
-              class="transition-colors disabled:opacity-50">▲ <span x-text="score"></span></button>
+              :class="myVote === 1 ? 'bg-brand-100 text-brand-700 border-transparent' : ''"
+              class="btn btn-ghost px-2.5 py-1 text-xs">
+        {{ icon('thumb-up', 'w-3.5 h-3.5') }}
+        <span x-text="score"></span>
+      </button>
       <button @click="vote(-1)" :disabled="loading" aria-label="点踩评论"
-              :class="myVote === -1 ? 'text-red-600 font-medium' : 'text-slate-400 hover:text-red-600'"
-              class="transition-colors disabled:opacity-50">▼</button>
+              :class="myVote === -1 ? 'bg-red-50 text-red-600 border-red-200' : ''"
+              class="btn btn-ghost px-2.5 py-1 text-xs">
+        {{ icon('thumb-down', 'w-3.5 h-3.5') }}
+      </button>
       <button @click="replyOpen = !replyOpen; replyError = ''"
               class="text-slate-400 transition-colors hover:text-brand-700">回复</button>
       <button x-show="canAccept" x-cloak @click="accept()" :disabled="loading"
-              class="rounded bg-emerald-600 px-2 py-0.5 text-white transition-colors hover:bg-emerald-700 disabled:opacity-50">
-        采纳
+              class="inline-flex items-center gap-1 rounded bg-brand-600 px-2 py-1 text-white transition-colors hover:bg-brand-700 disabled:opacity-50">
+        {{ icon('check', 'w-3.5 h-3.5') }} 采纳
       </button>
       <span x-show="error" x-text="error" x-cloak class="text-red-600"></span>
     </div>
-    <div x-show="replyOpen" x-cloak class="mt-3 rounded-lg border border-slate-100 bg-slate-50 p-3">
+    <div x-show="replyOpen" x-cloak class="mt-3 border-t border-slate-100 pt-3">
       <textarea x-model="replyContent" rows="2" placeholder="写下你的回复…" aria-label="回复内容"
                 class="input-base"></textarea>
       <div class="mt-2 flex items-center gap-2">

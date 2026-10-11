@@ -5,15 +5,13 @@
    同步加载（勿加 defer）：须在 defer 的 Alpine 启动前执行，x-data 才能找到全局工厂函数 #}
 <script src="/static/js/pages/library_review.js"></script>
 {% endblock %}
+{% from "_page_header.html" import page_header %}
 {% block content %}
 <div x-data="reviewPage({{ course_id | tojson }})" x-init="init()">
-  <div class="mb-4 animate-fade-up">
-    <a href="/library" class="text-sm text-brand-600 transition-colors hover:text-brand-700 hover:underline">← 返回个人知识库</a>
-    <div class="mt-2 flex flex-wrap items-center gap-3">
-      <h1 class="text-2xl font-bold text-slate-800">复习工具</h1>
-      <p class="text-sm text-slate-400">基于课程资料生成复习大纲与考点习题</p>
-    </div>
-  </div>
+  {{ page_header('复习工具',
+                 subtitle='基于课程资料生成复习大纲与考点习题',
+                 back_href='/library', back_label='返回个人知识库',
+                 icon='sparkles') }}
 
   {# 课程与章节选择 #}
   <div class="card p-4">
@@ -82,9 +80,9 @@
     {# 生成中：typing 指示 + 骨架行（替换单行灰字） #}
     <div x-show="outlineState === 'loading'" x-cloak class="mt-3 space-y-2" aria-label="AI 正在生成大纲">
       <div class="flex items-center gap-1.5 py-1">
-        <span class="typing-dot animate-pulse-dot" style="animation-delay:0s"></span>
-        <span class="typing-dot animate-pulse-dot" style="animation-delay:0.15s"></span>
-        <span class="typing-dot animate-pulse-dot" style="animation-delay:0.3s"></span>
+        <span class="typing-dot animate-pulse-dot"></span>
+        <span class="typing-dot animate-pulse-dot d-150"></span>
+        <span class="typing-dot animate-pulse-dot d-300"></span>
         <span class="ml-1 text-xs text-slate-400">AI 正在梳理章节资料，通常需要十几秒…</span>
       </div>
       <div class="skeleton h-4 w-full rounded-md"></div>
@@ -94,7 +92,7 @@
 
     <div x-show="outlineState === 'done'" x-cloak class="mt-3 animate-fade-up">
       <!-- Markdown 渲染挂载点（ZY.md.render，class 名 md-body 勿改）：大纲变化时整段重渲染 -->
-      <div class="md-body rounded-lg bg-slate-50 px-4 py-3 text-sm text-slate-700"
+      <div class="md-body rounded-card bg-slate-50 px-4 py-3 text-sm text-slate-700"
            x-effect="if (outlineState === 'done') ZY.md.renderInto($el, outline)"></div>
       <p class="mt-2 text-xs text-slate-400"
          x-text="outlineUsage ? ('本次消耗 ' + outlineUsage.token_usage + ' tokens · 耗时 ' +
@@ -130,9 +128,9 @@
     {# 出题中：typing 指示 + 骨架卡（替换单行灰字） #}
     <div x-show="quizState === 'loading'" x-cloak class="mt-3 space-y-3" aria-label="AI 正在出题">
       <div class="flex items-center gap-1.5 py-1">
-        <span class="typing-dot animate-pulse-dot" style="animation-delay:0s"></span>
-        <span class="typing-dot animate-pulse-dot" style="animation-delay:0.15s"></span>
-        <span class="typing-dot animate-pulse-dot" style="animation-delay:0.3s"></span>
+        <span class="typing-dot animate-pulse-dot"></span>
+        <span class="typing-dot animate-pulse-dot d-150"></span>
+        <span class="typing-dot animate-pulse-dot d-300"></span>
         <span class="ml-1 text-xs text-slate-400">AI 正在出题，请稍候…</span>
       </div>
       <div class="rounded-card border border-slate-100 p-4">
@@ -167,7 +165,7 @@
           <button @click="open = !open" class="mt-2 text-xs text-brand-600 transition-colors hover:text-brand-700 hover:underline"
                   x-text="open ? '收起答案' : '查看答案与解析'"></button>
           <div x-show="open" x-cloak x-transition
-               class="mt-2 rounded-lg bg-slate-50 px-3 py-2 text-sm leading-6 text-slate-700">
+               class="mt-2 rounded-card bg-slate-50 px-3 py-2 text-sm leading-6 text-slate-700">
             <p><span class="font-medium">答案：</span><span x-text="q.answer || '（未给出）'"></span></p>
             <p x-show="q.explanation" class="mt-1">
               <span class="font-medium">解析：</span><span x-text="q.explanation"></span>

@@ -1,0 +1,44 @@
+{# 页头宏（v1.2 视觉精致化）：替代全站复制粘贴的「返回链 + text-2xl 标题 + 灰色副标题」。
+   用法：
+     在模板头部 from "_page_header.html" import page_header，然后
+     page_header('页面标题', subtitle='副标题', back_href='/majors',
+                 back_label='全部专业', icon='book') 直接输出；
+     或用 call 块包裹右侧操作区（有 caller 时整体 flex justify-between items-end）：
+     call page_header('个人知识库', subtitle='...') ...按钮... endcall。
+   契约：
+   - title    必填，text-title（1.75rem bold）text-slate-800；
+   - subtitle 选填，mt-1 text-sm text-slate-500；
+   - back_href / back_label 选填，成对传入时在标题上方一行渲染 arrow-left 返回链；
+   - icon     选填，传 _icons.html 图标名，在标题左侧渲染 brand-50 底圆角方形徽标；
+   - caller() 选填，{% call %} 传入的右侧操作区；
+   - 宏底部统一 mb-6 区块间距。 #}
+{% from "_icons.html" import icon as icon_svg %}
+{% macro page_header(title, subtitle='', back_href='', back_label='', icon='') %}
+<header class="mb-6 animate-fade-up">
+  {% if back_href %}
+  <a href="{{ back_href }}"
+     class="inline-flex items-center gap-1 text-sm text-slate-500 transition-colors duration-island ease-island hover:text-brand-700">
+    {{ icon_svg('arrow-left', 'h-4 w-4') }}
+    {{ back_label }}
+  </a>
+  {% endif %}
+  <div class="flex flex-wrap items-end justify-between gap-3{{ ' mt-2' if back_href }}">
+    <div class="flex items-center gap-3">
+      {% if icon %}
+      <span class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-brand-50 text-brand-600">
+        {{ icon_svg(icon, 'h-5 w-5') }}
+      </span>
+      {% endif %}
+      <div>
+        <h1 class="text-title text-slate-800">{{ title }}</h1>
+        {% if subtitle %}
+        <p class="mt-1 text-sm text-slate-500">{{ subtitle }}</p>
+        {% endif %}
+      </div>
+    </div>
+    {% if caller is defined and caller %}
+    <div class="flex shrink-0 items-center gap-2">{{ caller() }}</div>
+    {% endif %}
+  </div>
+</header>
+{% endmacro %}

@@ -1,4 +1,6 @@
 {% extends "base.html" %}
+{% from "_icons.html" import icon %}
+{% from "_illustrations.html" import illo %}
 {% block title %}{{ board_name }} · 知屿 KnowIsle{% endblock %}
 {% block head %}
 {# 页面交互外置（CSP）：同步加载，须先于 defer 的 Alpine 启动（x-data 引用全局函数） #}
@@ -7,10 +9,10 @@
 
 {# 帖子卡片（SSR 唯一模板来源；客户端降级路径经 <template id="board-post-card">
    克隆同一 DOM 结构渲染，两条路径视觉与功能对齐：徽章 / 作者届别 / AI 摘要折叠卡）。
-   精华帖以 accent 左边条标识 #}
-{% macro post_card(p, board) %}
-<article class="card card-hover p-4 animate-fade-up
-                {{ 'border-l-4 border-l-accent-400' if p.status == 'featured' }}">
+   精华帖以 .card-accent-left 暖沙边条标识；delay 为列表 stagger 入场延迟类（.d-80 等） #}
+{% macro post_card(p, board, delay='') %}
+<article class="card card-hover p-4 animate-fade-up {{ delay }}
+                {{ 'card-accent-left' if p.status == 'featured' }}">
   <div class="flex flex-wrap items-center gap-2">
     <a href="/posts/{{ p.id }}" class="text-base font-medium text-slate-800 transition-colors hover:text-brand-700">
       {{ p.title }}
@@ -50,13 +52,17 @@
     </span>
     {% if board == 'experience' and p.author.grade %}<span class="badge badge-slate">{{ p.author.grade }}</span>{% endif %}
     {% if p.created_at %}
-    {# SSR 先渲染绝对日期，Alpine 就绪后替换为相对时间（无 JS 环境仍可读） #}
-    <span x-data x-init="$el.textContent = ZY.relTime('{{ p.created_at.isoformat() }}')"
-          title="{{ p.created_at.strftime('%Y-%m-%d %H:%M') }}">{{ p.created_at.strftime('%Y-%m-%d') }}</span>
+    {# SSR 先渲染绝对日期，Alpine 就绪后替换为相对时间（无 JS 环境仍可读）。
+       图标放外层，避免 x-init 的 $el.textContent 替换把图标抹掉 #}
+    <span class="flex items-center gap-1">
+      {{ icon('clock', 'w-3.5 h-3.5 text-slate-400') }}
+      <span x-data x-init="$el.textContent = ZY.relTime('{{ p.created_at.isoformat() }}')"
+            title="{{ p.created_at.strftime('%Y-%m-%d %H:%M') }}">{{ p.created_at.strftime('%Y-%m-%d') }}</span>
+    </span>
     {% endif %}
-    <span>浏览 {{ p.view_count }}</span>
-    <span>评论 {{ p.comment_count }}</span>
-    <span>赞 {{ p.vote_score }}</span>
+    <span class="flex items-center gap-1">{{ icon('eye', 'w-3.5 h-3.5 text-slate-400') }}{{ p.view_count }}</span>
+    <span class="flex items-center gap-1">{{ icon('comment', 'w-3.5 h-3.5 text-slate-400') }}{{ p.comment_count }}</span>
+    <span class="flex items-center gap-1">{{ icon('thumb-up', 'w-3.5 h-3.5 text-slate-400') }}{{ p.vote_score }}</span>
     {% for t in p.tags %}
     <a href="/boards/{{ board }}?tag={{ t|urlencode }}"
        class="rounded bg-slate-100 px-1.5 py-0.5 text-slate-500 transition-colors hover:bg-brand-50 hover:text-brand-700">#{{ t }}</a>
@@ -69,7 +75,7 @@
 <div class="mb-6 flex flex-wrap items-end gap-3 animate-fade-up">
   {# 板块切换 Tab（§4.2 四板块）：下划线式导航，窄屏横向滚动 #}
   <div class="flex max-w-full gap-1 overflow-x-auto border-b border-slate-200 text-sm
-              [&::-webkit-scrollbar]:hidden" style="scrollbar-width: none;">
+              [&::-webkit-scrollbar]:hidden [scrollbar-width:none]">
     {% for key, label in [('qa', '知屿问答'), ('discuss', '讨论区'), ('experience', '经验长廊'), ('bounty', '资料求援')] %}
     <a href="/boards/{{ key }}"
        class="shrink-0 -mb-px border-b-2 px-4 py-2 transition-colors duration-island ease-island
@@ -124,6 +130,7 @@
     {% for t in tag_cloud %}
     {% set tier = 2 if t.count >= max_count * 0.66 else (1 if t.count >= max_count * 0.33 else 0) %}
     <a href="/boards/experience?tag={{ t.tag|urlencode }}"
+       aria-label="标签 {{ t.tag }}，出现 {{ t.count }} 次"
        class="rounded-full transition-colors duration-island ease-island
               {{ 'bg-brand-100 text-brand-800' if tag == t.tag else 'bg-slate-100 text-slate-500 hover:bg-brand-50 hover:text-brand-700' }}
               {{ ['px-2 py-0.5', 'px-2.5 py-1 font-medium', 'px-3 py-1 text-sm font-medium'][tier] }}">
@@ -136,8 +143,9 @@
 {% endif %}
 
 {% if posts %}
+{# 首屏卡片 stagger 入场：第 2/3/4 张依次延迟 .d-80 / .d-150 / .d-300 #}
 <div class="space-y-3">
-  {% for p in posts %}{{ post_card(p, board) }}{% endfor %}
+  {% for p in posts %}{{ post_card(p, board, ['', 'd-80', 'd-150', 'd-300'][loop.index0] if loop.index0 <= 3 else '') }}{% endfor %}
 </div>
 
 {# 分页条（带页码；保留 tag/grade/featured/course_id 过滤参数） #}
@@ -185,17 +193,13 @@
 
 {% elif ssr_ok %}
 <div class="empty-state bg-white py-16 animate-fade-up">
-  <svg class="mx-auto h-10 w-10 text-brand-200" fill="none" stroke="currentColor" stroke-width="1.5"
-       viewBox="0 0 24 24" aria-hidden="true">
-    <path stroke-linecap="round" stroke-linejoin="round"
-          d="M8 10h8m-8 4h5M7 20l-3 3V5a2 2 0 012-2h12a2 2 0 012 2v12a2 2 0 01-2 2H7z"/>
-  </svg>
+  {{ illo('island', 'mx-auto w-28 h-28') }}
   <p class="mt-4 text-slate-600">还没有帖子</p>
   <p class="mt-1 text-sm text-slate-400">
     {% if tag %}该标签下暂无帖子，<a href="/boards/{{ board }}" class="text-brand-600 hover:underline">查看全部</a>。
     {% else %}点击右上角「发帖」，成为第一个分享的人。{% endif %}
   </p>
-  <a href="/posts/new?board={{ board }}" class="btn btn-primary mt-4">去发帖 →</a>
+  <a href="/posts/new?board={{ board }}" class="btn btn-primary mt-4">去发帖 {{ icon('arrow-right', 'w-4 h-4') }}</a>
 </div>
 
 {% else %}
@@ -221,13 +225,10 @@
      class="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600"></p>
   <div id="board-fallback-list" class="space-y-3"></div>
   <div x-show="loaded && !items.length" x-cloak class="empty-state bg-white py-16">
-    <svg class="mx-auto h-10 w-10 text-brand-200" fill="none" stroke="currentColor" stroke-width="1.5"
-         viewBox="0 0 24 24" aria-hidden="true">
-      <path stroke-linecap="round" stroke-linejoin="round"
-            d="M8 10h8m-8 4h5M7 20l-3 3V5a2 2 0 012-2h12a2 2 0 012 2v12a2 2 0 01-2 2H7z"/>
-    </svg>
+    {{ illo('island', 'mx-auto w-28 h-28') }}
     <p class="mt-4 text-slate-600">还没有帖子</p>
     <p class="mt-1 text-sm text-slate-400">点击右上角「发帖」，成为第一个分享的人。</p>
+    <a href="/posts/new?board={{ board }}" class="btn btn-primary mt-4">去发帖 {{ icon('arrow-right', 'w-4 h-4') }}</a>
   </div>
 </div>
 
@@ -257,10 +258,10 @@
         <span data-slot="author"></span>
       </span>
       <span data-slot="grade" hidden class="badge badge-slate"></span>
-      <span data-slot="time"></span>
-      <span data-slot="views"></span>
-      <span data-slot="comments"></span>
-      <span data-slot="votes"></span>
+      <span class="flex items-center gap-1">{{ icon('clock', 'w-3.5 h-3.5 text-slate-400') }}<span data-slot="time"></span></span>
+      <span class="flex items-center gap-1">{{ icon('eye', 'w-3.5 h-3.5 text-slate-400') }}<span data-slot="views"></span></span>
+      <span class="flex items-center gap-1">{{ icon('comment', 'w-3.5 h-3.5 text-slate-400') }}<span data-slot="comments"></span></span>
+      <span class="flex items-center gap-1">{{ icon('thumb-up', 'w-3.5 h-3.5 text-slate-400') }}<span data-slot="votes"></span></span>
       <span data-slot="tags" class="contents"></span>
     </div>
   </article>

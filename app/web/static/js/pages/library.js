@@ -66,15 +66,15 @@
     card.className = 'card card-hover animate-fade-up p-4';
     card.innerHTML =
       '<div class="flex flex-wrap items-center gap-3">' +
-        '<h3 class="text-base font-semibold text-slate-800" data-role="name"></h3>' +
+        '<h3 class="text-card-title text-slate-800" data-role="name"></h3>' +
         '<span class="text-xs text-slate-400">0 份资料</span>' +
-        '<div class="ml-auto flex flex-wrap items-center gap-3 text-sm">' +
+        '<div class="ml-auto flex flex-wrap items-center gap-2 text-sm">' +
           '<a href="/library/chat?course_id=' + c.id + '" class="text-brand-600 transition-colors hover:text-brand-700 hover:underline">AI 问答</a>' +
           '<a href="/library/review?course_id=' + c.id + '" class="text-brand-600 transition-colors hover:text-brand-700 hover:underline">复习工具</a>' +
           '<button type="button" @click="chapterFormFor = chapterFormFor === ' + c.id + ' ? null : ' + c.id + '; chapterTitle = \'\'"' +
-                  ' class="text-slate-500 transition-colors hover:text-brand-700">添加章节</button>' +
+                  ' class="btn btn-ghost !px-3 !py-1.5 text-xs">添加章节</button>' +
           '<button type="button" @click="uploadFormFor = uploadFormFor === ' + c.id + ' ? null : ' + c.id + '; uploadFile = null"' +
-                  ' class="text-slate-500 transition-colors hover:text-brand-700">上传资料</button>' +
+                  ' class="btn btn-ghost !px-3 !py-1.5 text-xs">上传资料</button>' +
         '</div>' +
       '</div>' +
       '<div id="chapter-list-' + c.id + '" class="mt-2 flex flex-wrap items-center gap-1.5"></div>' +
@@ -99,6 +99,11 @@
     grid.appendChild(card);
   }
 
+  // 章节徽章内的 chevron 图标（与 library.html course_card 宏的 icon('chevron-right') 输出一致）
+  var CHEVRON_SVG = '<svg class="w-3 h-3 text-slate-400" viewBox="0 0 24 24" fill="none" stroke="currentColor"'
+    + ' stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'
+    + '<path d="M9 6l6 6-6 6"/></svg>';
+
   // 新建章节成功：徽章插入课程章节区（章节仅作展示，上传不再支持人工挂载——v1.1 起 chapter_id 由解析自动构建）
   function appendChapterBadge(courseId, ch) {
     const list = document.getElementById('chapter-list-' + courseId);
@@ -106,6 +111,7 @@
       const badge = document.createElement('span');
       badge.className = 'badge badge-slate animate-fade-up';
       badge.textContent = ch.title;
+      badge.insertAdjacentHTML('beforeend', CHEVRON_SVG);
       list.appendChild(badge);
     }
   }

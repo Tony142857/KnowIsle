@@ -19,11 +19,30 @@
   transition: background-color 0.2s cubic-bezier(0.22, 1, 0.36, 1),
     border-color 0.2s cubic-bezier(0.22, 1, 0.36, 1),
     color 0.2s cubic-bezier(0.22, 1, 0.36, 1),
-    box-shadow 0.2s cubic-bezier(0.22, 1, 0.36, 1);
+    box-shadow 0.2s cubic-bezier(0.22, 1, 0.36, 1),
+    transform 0.15s cubic-bezier(0.22, 1, 0.36, 1);
 }
 .btn:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+/* 按下压缩反馈（v1.2 微交互） */
+.btn:active:not(:disabled) {
+  transform: scale(0.97);
+}
+/* 加载态：内置 spinner，替代「提交中…」文案模式（配合 disabled 使用） */
+.btn-loading {
+  pointer-events: none;
+  opacity: 0.75;
+}
+.btn-loading::before {
+  content: "";
+  width: 0.875rem;
+  height: 0.875rem;
+  border: 2px solid currentColor;
+  border-top-color: transparent;
+  border-radius: 9999px;
+  animation: zy-spin 0.7s linear infinite;
 }
 .btn-primary {
   background: #059669; /* brand-600 */
@@ -75,6 +94,19 @@
   box-shadow: 0 1px 2px 0 rgb(2 44 34 / 0.06); /* shadow-card */
 }
 
+/* 卡片变体（v1.2 设计体系 v3）：
+   .card-tinted      浅品牌渐变重点卡（成长看板 / 指标卡 / 引导卡 / 空状态 CTA 卡）
+   .card-accent-left 左侧暖沙边条卡（精华帖等强调场景，替代各处手写左边条） */
+.card-tinted {
+  background: linear-gradient(135deg, rgb(236 253 245 / 0.7), #fff 65%);
+  border: 1px solid #d1fae5; /* brand-100 */
+  border-radius: 0.75rem;
+  box-shadow: 0 1px 2px 0 rgb(2 44 34 / 0.06);
+}
+.card-accent-left {
+  border-left: 4px solid #e8b23a; /* accent-400 */
+}
+
 /* 表单输入统一样式（focus 走品牌色，配合全局 :focus-visible 焦点环） */
 .input-base {
   width: 100%;
@@ -100,10 +132,12 @@
   text-align: center;
 }
 
-/* 骨架屏 shimmer：配合 animate-shimmer 的渐变扫光（设计令牌 keyframes 驱动） */
+/* 骨架屏 shimmer：配合 animate-shimmer 的渐变扫光（设计令牌 keyframes 驱动）；
+   默认圆角 md，卡片形骨架在模板上叠加 rounded-card 对齐真实卡片圆角（v1.2） */
 .skeleton {
   position: relative;
   overflow: hidden;
+  border-radius: 0.375rem;
   background: #e9f6ef; /* slate-100 与 brand-50 的调和色 */
 }
 .skeleton::after {
@@ -136,6 +170,26 @@
   background: #10b981; /* brand-500 */
 }
 
+/* 列表 stagger 入场延迟工具类（v1.2）：配合 animate-fade-up 依次浮入，
+   替代各处内联 style="animation-delay:…"（内联 style 全站清零口径） */
+.d-80 { animation-delay: 80ms; }
+.d-150 { animation-delay: 150ms; }
+.d-300 { animation-delay: 300ms; }
+
+/* 全局轻提示（ZY.toast）底部进度条（v1.2）：随存续时长线性缩短 */
+.zy-toast-bar {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  height: 2px;
+  width: 100%;
+  border-radius: 9999px;
+  background: currentColor;
+  opacity: 0.5;
+  transform-origin: left;
+  animation: toast-bar 2.6s linear forwards;
+}
+
 /* 动画关键帧统一定义在 CSS（Play CDN 按需生成不可靠，令牌 animation 仅引用此处名字） */
 @keyframes fade-up {
   from { opacity: 0; transform: translateY(8px); }
@@ -155,6 +209,13 @@
 @keyframes pulse-dot {
   0%, 80%, 100% { opacity: 0.25; transform: scale(0.85); }
   40% { opacity: 1; transform: scale(1); }
+}
+@keyframes zy-spin {
+  to { transform: rotate(360deg); }
+}
+@keyframes toast-bar {
+  from { transform: scaleX(1); }
+  to { transform: scaleX(0); }
 }
 /* Hero 装饰缓浮动（首页 / 404 岛屿插画用） */
 @keyframes float-soft {

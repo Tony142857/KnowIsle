@@ -1,4 +1,6 @@
 {% extends "base.html" %}
+{% from "_icons.html" import icon %}
+{% from "_page_header.html" import page_header %}
 {% block title %}发帖 · 知屿 KnowIsle{% endblock %}
 {% block head %}
 {# 页面交互外置（CSP）：同步加载，须先于 defer 的 Alpine 启动（x-data 引用全局函数） #}
@@ -7,19 +9,21 @@
 
 {% block content %}
 <div class="mx-auto max-w-3xl" x-data="postNew('{{ board }}')" x-init="loadCourses()">
-  <div class="mb-6 animate-fade-up">
-    <a href="/boards/{{ board }}" class="text-sm text-brand-600 hover:underline">← {{ board_name }}</a>
-    <h1 class="mt-2 text-2xl font-bold text-slate-800">发帖</h1>
-  </div>
+  {{ page_header('发帖', back_href='/boards/' ~ board, back_label=board_name) }}
 
-  <div class="card space-y-4 p-4 sm:p-6">
+  <div class="card space-y-4 p-4 sm:p-6 animate-fade-up">
     <p x-show="error" x-text="error" x-cloak
        class="rounded-md bg-red-50 px-3 py-2 text-sm text-red-600"></p>
+
+    {# 分组一：板块与课程 #}
+    <h2 class="flex items-center gap-2 text-sm font-semibold text-slate-700">
+      <span class="h-3.5 w-1 rounded-full bg-brand-500"></span> 板块与课程
+    </h2>
 
     {# 板块选择（§4.2 四板块，v0.7 全部开放）；板块相关的表单区带 x-transition 过渡 #}
     <div>
       <label class="block text-xs font-medium text-slate-500">板块</label>
-      <div class="mt-1 flex w-fit flex-wrap gap-1 rounded-lg border border-slate-200 p-1 text-sm">
+      <div class="mt-1 grid w-full grid-cols-2 gap-1 rounded-lg border border-slate-200 p-1 text-sm sm:grid-cols-4">
         <button @click="switchBoard('qa')" type="button"
                 :class="board === 'qa' ? 'bg-brand-600 text-white font-medium' : 'text-slate-600 hover:bg-slate-100'"
                 class="rounded-md px-4 py-1.5 transition-colors">知屿问答</button>
@@ -71,6 +75,11 @@
       </select>
     </div>
 
+    {# 分组二：标题与正文 #}
+    <h2 class="flex items-center gap-2 border-t border-slate-100 pt-4 text-sm font-semibold text-slate-700">
+      <span class="h-3.5 w-1 rounded-full bg-brand-500"></span> 标题与正文
+    </h2>
+
     <div>
       <label class="block text-xs font-medium text-slate-500">标题 <span class="text-red-500">*</span></label>
       <input type="text" x-model="title" maxlength="128"
@@ -94,13 +103,21 @@
       </template>
     </div>
 
-    {# 其余板块：普通正文 #}
+    {# 其余板块：普通正文（Markdown 提示与评论区口径一致） #}
     <div x-show="board !== 'experience'" x-transition>
       <label class="block text-xs font-medium text-slate-500">正文 <span class="text-red-500">*</span></label>
+      <p class="mt-1 flex items-center gap-1 text-xs text-slate-400">
+        {{ icon('info', 'w-3.5 h-3.5') }} 支持 Markdown 与代码高亮。
+      </p>
       <textarea x-model="content" rows="10"
                 placeholder="问题的背景、你已尝试的思路、希望得到的帮助…"
-                class="input-base mt-1 w-full"></textarea>
+                class="input-base mt-2 w-full"></textarea>
     </div>
+
+    {# 分组三：附加设置（悬赏 / 标签） #}
+    <h2 class="flex items-center gap-2 border-t border-slate-100 pt-4 text-sm font-semibold text-slate-700">
+      <span class="h-3.5 w-1 rounded-full bg-brand-500"></span> 附加设置
+    </h2>
 
     {# 资料求援：悬赏贡献分（发布时托管） #}
     <div x-show="board === 'bounty'" x-cloak x-transition>

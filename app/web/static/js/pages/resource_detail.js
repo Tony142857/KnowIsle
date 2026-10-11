@@ -11,6 +11,11 @@
     return JSON.parse(document.getElementById('page-data').textContent);
   }
 
+  // 综合评分行的实心星 SVG（与模板 icon('star-solid') 输出一致，替代原 Unicode 星形字符文案）
+  var STAR_ICON = '<svg class="h-4 w-4" viewBox="0 0 24 24" fill="currentColor" stroke="none"'
+    + ' aria-hidden="true"><path d="M12 2l2.9 6.3 6.9.8-5.1 4.7 1.4 6.8L12 17.3'
+    + ' 5.9 20.6l1.4-6.8L2.2 9.1l6.9-.8L12 2z"/></svg>';
+
   // 克隆到个人库：modal 打开时懒加载本人个人课程列表
   window.cloneBox = function (resourceId) {
     return {
@@ -74,9 +79,9 @@
           this.myRating = data.my_rating;
           this.avg = data.rating.toFixed(2);
           this.count = data.rating_count;
-          // 同步刷新侧栏服务端渲染的「综合评分」行
+          // 同步刷新侧栏服务端渲染的「综合评分」行（star-solid SVG + 数值，与 SSR 结构一致）
           const line = document.getElementById('avg-line');
-          if (line) line.innerHTML = '★ ' + data.rating.toFixed(1)
+          if (line) line.innerHTML = STAR_ICON + data.rating.toFixed(1)
             + ' <span class="text-xs font-normal text-slate-400">（'
             + data.rating_count + ' 人）</span>';
           ZY.toast('评分成功', 'success');

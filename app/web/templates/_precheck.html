@@ -56,7 +56,7 @@
                               ('质量', p.ai_review.quality)] %}
       <div class="rounded-lg border border-slate-100 bg-slate-50 px-2 py-2">
         <dd class="text-xl font-bold
-                   {{ 'text-emerald-600' if score >= 70 else ('text-red-600' if score < 50 else 'text-slate-700') }}">
+                   {{ 'text-brand-600' if score >= 70 else ('text-red-600' if score < 50 else 'text-slate-700') }}">
           {{ score }}
         </dd>
         <dt class="mt-0.5 text-xs text-slate-400">{{ label }}</dt>

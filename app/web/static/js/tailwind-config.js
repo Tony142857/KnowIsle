@@ -1,4 +1,4 @@
-/* 知屿 KnowIsle Tailwind Play CDN 设计令牌（v1.1「翡翠绿·海岛」设计令牌 v2）。
+/* 知屿 KnowIsle Tailwind Play CDN 设计令牌（v1.2「翡翠绿·海岛」设计令牌 v3）。
  * 须在 vendor/tailwind-*.js 之后、任何使用扩展类的页面渲染前加载（defer 按序）。
  * CSP 兼容：外置文件，无内联脚本。
  *
@@ -12,7 +12,10 @@
  *   入场与打字点动画（keyframes 实体定义在 main.css，Play CDN 按需生成 keyframes
  *   不可靠，令牌仅引用名字）；
  * - 骨架屏 shimmer：main.css `.skeleton` 自带 keyframes，无需令牌；
- * - text-display / text-display-sm：Hero 大标题字级令牌。
+ * - text-display / text-display-sm：Hero 大标题字级令牌；
+ * - text-title / text-card-title（v1.2 新增）：页标题 / 卡片标题字级，补齐
+ *   text-2xl 到 text-base 之间断档的字级阶梯，配合 _page_header.html 页头宏使用；
+ * - gap-section（v1.2 新增）：页面级区块间距令牌（2.5rem），替代各处 mt-4/6/8/12 混用。
  */
 tailwind.config = {
   theme: {
@@ -39,6 +42,11 @@ tailwind.config = {
       fontSize: {
         display: ['2.5rem', { lineHeight: '1.2', letterSpacing: '-0.02em', fontWeight: '700' }],
         'display-sm': ['2rem', { lineHeight: '1.25', letterSpacing: '-0.02em', fontWeight: '700' }],
+        title: ['1.75rem', { lineHeight: '1.3', letterSpacing: '-0.01em', fontWeight: '700' }],
+        'card-title': ['1.0625rem', { lineHeight: '1.4', fontWeight: '600' }],
+      },
+      spacing: {
+        section: '2.5rem',
       },
       transitionTimingFunction: {
         island: 'cubic-bezier(0.22, 1, 0.36, 1)',

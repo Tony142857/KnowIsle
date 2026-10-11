@@ -1,5 +1,8 @@
 {% extends "base.html" %}
 {% block title %}{{ course.name }} · 知屿{% endblock %}
+{% from "_icons.html" import icon %}
+{% from "_illustrations.html" import illo %}
+{% from "_page_header.html" import page_header %}
 
 {% block head %}
 {# 页面脚本须在 Alpine（defer）启动前执行：head 块内同步加载，勿加 defer #}
@@ -14,10 +17,9 @@
     <button type="button" @click.stop="open = !open" :aria-expanded="open"
             aria-label="展开或折叠章节"
             class="shrink-0 rounded p-0.5 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600">
-      <svg class="h-3 w-3 transition-transform" :class="open ? 'rotate-90' : ''"
-           fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true">
-        <path stroke-linecap="round" stroke-linejoin="round" d="M9 6l6 6-6 6"/>
-      </svg>
+      <span class="block transition-transform duration-island ease-island" :class="open ? 'rotate-90' : ''">
+        {{ icon('chevron-right', 'h-3 w-3') }}
+      </span>
     </button>
     {% else %}
     <span class="w-4 shrink-0"></span>
@@ -39,38 +41,35 @@
 {% endmacro %}
 
 {% block content %}
-<div class="mb-6 animate-fade-up">
-  {% if major %}
-  <a href="/majors/{{ major.id }}" class="text-sm text-brand-600 transition-colors hover:text-brand-700 hover:underline">← {{ major.name }}</a>
+{# 页头统一走 page_header 宏：返回链 + 标题/简介 + 右侧操作槽（状态徽章 / 关注开关） #}
+{% call page_header(course.name,
+                    subtitle=course.description or '暂无简介',
+                    back_href=('/majors/' ~ major.id) if major else '',
+                    back_label=major.name if major else '') %}
+  {% if course.status != 'active' %}
+  <span class="badge {{ 'badge-accent' if course.status == 'pending' else 'badge-slate' }}">
+    {{ '待审批' if course.status == 'pending' else '已停用' }}
+  </span>
   {% endif %}
-  <div class="mt-2 flex items-center gap-3">
-    <h1 class="text-2xl font-bold text-slate-800">{{ course.name }}</h1>
-    {% if course.status != 'active' %}
-    <span class="badge {{ 'badge-accent' if course.status == 'pending' else 'badge-slate' }}">
-      {{ '待审批' if course.status == 'pending' else '已停用' }}
-    </span>
-    {% endif %}
-    {# 关注课程（v0.6）：仅公共 active 课程展示；未登录点击跳 /login #}
-    {% if course.status == 'active' %}
-    <span class="ml-auto flex items-center gap-2"
-          x-data="courseFollow({{ course.id }},
-                               {{ 'true' if is_following else 'false' }},
-                               {{ follower_count }},
-                               {{ 'true' if user else 'false' }})">
-      <span class="text-xs text-slate-400"><span x-text="count"></span> 人关注</span>
-      <button @click="toggle()" :disabled="loading"
-              :class="following
-                ? 'border-brand-500 bg-brand-50 text-brand-700'
-                : 'border-slate-300 text-slate-500 hover:border-brand-400 hover:text-brand-700'"
-              class="rounded-md border px-3 py-1.5 text-sm transition-colors duration-island ease-island disabled:opacity-50">
-        <span x-text="following ? '已关注' : '+ 关注课程'"></span>
-      </button>
-      <span x-show="error" x-text="error" x-cloak class="text-xs text-red-600"></span>
-    </span>
-    {% endif %}
-  </div>
-  <p class="mt-1 text-sm text-slate-500">{{ course.description or '暂无简介' }}</p>
-</div>
+  {# 关注课程（v0.6）：仅公共 active 课程展示；未登录点击跳 /login #}
+  {% if course.status == 'active' %}
+  <span class="flex items-center gap-2"
+        x-data="courseFollow({{ course.id }},
+                             {{ 'true' if is_following else 'false' }},
+                             {{ follower_count }},
+                             {{ 'true' if user else 'false' }})">
+    <span class="text-xs text-slate-400"><span x-text="count"></span> 人关注</span>
+    <button @click="toggle()" :disabled="loading"
+            :class="following
+              ? 'border-brand-500 bg-brand-50 text-brand-700'
+              : 'border-slate-300 text-slate-500 hover:border-brand-400 hover:text-brand-700'"
+            class="rounded-md border px-3 py-1.5 text-sm transition-colors duration-island ease-island disabled:opacity-50">
+      <span x-text="following ? '已关注' : '+ 关注课程'"></span>
+    </button>
+    <span x-show="error" x-text="error" x-cloak class="text-xs text-red-600"></span>
+  </span>
+  {% endif %}
+{% endcall %}
 
 {# courseTabs 提到外层：章节树点击需联动「资料库」Tab 的 chapter_id 过滤 #}
 <div class="flex flex-col gap-6 lg:flex-row" x-data="courseTabs({{ course.id }}, {{ 'true' if user else 'false' }})">
@@ -80,10 +79,9 @@
       <button type="button" @click="treeOpen = !treeOpen" :aria-expanded="treeOpen"
               class="flex w-full items-center justify-between text-sm font-semibold text-slate-700 lg:hidden">
         章节知识树
-        <svg class="h-4 w-4 transition-transform" :class="treeOpen ? 'rotate-180' : ''"
-             fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true">
-          <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/>
-        </svg>
+        <span class="block transition-transform duration-island ease-island" :class="treeOpen ? 'rotate-180' : ''">
+          {{ icon('chevron-down', 'h-4 w-4') }}
+        </span>
       </button>
       <h2 class="hidden text-sm font-semibold text-slate-700 lg:block">章节知识树</h2>
       {# lg:!block 覆盖 x-show 的内联 display:none，桌面端恒展开 #}
@@ -153,39 +151,41 @@
            class="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600"></p>
         {# 匿名引导：资料列表接口需登录（ZY.api 对 401 跳登录页，此处前置拦截） #}
         <div x-show="needLogin" x-cloak class="empty-state py-10">
-          <svg class="mx-auto h-10 w-10 text-brand-200" fill="none" stroke="currentColor" stroke-width="1.5"
-               viewBox="0 0 24 24" aria-hidden="true">
-            <path stroke-linecap="round" stroke-linejoin="round"
-                  d="M16.5 10.5V6.75a4.5 4.5 0 1 0-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 0 0 2.25-2.25v-6.75a2.25 2.25 0 0 0-2.25-2.25H6.75a2.25 2.25 0 0 0-2.25 2.25v6.75a2.25 2.25 0 0 0 2.25 2.25Z"/>
-          </svg>
+          {{ icon('lock', 'mx-auto h-10 w-10 text-brand-200') }}
           <p class="mt-3 text-sm text-slate-600">登录后可查看课程资料库</p>
           <a href="/login" class="btn btn-primary mt-4">去登录</a>
         </div>
         <div x-show="loaded && !loading && !needLogin && !resources.length" x-cloak class="empty-state py-10">
-          <svg class="mx-auto h-10 w-10 text-brand-200" fill="none" stroke="currentColor" stroke-width="1.5"
-               viewBox="0 0 24 24" aria-hidden="true">
-            <path stroke-linecap="round" stroke-linejoin="round"
-                  d="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125.504 1.125 1.125V11.25a9 9 0 0 0-9-9Z"/>
-          </svg>
-          <p class="mt-3 text-sm text-slate-600">
+          {{ illo('shelf', 'mx-auto w-28 h-28') }}
+          <p class="mt-4 text-sm text-slate-600">
             <span x-show="selectedChapter === null">本课程暂无上架资料</span>
             <span x-show="selectedChapter !== null" x-cloak>该章节下暂无资料</span>
           </p>
-          <p class="mt-1 text-xs text-slate-400">
-            <span x-show="selectedChapter === null">在个人知识库上传资料后可「投稿到公共库」。</span>
-            <span x-show="selectedChapter !== null" x-cloak>点击上方「清除筛选」查看全课程。</span>
-          </p>
+          <p x-show="selectedChapter === null" class="mt-1 text-xs text-slate-400">在个人知识库上传资料后可「投稿到公共库」。</p>
+          <a href="/library" x-show="selectedChapter === null" class="btn btn-secondary mt-4">前往个人知识库</a>
+          <button type="button" x-show="selectedChapter !== null" x-cloak @click="selectChapter(selectedChapter)"
+                  class="btn btn-secondary mt-4">清除筛选，查看全课程</button>
         </div>
         <div x-show="resources.length" class="grid gap-3 sm:grid-cols-2">
           <template x-for="r in resources" :key="r.id">
             <a :href="'/resources/' + r.id"
                class="card card-hover block p-4">
-              <p class="truncate text-sm font-medium text-slate-700" x-text="r.title"></p>
+              <div class="flex items-center gap-2">
+                {# 文件类型图标徽章：file-pdf/file-word/file-ppt/file-md 图标由 _icons.html 提供 #}
+                <span x-show="r.file_type === 'pdf_textbook'" x-cloak class="badge badge-slate shrink-0">{{ icon('file-pdf', 'w-3 h-3') }}PDF</span>
+                <span x-show="r.file_type === 'word'" x-cloak class="badge badge-slate shrink-0">{{ icon('file-word', 'w-3 h-3') }}Word</span>
+                <span x-show="r.file_type === 'ppt'" x-cloak class="badge badge-slate shrink-0">{{ icon('file-ppt', 'w-3 h-3') }}PPT</span>
+                <span x-show="r.file_type === 'markdown'" x-cloak class="badge badge-slate shrink-0">{{ icon('file-md', 'w-3 h-3') }}MD</span>
+                <p class="min-w-0 flex-1 truncate text-sm font-medium text-slate-700" x-text="r.title"></p>
+              </div>
               <p class="mt-1 line-clamp-2 text-xs text-slate-500"
                  x-text="r.description || '暂无简介'"></p>
               <p class="mt-2 flex items-center gap-3 text-xs text-slate-400">
-                <span class="text-accent-600"
-                      x-text="r.rating != null ? '★ ' + r.rating.toFixed(1) + '（' + r.rating_count + '）' : '暂无评分'"></span>
+                <span x-show="r.rating != null" x-cloak class="inline-flex items-center gap-0.5 text-accent-600">
+                  {{ icon('star-solid', 'w-3 h-3') }}
+                  <span x-text="r.rating != null ? r.rating.toFixed(1) + '（' + r.rating_count + '）' : ''"></span>
+                </span>
+                <span x-show="r.rating == null" x-cloak>暂无评分</span>
                 <span x-text="'下载 ' + r.download_count"></span>
                 <span class="ml-auto truncate" x-text="r.uploader.nickname"></span>
               </p>
@@ -208,11 +208,7 @@
         <p x-show="rankError" x-text="rankError" x-cloak
            class="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600"></p>
         <div x-show="rankLoaded && !rankItems.length" x-cloak class="empty-state py-10">
-          <svg class="mx-auto h-10 w-10 text-brand-200" fill="none" stroke="currentColor" stroke-width="1.5"
-               viewBox="0 0 24 24" aria-hidden="true">
-            <path stroke-linecap="round" stroke-linejoin="round"
-                  d="M16.5 18.75h-9m9 0a3 3 0 0 1 3 3h-15a3 3 0 0 1 3-3m9 0v-3.375c0-.621-.503-1.125-1.125-1.125h-.871M7.5 18.75v-3.375c0-.621.504-1.125 1.125-1.125h.872m5.007 0H9.497m5.007 0a7.454 7.454 0 0 1-.982-3.172M9.497 14.25a7.454 7.454 0 0 0 .981-3.172M5.25 4.236c-.982.143-1.954.317-2.916.52A6.003 6.003 0 0 0 7.73 9.728M5.25 4.236V4.5c0 2.108.966 3.99 2.48 5.228M5.25 4.236V2.721C7.456 2.41 9.71 2.25 12 2.25c2.291 0 4.545.16 6.75.47v1.516M7.73 9.728a6.726 6.726 0 0 0 2.748 1.35m8.272-6.842V4.5c0 2.108-.966 3.99-2.48 5.228m2.48-5.492a46.32 46.32 0 0 1 2.916.52 6.003 6.003 0 0 1-5.395 4.972m0 0a6.726 6.726 0 0 1-2.749 1.35m0 0a6.772 6.772 0 0 1-3.044 0"/>
-          </svg>
+          {{ icon('trophy', 'mx-auto h-10 w-10 text-brand-200') }}
           <p class="mt-3 text-sm text-slate-600">暂无贡献记录</p>
           <p class="mt-1 text-xs text-slate-400">投稿资料过审、回答被采纳即可上榜。</p>
         </div>
@@ -246,11 +242,7 @@
         <div class="card card-hover p-5">
           <div class="flex items-start gap-4">
             <span class="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-brand-50 text-brand-600">
-              <svg class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="1.8"
-                   viewBox="0 0 24 24" aria-hidden="true">
-                <path stroke-linecap="round" stroke-linejoin="round"
-                      d="M9.813 15.904 9 18.75l-.813-2.846a4.5 4.5 0 0 0-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 0 0 3.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 0 0 3.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 0 0-3.09 3.09ZM18.259 8.715 18 9.75l-.259-1.035a3.375 3.375 0 0 0-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 0 0 2.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 0 0 2.456 2.456L21.75 6l-1.035.259a3.375 3.375 0 0 0-2.456 2.456Z"/>
-              </svg>
+              {{ icon('sparkles', 'h-5 w-5') }}
             </span>
             <div class="min-w-0 flex-1">
               <p class="text-sm font-semibold text-slate-800">AI 问答</p>
@@ -266,13 +258,7 @@
         <div class="card card-hover p-5">
           <div class="flex items-start gap-4">
             <span class="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-accent-50 text-accent-600">
-              <svg class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="1.8"
-                   viewBox="0 0 24 24" aria-hidden="true">
-                <path stroke-linecap="round" stroke-linejoin="round"
-                      d="M8.625 12a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Zm3.75 0a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Zm3.75 0a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Z"/>
-                <path stroke-linecap="round" stroke-linejoin="round"
-                      d="M21 12c0 4.556-4.03 8.25-9 8.25a9.76 9.76 0 0 1-2.555-.337A5.972 5.972 0 0 1 5.41 20.97a5.969 5.969 0 0 1-.474-.065 4.48 4.48 0 0 0 .978-2.025c.09-.457-.133-.901-.467-1.226C3.93 16.178 3 14.189 3 12c0-4.556 4.03-8.25 9-8.25s9 3.694 9 8.25Z"/>
-              </svg>
+              {{ icon('message', 'h-5 w-5') }}
             </span>
             <div class="min-w-0 flex-1">
               <p class="text-sm font-semibold text-slate-800">课程讨论</p>

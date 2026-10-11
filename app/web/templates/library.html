@@ -5,6 +5,9 @@
    同步加载（勿加 defer）：须在 defer 的 Alpine 启动前执行，x-data 才能找到全局工厂函数 #}
 <script src="/static/js/pages/library.js"></script>
 {% endblock %}
+{% from "_icons.html" import icon %}
+{% from "_illustrations.html" import illo %}
+{% from "_page_header.html" import page_header %}
 
 {# 解析状态徽章：解析中 / 已完成 / 失败 #}
 {% macro status_badge(status) %}
@@ -34,30 +37,30 @@
 {# 课程卡片：章节徽章 / 文档列表 / 添加章节 / 上传资料 / AI 问答入口 #}
 {% macro course_card(item, resource_map) %}
 {% set c = item.course %}
-{% set type_labels = {'pdf_textbook': 'PDF 教材', 'ppt': 'PPT', 'word': 'Word', 'markdown': 'Markdown'} %}
+{% set type_icons = {'pdf_textbook': 'file-pdf', 'ppt': 'file-ppt', 'word': 'file-word', 'markdown': 'file-md'} %}
 <div class="card card-hover animate-fade-up p-4">
   <div class="flex flex-wrap items-center gap-3">
-    <h3 class="text-base font-semibold text-slate-800">{{ c.name }}</h3>
+    <h3 class="text-card-title text-slate-800">{{ c.name }}</h3>
     {% if c.status != 'active' %}
     <span class="badge {{ 'badge-accent' if c.status == 'pending' else 'badge-slate' }}">
       {{ '待审批' if c.status == 'pending' else '已停用' }}
     </span>
     {% endif %}
     <span class="text-xs text-slate-400">{{ item.documents|length }} 份资料</span>
-    <div class="ml-auto flex flex-wrap items-center gap-3 text-sm">
+    <div class="ml-auto flex flex-wrap items-center gap-2 text-sm">
       <a href="/library/chat?course_id={{ c.id }}" class="text-brand-600 transition-colors hover:text-brand-700 hover:underline">AI 问答</a>
       <a href="/library/review?course_id={{ c.id }}" class="text-brand-600 transition-colors hover:text-brand-700 hover:underline">复习工具</a>
       <button @click="chapterFormFor = chapterFormFor === {{ c.id }} ? null : {{ c.id }}; chapterTitle = ''"
-              class="text-slate-500 transition-colors hover:text-brand-700">添加章节</button>
+              class="btn btn-ghost !px-3 !py-1.5 text-xs">添加章节</button>
       <button @click="uploadFormFor = uploadFormFor === {{ c.id }} ? null : {{ c.id }}; uploadFile = null"
-              class="text-slate-500 transition-colors hover:text-brand-700">上传资料</button>
+              class="btn btn-ghost !px-3 !py-1.5 text-xs">上传资料</button>
     </div>
   </div>
 
   {# 章节徽章（一级展示，用于上传挂载；id 供新建章节后客户端追加） #}
   <div id="chapter-list-{{ c.id }}" class="mt-2 flex flex-wrap items-center gap-1.5">
     {% for ch in item.chapters %}
-    <span class="badge badge-slate">{{ ch.title }}</span>
+    <span class="badge badge-slate">{{ ch.title }}{{ icon('chevron-right', 'w-3 h-3 text-slate-400') }}</span>
     {% endfor %}
   </div>
 
@@ -97,9 +100,11 @@
     {% for d in item.documents %}
     {% set res = resource_map.get(d.id) %}
     <li class="flex flex-col gap-1 py-2.5 text-sm sm:flex-row sm:items-center sm:gap-x-3">
-      <span class="min-w-0 flex-1 truncate text-slate-700" title="{{ d.file_name }}">{{ d.file_name }}</span>
+      <span class="flex min-w-0 flex-1 items-center gap-1.5 text-slate-700" title="{{ d.file_name }}">
+        {{ icon(type_icons.get(d.file_type, 'file-text'), 'w-4 h-4 shrink-0 text-slate-400') }}
+        <span class="truncate">{{ d.file_name }}</span>
+      </span>
       <span class="flex flex-wrap items-center gap-x-2 gap-y-1">
-        <span class="badge badge-slate">{{ type_labels.get(d.file_type, d.file_type) }}</span>
         {{ status_badge(d.status) }}
         {% if res %}{{ review_badge(res) }}{% endif %}
         {# 本次会话内新投稿：局部挂「审核中」徽章（投稿 modal 成功后置位，免整页刷新） #}
@@ -167,21 +172,19 @@
 
 {% block content %}
 <div x-data="libraryPage()">
-  <div class="mb-6 flex flex-wrap items-center gap-3">
-    <h1 class="text-2xl font-bold text-slate-800">个人知识库</h1>
-    <p class="text-sm text-slate-400">私有资料上传 → 解析入库 → AI 问答与原文溯源</p>
-    <div class="ml-auto flex gap-2">
-      <a href="/library/review" class="btn btn-ghost">复习工具</a>
-      <button @click="showSemesterForm = !showSemesterForm; showCourseForm = false"
-              class="btn btn-ghost">
-        新建学期
-      </button>
-      <button @click="showCourseForm = !showCourseForm; showSemesterForm = false"
-              class="btn btn-primary">
-        新建课程
-      </button>
-    </div>
-  </div>
+  {% call page_header('个人知识库',
+                      subtitle='私有资料上传 → 解析入库 → AI 问答与原文溯源',
+                      icon='folder-lines') %}
+    <a href="/library/review" class="btn btn-ghost">复习工具</a>
+    <button @click="showSemesterForm = !showSemesterForm; showCourseForm = false"
+            class="btn btn-ghost">
+      新建学期
+    </button>
+    <button @click="showCourseForm = !showCourseForm; showSemesterForm = false"
+            class="btn btn-primary">
+      新建课程
+    </button>
+  {% endcall %}
 
   <p x-show="error" x-text="error" x-cloak
      class="mb-4 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600"></p>
@@ -220,11 +223,7 @@
   {% if not semester_groups and not uncategorized %}
   {# 空状态引导：上传前需先有一门课程，CTA 直接展开新建课程表单 #}
   <div id="library-empty" class="empty-state bg-white py-16">
-    <svg class="mx-auto h-12 w-12 text-brand-200" fill="none" stroke="currentColor" stroke-width="1.5"
-         viewBox="0 0 24 24" aria-hidden="true">
-      <path stroke-linecap="round" stroke-linejoin="round"
-            d="M12 6.25v11.5m0-11.5C10.83 5.06 8.98 4.5 6.75 4.5c-1.32 0-2.58.22-3.75.62v13.13c1.17-.4 2.43-.62 3.75-.62 2.23 0 4.08.56 5.25 1.75m0-11.5c1.17-1.19 3.02-1.75 5.25-1.75 1.32 0 2.58.22 3.75.62v13.13c-1.17-.4-2.43-.62-3.75-.62-2.23 0-4.08.56-5.25 1.75"/>
-    </svg>
+    {{ illo('shelf', 'mx-auto w-28 h-28') }}
     <p class="mt-4 text-slate-600">你的知识库还是空的</p>
     <p class="mt-1 text-sm text-slate-400">
       先创建一门课程，再上传课件 / 教材，解析完成后即可开始 AI 问答。

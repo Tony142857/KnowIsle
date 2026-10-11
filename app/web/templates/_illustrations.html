@@ -1,0 +1,49 @@
+{# 空状态插画字典宏（v1.2 视觉精致化）：
+   用法：{% from "_illustrations.html" import illo %}，{{ illo('island') }} /
+   {{ illo('inbox', 'w-32 h-32') }}。
+   - 四个岛屿系场景式小插画（多元素组合，非单线条图标）：island 空岛 /
+     inbox 空信箱 / shelf 空书架 / search 空搜索；
+   - dict 值为 SVG 内部 markup，宏统一包 120×120 外壳（stroke 线条风 +
+     圆角线帽），class 由宏参数注入；
+   - 配色仅走令牌类：线条 text-brand-300 / text-brand-600 / text-slate-300，
+     填充 fill-brand-100 / fill-brand-200；海浪线复用 404.html 灯塔小岛插画的
+     波浪 path，画风与全站一致；
+   - 未知 name 输出醒目 HTML 注释占位（Jinja 环境无 raise 全局）。 #}
+{% macro illo(name, cls='w-28 h-28') %}
+{% set _illos = {
+  'island': '<circle cx="60" cy="46" r="26" stroke-width="1.5" stroke-dasharray="3 5" class="text-brand-200"/>'
+            '<path d="M34 86c6-8 15-12 26-12s20 4 26 12z" class="fill-brand-100 stroke-brand-300"/>'
+            '<path d="M52 84l3-22h10l3 22" class="text-brand-600"/>'
+            '<path d="M53 62h14l-2-8h-10l-2 8z" class="text-brand-600"/>'
+            '<path d="M60 54v-6M42 52l8 2M78 52l-8 2" class="text-brand-600"/>'
+            '<path d="M24 96c4-3 8-3 12 0s8 3 12 0M68 96c4-3 8-3 12 0s8 3 12 0" class="text-brand-300"/>'
+            '<path d="M36 106c4-3 8-3 12 0s8 3 12 0 8-3 12 0" class="text-brand-200"/>',
+  'inbox': '<path d="M24 58h20l7 9h18l7-9h20v26a6 6 0 0 1-6 6H30a6 6 0 0 1-6-6z" class="fill-brand-100 stroke-brand-300"/>'
+           '<rect x="38" y="22" width="44" height="30" rx="4" class="fill-brand-200 stroke-brand-300"/>'
+           '<path d="M40 27l20 13 20-13" class="text-brand-600"/>'
+           '<path d="M52 15h16M56 9h8" class="text-slate-300"/>'
+           '<path d="M18 104c4-3 8-3 12 0s8 3 12 0M60 104c4-3 8-3 12 0s8 3 12 0 8-3 12 0" class="text-brand-200"/>',
+  'shelf': '<path d="M22 56h76M22 90h76" class="text-slate-300"/>'
+           '<path d="M30 56V34h8v22z" class="fill-brand-100 stroke-brand-300"/>'
+           '<path d="M40 56V30h9v26z" class="fill-brand-200 stroke-brand-300"/>'
+           '<path d="M56 56l7-22 9 2-7 22z" class="fill-brand-100 stroke-brand-300"/>'
+           '<path d="M30 90V68h9v22z" class="fill-brand-200 stroke-brand-300"/>'
+           '<path d="M60 90v-8h24v8z" class="fill-brand-100 stroke-brand-300"/>'
+           '<path d="M64 82v-7h20v7z" class="fill-brand-200 stroke-brand-300"/>'
+           '<path d="M88 46c0-6 3-9 6-9M88 46c0-6-3-9-6-9M88 56V46" stroke-width="2" class="text-brand-600"/>'
+           '<path d="M24 102c4-3 8-3 12 0s8 3 12 0M60 102c4-3 8-3 12 0s8 3 12 0 8-3 12 0" class="text-brand-200"/>',
+  'search': '<circle cx="52" cy="50" r="26" class="fill-brand-100 stroke-brand-600" stroke-width="3"/>'
+            '<path d="M40 58c3-5 7-7 12-7s9 2 12 7z" class="fill-brand-200 stroke-brand-300" stroke-width="1.5"/>'
+            '<path d="M49 57l1.5-11h5l1.5 11" stroke-width="1.5" class="text-brand-600"/>'
+            '<path d="M50 46h9l-1.5-5h-6L50 46zM54.5 41v-4" stroke-width="1.5" class="text-brand-600"/>'
+            '<path d="M72 70l16 16" stroke-width="4" class="text-brand-600"/>'
+            '<path d="M14 100c4-3 8-3 12 0s8 3 12 0M66 102c4-3 8-3 12 0s8 3 12 0 8-3 12 0" class="text-brand-200"/>',
+} %}
+{% set _markup = _illos.get(name) %}
+{% if _markup is none %}
+<!-- ⚠ _illustrations.html：未知插画名「{{ name }}」，可用：island / inbox / shelf / search -->
+{% else %}
+<svg class="{{ cls }}" viewBox="0 0 120 120" fill="none" stroke="currentColor" stroke-width="2.5"
+     stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">{{ _markup|safe }}</svg>
+{% endif %}
+{% endmacro %}

@@ -35,13 +35,15 @@
  *        </div>
  *      </div>
  *    ask(options) 选项：title / message / confirmText / withInput / placeholder /
- *    requireInput（非空才可确认）/ onConfirm(input)（异步函数，resolve 后自动关闭）。
+ *    requireInput（非空才可确认）/ danger（红色危险变体，确认按钮换 btn-danger）/
+ *    onConfirm(input)（异步函数，resolve 后自动关闭）。
  *    a11y（v1.1 F4）：组件 init 自动接入 ZY.bindModalA11y —— 打开时焦点进入弹窗、
  *    Tab 焦点圈定、Esc 关闭、关闭后焦点还原触发按钮；弹窗容器需带 role="dialog"。
  *
  * 4) ZY.toast(message, type) —— 全局轻提示（替代部分 alert/角落报错）
  *      ZY.toast('已收藏') / ZY.toast('操作失败', 'error')；type: success|error|info。
  *      容器在 base.html（#zy-toasts），本文件在 alpine:init 之外直接注册 ZY.toast。
+ *      v1.2：底部 zy-toast-bar 进度条随 2.6s 存续缩短，到期向右上滑出退场。
  *
  * 5) ZY.bindModalA11y(el, {isOpen, onEscape}) —— 通用弹窗可访问性辅助（v1.1 F4）
  *      供未使用 confirmModal 的页面弹窗复用同一套行为：
@@ -74,8 +76,9 @@ window.ZY = window.ZY || {};
     var host = document.getElementById('zy-toasts');
     if (!host) return;
     var el = document.createElement('div');
-    el.className = 'pointer-events-auto flex items-center gap-2 rounded-lg border px-4 py-2.5 text-sm shadow-lift ' +
-      'animate-fade-up transition-opacity duration-300 ' + TOAST_STYLE[type];
+    // relative + overflow-hidden：为底部 zy-toast-bar 进度条提供定位与圆角裁剪
+    el.className = 'pointer-events-auto relative flex items-center gap-2 overflow-hidden rounded-lg border px-4 py-2.5 text-sm shadow-lift ' +
+      'animate-fade-up transition-all duration-island ease-island ' + TOAST_STYLE[type];
     el.setAttribute('role', 'status');
     var icon = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
     icon.setAttribute('class', 'h-4 w-4 shrink-0');
@@ -91,11 +94,22 @@ window.ZY = window.ZY || {};
     icon.appendChild(path);
     var text = document.createElement('span');
     text.textContent = message;
+    // 底部进度条（v1.2）：随 2.6s 存续时长线性缩短，样式见 main.css .zy-toast-bar
+    var bar = document.createElement('span');
+    bar.className = 'zy-toast-bar';
+    bar.setAttribute('aria-hidden', 'true');
     el.appendChild(icon);
     el.appendChild(text);
+    el.appendChild(bar);
     host.appendChild(el);
-    setTimeout(function () { el.classList.add('opacity-0'); }, 2600);
-    setTimeout(function () { el.remove(); }, 3000);
+    // 2.6s 存续到期（与进度条动画对齐）后向右上滑出退场；
+    // 先摘掉 animate-fade-up 入场动画，否则 forwards 填充态会压住 transform 过渡
+    setTimeout(function () {
+      el.classList.remove('animate-fade-up');
+      void el.offsetWidth; // 强制重排，让过渡从入场终态平滑接续
+      el.classList.add('opacity-0', 'translate-x-2', '-translate-y-1', 'scale-95');
+    }, 2600);
+    setTimeout(function () { el.remove(); }, 2900);
   };
 
   /* 相对时间（列表页统一口径）：服务端时间戳为带时区 ISO，直接可解析 */
@@ -227,6 +241,7 @@ document.addEventListener('alpine:init', function () {
       confirmText: defaults.confirmText || '确认',
       withInput: false, placeholder: '', requireInput: false,
       input: '', _onConfirm: null, _a11y: null,
+      danger: !!defaults.danger,
 
       init() {
         var self = this;
@@ -245,6 +260,7 @@ document.addEventListener('alpine:init', function () {
         this.withInput = !!options.withInput;
         this.placeholder = options.placeholder || '';
         this.requireInput = !!options.requireInput;
+        this.danger = !!options.danger;
         this.input = '';
         this._onConfirm = options.onConfirm || null;
         this.open = true;
