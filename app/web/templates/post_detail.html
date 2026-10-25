@@ -13,8 +13,9 @@
      id="comment-{{ c.id }}"
      x-data="commentBox({{ c.id }}, {{ node.score }}, {{ node.my_vote }},
                         {{ 'true' if logged_in else 'false' }},
-                        {{ 'true' if (is_author and post.board in ('qa', 'bounty') and not c.is_accepted) else 'false' }})"
-     @zy:accepted.window="canAccept = false">
+                        {{ 'true' if (is_author and post.board in ('qa', 'bounty') and not c.is_accepted and c.author_id != post.author_id and (post.board == 'qa' or not post.accepted_comment_id)) else 'false' }},
+                        {{ 'true' if (is_author and post.board in ('qa', 'bounty') and c.author_id != post.author_id) else 'false' }})"
+     @zy:accepted.window="handleAccepted($event.detail)">
   <div class="comment-head flex items-center gap-2 text-xs text-slate-400">
     {% if node.author.avatar_url %}
     <img src="{{ node.author.avatar_url }}" alt="" class="w-5 h-5 rounded-full object-cover">
@@ -54,6 +55,8 @@
     {% if logged_in %}
     <button @click="replyOpen = !replyOpen; replyError = ''"
             class="text-slate-400 transition-colors hover:text-brand-700">回复</button>
+    <button type="button" @click="ZY.report('comment', {{ c.id }})"
+            class="text-slate-400 transition-colors hover:text-red-600">举报</button>
     {% endif %}
     <button x-show="canAccept" x-cloak @click="accept()" :disabled="loading"
             class="inline-flex items-center gap-1 rounded bg-brand-600 px-2 py-1 text-white transition-colors hover:bg-brand-700 disabled:opacity-50">
@@ -85,6 +88,7 @@
 {# 页面数据（CSP：application/json 数据块不执行，允许内联）：JS 局部插入评论节点时取当前用户信息 #}
 <script type="application/json" id="post-page-data">
 {{ {'post_id': post.id, 'board': post.board, 'is_author': is_author,
+    'settled': post.accepted_comment_id is not none,
     'user': {'nickname': user.nickname, 'avatar_url': user.avatar_url} if user else none} | tojson }}
 </script>
 
@@ -186,6 +190,9 @@
       <span x-show="error" x-text="error" x-cloak class="ml-2 text-xs text-red-600"></span>
     </span>
     {% endif %}
+    {% if user %}
+    <button type="button" @click="ZY.report('post', {{ post.id }})" class="btn btn-ghost text-slate-400 hover:text-red-600">举报帖子</button>
+    {% endif %}
     <span x-show="error" x-text="error" x-cloak class="text-xs text-red-600"></span>
   </div>
 </div>
@@ -230,23 +237,24 @@
   </div>
   {% endif %}
 </div>
-{% elif ai_status == 'pending' %}
+{% elif ai_status in ('pending', 'failed') %}
 <div class="mt-6 rounded-card border border-brand-200 bg-brand-50/50 p-6 shadow-card"
-     x-data="aiPoll({{ post.id }})" x-init="start()">
+     x-data="aiPoll({{ post.id }}, 'answer', '{{ ai_status }}')" x-init="start()">
   <div class="flex items-center gap-2">
     <span class="rounded bg-brand-600 px-1.5 py-0.5 text-[10px] font-semibold tracking-wide text-white">AI</span>
     <h2 class="text-sm font-semibold text-brand-800">AI 助教首答</h2>
     <span class="rounded bg-accent-100 px-2 py-0.5 text-xs text-accent-700">AI 生成，仅供参考</span>
   </div>
-  <p class="mt-3 flex items-center gap-2 text-sm text-slate-500">
-    <span class="inline-block h-4 w-4 animate-spin rounded-full border-2 border-brand-300 border-t-brand-600"></span>
-    AI 助教正在思考，回答生成后自动上墙…
+  <p x-show="status === 'pending'" class="mt-3 flex items-center gap-2 text-sm text-slate-500">
+    <span x-show="!timedOut" class="inline-block h-4 w-4 animate-spin rounded-full border-2 border-brand-300 border-t-brand-600"></span>
+    <span x-text="timedOut ? '生成时间较长，自动检查已暂停，可手动刷新或重试。' : 'AI 助教正在思考，回答生成后自动上墙…'"></span>
   </p>
-</div>
-{% elif ai_status == 'failed' %}
-<div class="mt-6 rounded-card border border-slate-200 bg-white p-6 shadow-card">
-  <h2 class="text-sm font-semibold text-slate-700">AI 助教首答</h2>
-  <p class="mt-3 text-sm text-slate-500">AI 首答生成失败，等待同学回答。你也可以稍后在「AI 问答」中检索本课程资料。</p>
+  <p x-show="status === 'failed'" x-cloak class="mt-3 text-sm text-slate-500">AI 首答生成失败，可重试生成，也可以先等待同学回答。</p>
+  <p x-show="error" x-text="error" x-cloak role="alert" class="mt-2 text-xs text-red-600"></p>
+  <div class="mt-3 flex gap-2">
+    <button type="button" @click="refresh()" :disabled="refreshing" class="btn btn-ghost">手动刷新</button>
+    <button type="button" @click="retry()" :disabled="refreshing" class="btn btn-secondary">重试生成</button>
+  </div>
 </div>
 {% endif %}
 {% endif %}
@@ -263,22 +271,23 @@
   <div class="md-body mt-3 text-sm text-slate-700"
        x-data x-init='ZY.md.renderInto($el, {{ post.ai_summary|tojson }})'></div>
 </div>
-{% elif summary_status == 'pending' %}
+{% elif summary_status in ('pending', 'failed') %}
 <div class="mt-6 rounded-card border border-accent-200 bg-accent-50/50 p-6 shadow-card"
-     x-data="summaryPoll({{ post.id }})" x-init="start()">
+     x-data="summaryPoll({{ post.id }}, '{{ summary_status }}')" x-init="start()">
   <div class="flex items-center gap-2">
     <h2 class="text-sm font-semibold text-accent-800">AI 摘要</h2>
     <span class="rounded bg-accent-100 px-2 py-0.5 text-xs text-accent-700">AI 生成，仅供参考</span>
   </div>
-  <p class="mt-3 flex items-center gap-2 text-sm text-slate-500">
-    <span class="inline-block h-4 w-4 animate-spin rounded-full border-2 border-accent-300 border-t-accent-600"></span>
-    AI 正在生成摘要，完成后自动上墙…
+  <p x-show="status === 'pending'" class="mt-3 flex items-center gap-2 text-sm text-slate-500">
+    <span x-show="!timedOut" class="inline-block h-4 w-4 animate-spin rounded-full border-2 border-accent-300 border-t-accent-600"></span>
+    <span x-text="timedOut ? '摘要生成超时，自动检查已暂停。' : 'AI 正在生成摘要，完成后自动上墙…'"></span>
   </p>
-</div>
-{% elif summary_status == 'failed' %}
-<div class="mt-6 rounded-card border border-slate-200 bg-white p-6 shadow-card">
-  <h2 class="text-sm font-semibold text-slate-700">AI 摘要</h2>
-  <p class="mt-3 text-sm text-slate-500">AI 摘要生成失败，可直接阅读正文。</p>
+  <p x-show="status === 'failed'" x-cloak class="mt-3 text-sm text-slate-500">AI 摘要生成失败，可直接阅读正文或重试生成。</p>
+  <p x-show="error" x-text="error" x-cloak role="alert" class="mt-2 text-xs text-red-600"></p>
+  <div class="mt-3 flex gap-2">
+    <button type="button" @click="refresh()" :disabled="refreshing" class="btn btn-ghost">手动刷新</button>
+    <button type="button" @click="retry()" :disabled="refreshing" class="btn btn-secondary">重试生成</button>
+  </div>
 </div>
 {% endif %}
 {% endif %}
@@ -333,7 +342,7 @@
 {% if user %}
 {# 新评论节点模板（发表/回复成功后局部插入，与 comment_node 宏逐节点同构；Alpine 自动初始化新节点 x-data） #}
 <template id="comment-node-tpl">
-  <div class="comment-node card p-4" @zy:accepted.window="canAccept = false">
+  <div class="comment-node card p-4" @zy:accepted.window="handleAccepted($event.detail)">
     <div class="comment-head flex items-center gap-2 text-xs text-slate-400">
       <span data-slot="avatar"></span>
       <span class="text-slate-600" data-slot="nickname"></span>
@@ -358,6 +367,7 @@
       </button>
       <button @click="replyOpen = !replyOpen; replyError = ''"
               class="text-slate-400 transition-colors hover:text-brand-700">回复</button>
+      <button type="button" @click="report(commentId)" class="text-slate-400 transition-colors hover:text-red-600">举报</button>
       <button x-show="canAccept" x-cloak @click="accept()" :disabled="loading"
               class="inline-flex items-center gap-1 rounded bg-brand-600 px-2 py-1 text-white transition-colors hover:bg-brand-700 disabled:opacity-50">
         {{ icon('check', 'w-3.5 h-3.5') }} 采纳

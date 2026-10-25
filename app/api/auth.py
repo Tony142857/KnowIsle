@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import get_settings
 from app.identity import cas, email_fallback
 from app.identity.rbac import get_current_user
+from app.identity.redirects import safe_next_path
 from app.identity.session import create_session, destroy_session, issue_jwt
 from app.storage.cache import get_redis
 from app.storage.db import get_db
@@ -33,6 +34,7 @@ class EmailVerifyRequest(BaseModel):
     student_no: str = Field(min_length=1, max_length=32)
     email: EmailStr
     code: str = Field(min_length=6, max_length=6)
+    next: str | None = None
     # 首次登录建档补全（§3.1：邮箱通道拿不到学籍信息，需用户补全；老用户忽略）
     real_name: str | None = Field(default=None, max_length=64)
     nickname: str | None = Field(default=None, min_length=2, max_length=32)
@@ -128,6 +130,10 @@ async def verify_email_code(
 
     验证码先校验不销毁，登录/建档成功才消耗——避免「需补全资料」中间态吞掉验证码。
     """
+    try:
+        next_path = safe_next_path(payload.next)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail="非法的登录回跳地址") from exc
     redis = get_redis()
     if not await email_fallback.verify_code(redis, payload.student_no, payload.code,
                                             consume=False):
@@ -152,7 +158,7 @@ async def verify_email_code(
             raise HTTPException(status_code=401, detail="学号与绑定邮箱不一致")
         await email_fallback.verify_code(redis, payload.student_no, payload.code)
         await _issue_session(response, user.id)
-        return {"need_profile": False, "user": _user_brief(user)}
+        return {"need_profile": False, "user": _user_brief(user), "next": next_path}
 
     # 首次登录：需补全学籍资料后建档（社区内仅展示昵称，§3.1 隐私要求）
     if not (payload.real_name and payload.nickname):
@@ -191,7 +197,7 @@ async def verify_email_code(
     await email_fallback.verify_code(redis, payload.student_no, payload.code)
     logger.info("[email_fallback] 新用户建档 student_no=%s user_id=%s", payload.student_no, user.id)
     await _issue_session(response, user.id)
-    return {"need_profile": False, "user": _user_brief(user)}
+    return {"need_profile": False, "user": _user_brief(user), "next": next_path}
 
 
 # ---------------------------------------------------------------------------

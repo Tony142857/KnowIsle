@@ -18,12 +18,14 @@ from fastapi import HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import get_settings
+from app.core.context import INDEX_VERSION, prompt_text
 from app.core.embeddings import get_embedding
 from app.core.llm.client import LLMClient
 from app.core.llm.prompts import QA_SYSTEM_PROMPT
 from app.core.llm.router import ModelTier, get_official_client
 from app.core.retrieval.coarse import coarse_recall
-from app.core.retrieval.fine import fine_search
+from app.core.retrieval.fine import SearchResults, fine_search
 from app.core.retrieval.fusion import rrf_fuse
 from app.identity.quota import consume_quota
 from app.storage.models import Chapter, Chunk, Course, Document, QaLog, User
@@ -64,6 +66,29 @@ async def check_course_access(
     return course
 
 
+async def _attach_chapter_titles(session, hits, titles: dict, course_id: int) -> dict:
+    """全局补充/无摘要路径也从 PG 补齐标题，避免 Prompt 结构信息随回退丢失。"""
+    missing = {
+        chapter_id for hit in hits
+        if (chapter_id := getattr(hit["chunk"], "chapter_id", None)) is not None
+        and chapter_id not in titles
+    }
+    if missing:
+        rows = (
+            await session.execute(
+                select(Chapter.id, Chapter.title).where(
+                    Chapter.course_id == course_id, Chapter.id.in_(missing)
+                )
+            )
+        ).all()
+        titles = {**titles, **{chapter_id: title for chapter_id, title in rows}}
+    for hit in hits:
+        chapter_title = titles.get(getattr(hit["chunk"], "chapter_id", None))
+        if chapter_title:
+            hit["chunk"]._rag_chapter_title = chapter_title
+    return titles
+
+
 async def _recall_scope(
     session: AsyncSession,
     query: str,
@@ -71,63 +96,128 @@ async def _recall_scope(
     course_id: int,
     scope: str,
     owner_id: int | None,
+    metrics: dict | None = None,
 ) -> tuple[list[dict], list[int] | None]:
-    """单路检索（§5.3）：章节粗召回 → 范围内精排；coarse 返回 None 时降级全课程（§8.3）。"""
-    chapter_ids = await coarse_recall(session, query_embedding, course_id, scope)
+    metrics = metrics if metrics is not None else {}
+    coarse_started = time.monotonic()
+    try:
+        chapter_ids = await coarse_recall(session, query_embedding, course_id, scope)
+        if chapter_ids is None:
+            metrics.setdefault("fallback", []).append("no_coarse_summary")
+    except Exception:
+        chapter_ids = None
+        metrics.setdefault("fallback", []).append("coarse_error")
+        metrics.setdefault("degraded", []).append("coarse")
+        logger.warning("章节粗召回失败，降级全课程 course=%s scope=%s", course_id, scope, exc_info=True)
+    metrics["coarse_ms"] = round((time.monotonic() - coarse_started) * 1000, 3)
+    metrics["coarse_candidates"] = len(chapter_ids or [])
+
+    titles = getattr(chapter_ids, "chapter_titles", {})
+    fine_started = time.monotonic()
     hits = await fine_search(
         session, query, query_embedding, scope, course_id,
         owner_id=owner_id, chapter_ids=chapter_ids,
     )
+    metrics["fine_ms"] = round((time.monotonic() - fine_started) * 1000, 3)
+    fine_metrics = getattr(hits, "metrics", {})
+    for key in ("fallback", "degraded"):
+        metrics.setdefault(key, []).extend(fine_metrics.get(key, []))
+    for key, value in fine_metrics.items():
+        if key not in {"fallback", "degraded"}:
+            metrics[key] = value
+    await _attach_chapter_titles(session, hits, titles, course_id)
     return hits, chapter_ids
 
 
 async def retrieve(
     session: AsyncSession, query: str, user: User, course_id: int, scope: str
 ) -> tuple[list[dict], list[int] | None]:
-    """检索入口（§5.3）：返回 (按得分降序的命中列表, 粗召回章节 ID 或 None)。
-
-    coarse 返回 None（无章节摘要）时降级为全课程范围精排（§8.3）。
-    """
+    """返回命中与粗召回章节；命中列表携带完整、可序列化检索诊断。"""
     await check_course_access(session, user, course_id, scope)
+    started = time.monotonic()
+    metrics: dict = {
+        "scope": scope,
+        "fallback": [],
+        "degraded": [],
+        "target_index_version": INDEX_VERSION,
+        "configured_embedding_model": get_settings().embedding_model,
+    }
+    embedding_started = time.monotonic()
     [query_embedding] = await get_embedding().embed([query])
+    metrics["embedding_ms"] = round((time.monotonic() - embedding_started) * 1000, 3)
 
     if scope in ("personal", "public"):
-        return await _recall_scope(
+        hits, chapter_ids = await _recall_scope(
             session, query, query_embedding, course_id, scope,
-            owner_id=user.id if scope == "personal" else None,
+            owner_id=user.id if scope == "personal" else None, metrics=metrics,
         )
-
-    # mixed：双库并行检索（§20.5 B2：双路均走章节粗召回+精排，与 personal/public
-    # 同款逻辑），个人库结果以显式权重 1.2 RRF 融合（§5.3）。
-    # 注：同一 AsyncSession 不支持并发操作，两路串行执行（单连接会话限制）。
-    personal_hits, personal_chapters = await _recall_scope(
-        session, query, query_embedding, course_id, "personal", owner_id=user.id
-    )
-    public_hits, public_chapters = await _recall_scope(
-        session, query, query_embedding, course_id, "public", owner_id=None
-    )
-    fused = rrf_fuse(
-        [h["chunk"] for h in personal_hits],
-        [h["chunk"] for h in public_hits],
-        weight_a=1.2,
-        weight_b=1.0,
-        top_k=5,
-    )
-    by_id = {h["chunk"].chunk_id: h["chunk"] for h in personal_hits + public_hits}
-    hits = [
-        {"chunk": by_id[chunk_id], "score": score}
-        for chunk_id, score in fused
-        if chunk_id in by_id
-    ]
-    # qa_logs.coarse_chapters 在 mixed 下含双路章节（并集，个人库在前）
-    coarse_ids = list(dict.fromkeys((personal_chapters or []) + (public_chapters or [])))
-    return hits, coarse_ids or None
+        result = SearchResults(hits, metrics=metrics)
+    else:
+        scope_metrics: dict[str, dict] = {"personal": {}, "public": {}}
+        personal_hits, personal_chapters = await _recall_scope(
+            session, query, query_embedding, course_id, "personal", owner_id=user.id,
+            metrics=scope_metrics["personal"],
+        )
+        public_hits, public_chapters = await _recall_scope(
+            session, query, query_embedding, course_id, "public", owner_id=None,
+            metrics=scope_metrics["public"],
+        )
+        fused = rrf_fuse(
+            [hit["chunk"] for hit in personal_hits],
+            [hit["chunk"] for hit in public_hits],
+            weight_a=get_settings().rag_mixed_personal_weight,
+            weight_b=1.0,
+            top_k=get_settings().rag_top_k,
+        )
+        combined = [
+            *[("personal", hit) for hit in personal_hits],
+            *[("public", hit) for hit in public_hits],
+        ]
+        by_id = {hit["chunk"].chunk_id: hit["chunk"] for _, hit in combined}
+        hits = [
+            {
+                "chunk": by_id[chunk_id], "score": score,
+                "route": next(route for route, hit in combined if hit["chunk"].chunk_id == chunk_id),
+                "sources": next(
+                    (hit.get("sources", []) for _, hit in combined if hit["chunk"].chunk_id == chunk_id),
+                    [],
+                ),
+            }
+            for chunk_id, score in fused if chunk_id in by_id
+        ]
+        chapter_ids = list(dict.fromkeys((personal_chapters or []) + (public_chapters or []))) or None
+        metrics["scopes"] = scope_metrics
+        for scoped in scope_metrics.values():
+            metrics["fallback"].extend(scoped.get("fallback", []))
+            metrics["degraded"].extend(scoped.get("degraded", []))
+        versions = sorted({
+            m["index_version"] for m in scope_metrics.values() if m.get("index_version")
+        })
+        models = sorted({
+            m["embedding_model"] for m in scope_metrics.values() if m.get("embedding_model")
+        })
+        metrics["index_versions"] = versions
+        metrics["embedding_models"] = models
+        if len(versions) == 1:
+            metrics["index_version"] = versions[0]
+        if len(models) == 1:
+            metrics["embedding_model"] = models[0]
+        result = SearchResults(hits, metrics=metrics)
+    metrics.setdefault("index_version", None)
+    metrics.setdefault("embedding_model", None)
+    metrics["fallback"] = list(dict.fromkeys(metrics["fallback"]))
+    metrics["degraded"] = list(dict.fromkeys(metrics["degraded"]))
+    metrics["returned_candidates"] = len(result)
+    metrics["retrieval_ms"] = round((time.monotonic() - started) * 1000, 3)
+    return result, chapter_ids
 
 
 async def _build_citation_items(
     session: AsyncSession, cited_ids: list[str], hits: list[dict]
 ) -> list[dict]:
     """把引用编号映射到课程/章节/页码/原作者署名（§A3 溯源，公共库来源展示署名）。"""
+    evidence_ids = {hit["chunk"].chunk_id for hit in hits}
+    cited_ids = [chunk_id for chunk_id in cited_ids if chunk_id in evidence_ids]
     if not cited_ids:
         return []
     rows = (
@@ -188,36 +278,51 @@ async def answer_question(
         yield {"type": "error", "message": "检索服务暂时不可用，请稍后重试"}
         return
 
+    retrieval_metrics = dict(getattr(hits, "metrics", {}))
+    if retrieval_metrics.get("weak_evidence"):
+        hits = SearchResults([], metrics=retrieval_metrics)
     context = "\n\n".join(
-        f"[{h['chunk'].chunk_id}]\n{h['chunk'].content}" for h in hits
+        prompt_text(hit["chunk"], getattr(hit["chunk"], "_rag_chapter_title", None))
+        for hit in hits
     )
-    prompt = QA_SYSTEM_PROMPT.format(context=context or "（未检索到相关资料）", question=body.question)
-    if client is None:
-        client = get_official_client(ModelTier.SHORT)
-
+    prompt = QA_SYSTEM_PROMPT.format(
+        context=context or "（未检索到相关资料）", question=body.question
+    )
+    retrieval_metrics["prompt_chars"] = len(prompt)
     answer_parts: list[str] = []
-    try:
-        async for token in client.chat_stream([{"role": "system", "content": prompt}]):
-            answer_parts.append(token)
-            yield {"type": "token", "text": token}
-    except Exception:
-        logger.exception("LLM 流式生成失败")
-        yield {"type": "error", "message": "AI 服务暂时不可用，请稍后重试"}
-        return
+    first_token_ms: int | None = None
+    if hits:
+        if client is None:
+            client = get_official_client(ModelTier.SHORT)
+        try:
+            async for token in client.chat_stream([{"role": "system", "content": prompt}]):
+                if first_token_ms is None:
+                    first_token_ms = int((time.monotonic() - started) * 1000)
+                answer_parts.append(token)
+                yield {"type": "token", "text": token}
+        except Exception:
+            logger.exception("LLM 流式生成失败")
+            yield {"type": "error", "message": "AI 服务暂时不可用，请稍后重试"}
+            return
+        answer = "".join(answer_parts)
+        token_usage = (client.last_usage or {}).get("total_tokens", 0)
+    else:
+        answer = "资料中未提及该问题，当前课程资料不足，无法给出有依据的回答。"
+        first_token_ms = int((time.monotonic() - started) * 1000)
+        token_usage = 0
+        yield {"type": "token", "text": answer}
 
-    answer = "".join(answer_parts)
-    cited_ids = extract_citations(answer, {h["chunk"].chunk_id for h in hits})
+    cited_ids = extract_citations(answer, {hit["chunk"].chunk_id for hit in hits})
     try:
         items = await _build_citation_items(session, cited_ids, hits)
     except Exception:
-        # token 已流出：引用映射查询异常降级为空引用继续走 done，
-        # 避免 SSE 流中断（客户端拿不到 done/error、qa_logs 不落库）
         logger.exception("引用映射查询失败（降级为空引用）")
         items = []
     yield {"type": "citations", "items": items}
 
-    token_usage = (client.last_usage or {}).get("total_tokens", 0)
     latency_ms = int((time.monotonic() - started) * 1000)
+    retrieval_metrics["first_token_ms"] = first_token_ms
+    retrieval_metrics["total_ms"] = latency_ms
     try:
         session.add(
             QaLog(
@@ -226,15 +331,16 @@ async def answer_question(
                 course_id=body.course_id,
                 search_scope=body.scope,
                 coarse_chapters={"chapter_ids": coarse_ids} if coarse_ids else None,
-                top_chunks=[h["chunk"].chunk_id for h in hits],
+                top_chunks=[hit["chunk"].chunk_id for hit in hits],
                 prompt=prompt,
                 answer=answer,
                 model_provider=provider,
                 token_usage=token_usage,
                 latency_ms=latency_ms,
+                retrieval_metrics=retrieval_metrics,
             )
         )
-        if provider != "user_custom":  # 自定义 Key 不占官方额度
+        if hits and provider != "user_custom":
             await consume_quota(session, user)
         await session.commit()
     except Exception:

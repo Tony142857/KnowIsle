@@ -65,7 +65,10 @@ QUIZ_JSON = json.dumps(
             {
                 "type": "single_choice",
                 "question": "进程与线程的区别？",
-                "options": ["A. 进程是资源分配单位", "B. 线程是资源分配单位"],
+                "options": [
+                    "A. 进程是资源分配单位", "B. 线程是资源分配单位",
+                    "C. 二者完全等同", "D. 线程拥有独立地址空间",
+                ],
                 "answer": "A",
                 "explanation": "进程拥有独立地址空间",
                 "chunk_id": "per_d11_00001",
@@ -75,12 +78,13 @@ QUIZ_JSON = json.dumps(
                 "question": "简述死锁的四个必要条件",
                 "answer": "互斥、占有且等待、不可剥夺、循环等待",
                 "explanation": "",
-                "chunk_id": "per_d9_99999",  # 不在上下文内，应被置 None
+                "chunk_id": "per_d11_00001",
             },
             {
-                "type": "unknown_type",  # 非法类型应规整为 short_answer
+                "type": "short_answer",
                 "question": "什么是临界区？",
                 "answer": "访问共享资源的代码段",
+                "chunk_id": "per_d11_00001",
             },
         ]
     },
@@ -218,8 +222,8 @@ def test_outline_no_content_422_and_llm_failure_502(monkeypatch):
 # ---------------------------------------------------------------------------
 
 
-def test_quiz_success_normalizes_questions_and_logs(monkeypatch):
-    """正常路径：结构化习题（选项/答案/解析/关联 chunk_id），非法字段规整。"""
+def test_quiz_success_validates_questions_and_logs(monkeypatch):
+    """合法题数、题型、选项、答案与证据通过，并返回 document_id。"""
     quota = _quota()
     llm = SeqLLM([QUIZ_JSON])
     _patch_common(monkeypatch, llm, _hits(make_chunk("per_d11_00001", chapter_id=1)))
@@ -238,10 +242,11 @@ def test_quiz_success_normalizes_questions_and_logs(monkeypatch):
     questions = body["questions"]
     assert len(questions) == 3
     q0 = questions[0]
-    assert q0["type"] == "single_choice" and len(q0["options"]) == 2
+    assert q0["type"] == "single_choice" and len(q0["options"]) == 4
     assert q0["answer"] == "A" and q0["chunk_id"] == "per_d11_00001"
-    assert questions[1]["chunk_id"] is None  # 幻觉 chunk_id 被剔除
-    assert questions[2]["type"] == "short_answer"  # 非法类型规整
+    assert all(question["document_id"] == 11 for question in questions)
+    assert questions[1]["chunk_id"] == "per_d11_00001"
+    assert questions[2]["type"] == "short_answer"
     log = next(o for o in session.added if isinstance(o, QaLog))
     assert log.question.startswith("[review] 习题生成：")
     assert json.loads(log.answer)[0]["question"] == "进程与线程的区别？"
@@ -251,11 +256,11 @@ def test_quiz_success_normalizes_questions_and_logs(monkeypatch):
 def test_quiz_invalid_json_retries_once_then_ok(monkeypatch):
     """LLM 首次输出非法 JSON：带提示重试一次成功（messages 含重试提示）。"""
     llm = SeqLLM(["这绝对不是 JSON", QUIZ_JSON])
-    _patch_common(monkeypatch, llm, _hits(make_chunk(chapter_id=1)),
+    _patch_common(monkeypatch, llm, _hits(make_chunk("per_d11_00001", chapter_id=1)),
                   provider="user_custom")
     gets = {**PERSONAL_GETS, (Chapter, 1): _chapter(1)}
     with http_client(FakeSession(gets=gets), USER) as client:
-        resp = client.post("/api/review/quiz", json={"course_id": 5, "chapter_id": 1})
+        resp = client.post("/api/review/quiz", json={"course_id": 5, "chapter_id": 1, "count": 3})
     assert resp.status_code == 200
     assert len(resp.json()["questions"]) == 3
     assert len(llm.prompts) == 2
@@ -265,7 +270,7 @@ def test_quiz_invalid_json_retries_once_then_ok(monkeypatch):
 def test_quiz_invalid_json_twice_502_and_llm_failure_502(monkeypatch):
     """重试后仍非法 JSON：明确 502；LLM 调用异常：502 降级。"""
     llm = SeqLLM(["bad", "still bad"])
-    _patch_common(monkeypatch, llm, _hits(make_chunk(chapter_id=1)),
+    _patch_common(monkeypatch, llm, _hits(make_chunk("per_d11_00001", chapter_id=1)),
                   provider="user_custom")
     gets = {**PERSONAL_GETS, (Chapter, 1): _chapter(1)}
     with http_client(FakeSession(gets=gets), USER) as client:
@@ -292,11 +297,11 @@ def test_quiz_empty_chapter_content_422(monkeypatch):
 
 def test_quiz_public_course_any_logged_in_user(monkeypatch):
     """公共课程（active）：任何登录用户可生成，非课程所有者也行（模块 A4）。"""
-    _patch_common(monkeypatch, SeqLLM([QUIZ_JSON]), _hits(make_chunk(chapter_id=1)),
+    _patch_common(monkeypatch, SeqLLM([QUIZ_JSON]), _hits(make_chunk("per_d11_00001", chapter_id=1)),
                   provider="user_custom")
     gets = {**PUBLIC_GETS, (Chapter, 1): _chapter(1)}
     with http_client(FakeSession(gets=gets), make_user(9)) as client:
-        resp = client.post("/api/review/quiz", json={"course_id": 5, "chapter_id": 1})
+        resp = client.post("/api/review/quiz", json={"course_id": 5, "chapter_id": 1, "count": 3})
     assert resp.status_code == 200
     assert resp.json()["provider"] == "user_custom"
 
@@ -311,7 +316,7 @@ def test_review_page_login_redirect_and_render():
     with http_client(FakeSession(), None) as client:
         resp = client.get("/library/review", follow_redirects=False)
         assert resp.status_code == 303
-        assert resp.headers["location"] == "/login"
+        assert resp.headers["location"].startswith("/login?next=")
     with http_client(FakeSession(), USER) as client:
         resp = client.get("/library/review", params={"course_id": 5})
     assert resp.status_code == 200

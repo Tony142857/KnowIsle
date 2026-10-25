@@ -9,6 +9,7 @@ from typing import Annotated, Literal
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from pydantic import BaseModel
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.community.social import course_followable, decide_social_write, user_followable
@@ -68,15 +69,20 @@ async def add_follow(
     existing = await _find_follow(db, user.id, payload.target_type, payload.target_id)
     created = decide_social_write(existing is not None) == "insert"
     if created:
-        db.add(
-            Follow(
-                user_id=user.id,
-                target_type=payload.target_type,
-                target_id=payload.target_id,
-            )
-        )
-        await db.commit()
-    else:
+        try:
+            async with db.begin_nested():
+                db.add(
+                    Follow(
+                        user_id=user.id,
+                        target_type=payload.target_type,
+                        target_id=payload.target_id,
+                    )
+                )
+                await db.flush()
+        except IntegrityError:
+            created = False
+    await db.commit()
+    if not created:
         response.status_code = 200
     return {
         "target_type": payload.target_type,

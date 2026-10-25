@@ -11,7 +11,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.pipeline import extract_citations
-from app.storage.models import Chapter, Chunk, Document, User
+from app.storage.models import Chapter, Chunk, Document, Post, User
 
 OPEN_BOARDS = ("qa", "discuss", "experience", "bounty")  # v0.7 四板块全部开放
 
@@ -88,19 +88,29 @@ def derive_summary_status(board: str, ai_summary: str | None, redis_state: str |
     return "none"
 
 
-async def build_ai_citations(session: AsyncSession, answer: str) -> list[dict]:
-    """从 AI 首答正文提取 [chunk_id] 引用并组装溯源信息（章节/小节/页码/署名）。"""
+async def build_ai_citations(
+    session: AsyncSession, answer: str, post: Post | None = None
+) -> list[dict]:
+    """仅渲染当次证据集合；旧帖回退也必须匹配该帖课程与 public scope。
+
+    既有路由只传 answer，因此先反查唯一帖子；相同正文对应多帖时拒绝猜测。
+    """
     candidates = set(_CITATION_RE.findall(answer))
     if not candidates:
         return []
-    valid_ids = set(
-        (
-            await session.execute(
-                select(Chunk.chunk_id).where(Chunk.chunk_id.in_(candidates))
-            )
-        ).scalars()
+    if post is None:
+        posts = list(
+            (
+                await session.execute(select(Post).where(Post.ai_first_answer == answer))
+            ).scalars().all()
+        )
+        if len(posts) != 1:
+            return []
+        post = posts[0]
+    allowed = getattr(post, "ai_citation_chunk_ids", None)
+    cited_ids = extract_citations(
+        answer, candidates if allowed is None else set(allowed) & candidates
     )
-    cited_ids = extract_citations(answer, valid_ids)
     if not cited_ids:
         return []
     rows = (
@@ -109,12 +119,17 @@ async def build_ai_citations(session: AsyncSession, answer: str) -> list[dict]:
             .join(Document, Document.id == Chunk.document_id)
             .join(User, User.id == Chunk.owner_id)
             .outerjoin(Chapter, Chapter.id == Chunk.chapter_id)
-            .where(Chunk.chunk_id.in_(cited_ids))
+            .where(
+                Chunk.chunk_id.in_(cited_ids),
+                Chunk.course_id == post.course_id,
+                Chunk.scope == "public",
+            )
         )
     ).all()
     info = {
         chunk.chunk_id: (chunk, doc, nickname, chapter_title)
         for chunk, doc, nickname, chapter_title in rows
+        if chunk.course_id == post.course_id and chunk.scope == "public"
     }
     items = []
     for chunk_id in cited_ids:

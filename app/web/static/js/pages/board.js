@@ -86,6 +86,7 @@
     return {
       board: board, items: [], loading: false, loaded: false, error: '',
       async load() {
+        if (this.loading) return;
         this.loading = true; this.error = '';
         try {
           let url = '/api/posts?board=' + board + '&page=' + page + '&size=20';
@@ -97,6 +98,7 @@
           this.$nextTick(() => {
             const host = document.getElementById('board-fallback-list');
             if (!host) return;
+            host.replaceChildren();
             // 首屏 stagger 入场：第 2/3/4 张依次延迟（与 SSR 循环同一口径）
             const delays = ['', 'd-80', 'd-150', 'd-300'];
             this.items.forEach((p, i) => {

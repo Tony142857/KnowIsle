@@ -10,7 +10,16 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.identity.rbac import get_current_user
 from app.storage.db import get_db
-from app.storage.models import Chapter, Course, Document, Semester, User
+from app.storage.models import (
+    Chapter,
+    Course,
+    Document,
+    Resource,
+    ReviewRecord,
+    ReviewTask,
+    Semester,
+    User,
+)
 
 router = APIRouter(prefix="/library", tags=["library"])
 
@@ -106,6 +115,83 @@ async def get_library(
         ],
         "uncategorized_courses": uncategorized,
     }
+
+
+@router.get("/documents")
+async def list_library_documents(
+    user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    """本人文档的解析与最新投稿状态，含可展示的驳回理由和资源链接。"""
+    documents = (
+        await db.execute(
+            select(Document)
+            .where(Document.owner_id == user.id, Document.scope == "personal")
+            .order_by(Document.created_at.desc(), Document.id.desc())
+        )
+    ).scalars().all()
+    doc_ids = [doc.id for doc in documents]
+    resources = []
+    if doc_ids:
+        resources = (
+            await db.execute(
+                select(Resource)
+                .where(Resource.document_id.in_(doc_ids))
+                .order_by(Resource.id.desc())
+            )
+        ).scalars().all()
+    latest_resources = {}
+    for resource in resources:
+        latest_resources.setdefault(resource.document_id, resource)
+    tasks = []
+    if latest_resources:
+        tasks = (
+            await db.execute(
+                select(ReviewTask)
+                .where(ReviewTask.resource_id.in_([r.id for r in latest_resources.values()]))
+                .order_by(ReviewTask.id.desc())
+            )
+        ).scalars().all()
+    latest_tasks = {}
+    for task in tasks:
+        latest_tasks.setdefault(task.resource_id, task)
+    records = []
+    if latest_tasks:
+        records = (
+            await db.execute(
+                select(ReviewRecord)
+                .where(
+                    ReviewRecord.task_id.in_([t.id for t in latest_tasks.values()]),
+                    ReviewRecord.verdict == "reject",
+                )
+                .order_by(ReviewRecord.id.desc())
+            )
+        ).scalars().all()
+    reasons = {}
+    task_resources = {task.id: task.resource_id for task in latest_tasks.values()}
+    for record in records:
+        reasons.setdefault(task_resources[record.task_id], record.comment)
+    items = []
+    for doc in documents:
+        resource = latest_resources.get(doc.id)
+        task = latest_tasks.get(resource.id) if resource else None
+        reason = reasons.get(resource.id) if resource else None
+        if reason is None and task and task.precheck_result:
+            reason = task.precheck_result.get("reason") or None
+        items.append(
+            {
+                "document_id": doc.id,
+                "file_name": doc.file_name,
+                "status": doc.status,
+                "parse_error": doc.parse_error if doc.status == "failed" else None,
+                "review_status": resource.review_status if resource else None,
+                "review_stage": task.stage if task else None,
+                "review_reason": reason,
+                "resource_id": resource.id if resource else None,
+                "resource_url": f"/resources/{resource.id}" if resource else None,
+            }
+        )
+    return {"items": items}
 
 
 class CreateSemesterRequest(BaseModel):

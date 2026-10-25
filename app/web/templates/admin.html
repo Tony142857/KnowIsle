@@ -9,9 +9,7 @@
 {% endblock %}
 
 {% block content %}
-<div x-data="{ tab: 'review' }"
-     x-init="$watch('tab', v => { if (v === 'dashboard') $nextTick(() => window.dispatchEvent(new CustomEvent('admin:dashboard'))); })"
-     class="animate-fade-up">
+<div x-data="adminTabs()" class="animate-fade-up">
   {{ page_header('管理后台',
                  subtitle='审核终审 / 空间管理 / 用户治理 / 平台配置 · 举报处理 / 运营看板',
                  icon='gear') }}
@@ -21,7 +19,7 @@
     {% for key, label in [('review', '审核终审'), ('space', '空间管理'),
                           ('users', '用户治理'), ('config', '平台配置'),
                           ('reports', '举报处理'), ('dashboard', '运营看板')] %}
-    <button @click="tab = '{{ key }}'" role="tab" :aria-selected="tab === '{{ key }}'"
+    <button @click="setTab('{{ key }}')" role="tab" :aria-selected="tab === '{{ key }}'"
             :class="tab === '{{ key }}' ? 'border-brand-600 text-brand-700 font-medium' : 'border-transparent text-slate-500 hover:text-brand-700'"
             class="shrink-0 border-b-2 px-4 py-2 -mb-px transition-colors">{{ label }}</button>
     {% endfor %}
@@ -74,7 +72,7 @@
       </div>
 
       {# 公共课程列表（状态过滤 + 审批/停用） #}
-      <div class="card p-4" x-data="adminCourses()" x-init="load()">
+      <div class="card p-4" x-data="adminCourses()" @admin:tab.window="onTab($event.detail)">
         <div class="flex flex-wrap items-center gap-2">
           <h2 class="text-sm font-semibold text-slate-700">公共课程空间</h2>
           <span class="text-xs text-slate-400" x-show="loaded" x-text="'共 ' + total + ' 门'"></span>
@@ -173,10 +171,15 @@
             </div>
           </template>
         </div>
+        <nav x-show="total > size" x-cloak class="mt-3 flex items-center justify-center gap-2 text-sm" aria-label="课程分页">
+          <button type="button" @click="load(page - 1)" :disabled="loading || page <= 1" class="btn btn-ghost">上一页</button>
+          <span x-text="page + ' / ' + Math.max(1, Math.ceil(total / size))" class="text-slate-500"></span>
+          <button type="button" @click="load(page + 1)" :disabled="loading || page * size >= total" class="btn btn-ghost">下一页</button>
+        </nav>
       </div>
 
       {# 创建课程（管理员创建直接 active） #}
-      <div class="card p-4" x-data="createCourse()" x-init="loadMajors()">
+      <div class="card p-4" x-data="createCourse()" @admin:tab.window="onTab($event.detail)">
         <h2 class="text-sm font-semibold text-slate-700">创建课程</h2>
         <p class="mt-1 text-xs text-slate-400">管理员创建的课程直接开通（active），无需审批。</p>
         <div class="mt-3 grid gap-2 sm:grid-cols-2">
@@ -202,7 +205,7 @@
 
     {# ===== 用户治理：搜索 + 角色任命 / 信用裁决 / 信用明细 ===== #}
     <div x-show="tab === 'users'" x-cloak>
-      <div class="card p-4" x-data="adminUsers()" x-init="load()">
+      <div class="card p-4" x-data="adminUsers()" @admin:tab.window="onTab($event.detail)">
         <div class="flex flex-wrap items-center gap-2">
           <h2 class="text-sm font-semibold text-slate-700">用户治理</h2>
           <span class="text-xs text-slate-400" x-show="loaded" x-text="'共 ' + total + ' 人'"></span>
@@ -250,7 +253,7 @@
                   <td class="py-2 pr-3 font-medium"
                       :class="u.credit >= 60 ? 'text-slate-700' : 'text-red-600'"
                       x-text="u.credit"></td>
-                  <td class="py-2 pr-3 text-slate-500" x-text="u.status"></td>
+                  <td class="py-2 pr-3 text-slate-500" x-text="statusLabel(u.status)"></td>
                   <td class="py-2">
                     <button @click="open = !open" :aria-expanded="open"
                             class="rounded-md border border-slate-300 px-2 py-1 text-xs text-slate-600 hover:bg-slate-50">
@@ -340,7 +343,7 @@
                 贡献 <span x-text="u.score"></span> ·
                 信用 <span class="font-medium" :class="u.credit >= 60 ? 'text-slate-500' : 'text-red-600'"
                            x-text="u.credit"></span> ·
-                <span x-text="u.status"></span>
+                <span x-text="statusLabel(u.status)"></span>
               </p>
               <div x-show="open" x-cloak x-transition class="mt-3 border-t border-slate-100 pt-3">
                 <p x-show="error" x-text="error" x-cloak
@@ -400,12 +403,17 @@
             </div>
           </template>
         </div>
+        <nav x-show="total > size" x-cloak class="mt-3 flex items-center justify-center gap-2 text-sm" aria-label="用户分页">
+          <button type="button" @click="load(page - 1)" :disabled="loading || page <= 1" class="btn btn-ghost">上一页</button>
+          <span x-text="page + ' / ' + Math.max(1, Math.ceil(total / size))" class="text-slate-500"></span>
+          <button type="button" @click="load(page + 1)" :disabled="loading || page * size >= total" class="btn btn-ghost">下一页</button>
+        </nav>
       </div>
     </div>
 
     {# ===== 平台配置：生效值可编辑保存（越界 422 展示 detail） ===== #}
     <div x-show="tab === 'config'" x-cloak>
-      <div class="card p-4" x-data="adminConfig()" x-init="load()">
+      <div class="card p-4" x-data="adminConfig()" @admin:tab.window="onTab($event.detail)">
         <h2 class="text-sm font-semibold text-slate-700">平台配置</h2>
         <p class="mt-1 text-xs text-slate-400">仅注册键可调；修改写审计日志，即时生效。</p>
         <div x-show="loading" x-cloak class="mt-3 space-y-2" aria-hidden="true">
@@ -501,7 +509,7 @@
 
     {# ===== 举报处理（v0.8）：状态过滤 + 处理流转（open→processing→resolved/dismissed） ===== #}
     <div x-show="tab === 'reports'" x-cloak>
-      <div class="card p-4" x-data="adminReports()" x-init="load(1)">
+      <div class="card p-4" x-data="adminReports()" @admin:tab.window="onTab($event.detail)">
         <div class="flex flex-wrap items-center gap-2">
           <h2 class="text-sm font-semibold text-slate-700">举报处理</h2>
           <span class="text-xs text-slate-400" x-show="loaded" x-text="'共 ' + total + ' 条'"></span>
@@ -544,7 +552,7 @@
                   <td class="py-2 pr-3 text-slate-700" x-text="r.reporter ? r.reporter.nickname : '—'"></td>
                   <td class="py-2 pr-3">
                     <span class="badge badge-slate" x-text="targetLabel(r.target_type)"></span>
-                    {# 资源/帖子可跳转详情；评论无法定位、用户无公开主页，仅显示摘要文本 #}
+                    {# 有服务端安全上下文链接时直达目标，否则仅显示摘要。 #}
                     <template x-if="targetLink(r)">
                       <a :href="targetLink(r)" class="ml-1 text-brand-600 hover:underline"
                          x-text="r.target_summary || ('#' + r.target_id)"></a>
@@ -598,7 +606,7 @@
             <div class="card p-3">
               <div class="flex items-center gap-2">
                 <span class="badge badge-slate shrink-0" x-text="targetLabel(r.target_type)"></span>
-                {# 资源/帖子可跳转详情；评论无法定位、用户无公开主页，仅显示摘要文本 #}
+                {# 有服务端安全上下文链接时直达目标，否则仅显示摘要。 #}
                 <template x-if="targetLink(r)">
                   <a :href="targetLink(r)"
                      class="min-w-0 flex-1 truncate text-sm text-brand-600 hover:underline"
@@ -657,8 +665,7 @@
     {# ECharts 5 本地化：与 base.html 其余依赖同置于 static/vendor #}
     <script src="/static/vendor/echarts-5.6.0.min.js"></script>
     <div x-show="tab === 'dashboard'" x-cloak>
-      <div class="card p-4" x-data="adminDashboard()"
-           @admin:dashboard.window="onShow()">
+      <div class="card p-4" x-data="adminDashboard()" @admin:tab.window="onTab($event.detail)">
         <h2 class="text-sm font-semibold text-slate-700">运营看板</h2>
         <div x-show="loading" x-cloak class="mt-3 grid gap-3 sm:grid-cols-3" aria-hidden="true">
           <div class="skeleton h-24 rounded-card"></div>
@@ -740,7 +747,21 @@
             {# 近 7 天趋势：问答 / 发帖 / 上传 三条折线 #}
             <div class="rounded-card border border-slate-100 p-4">
               <h3 class="text-xs font-medium text-slate-500">近 7 天趋势</h3>
-              <div x-ref="trendChart" class="mt-2 h-64 w-full"></div>
+              <div x-ref="trendChart" class="mt-2 h-64 w-full" role="img" aria-label="近 7 天问答、发帖、上传趋势图"></div>
+              <details class="mt-3">
+                <summary class="cursor-pointer text-xs font-medium text-brand-700">查看趋势数据表</summary>
+                <div class="mt-2 overflow-x-auto">
+                  <table class="w-full text-xs">
+                    <caption class="sr-only">近 7 天问答、发帖、上传数据</caption>
+                    <thead><tr class="border-b border-slate-200 text-left text-slate-500"><th class="py-2 pr-3">日期</th><th class="py-2 pr-3">问答</th><th class="py-2 pr-3">发帖</th><th class="py-2">上传</th></tr></thead>
+                    <tbody class="divide-y divide-slate-100">
+                      <template x-for="(day, index) in (data.trend.days || [])" :key="day">
+                        <tr><td class="py-2 pr-3" x-text="day"></td><td class="py-2 pr-3" x-text="data.trend.qa[index] || 0"></td><td class="py-2 pr-3" x-text="data.trend.posts[index] || 0"></td><td class="py-2" x-text="data.trend.uploads[index] || 0"></td></tr>
+                      </template>
+                    </tbody>
+                  </table>
+                </div>
+              </details>
             </div>
           </div>
         </template>

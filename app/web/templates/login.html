@@ -104,71 +104,79 @@
         </li>
       </ol>
 
-      {# 错误 / 提示信息（x-cloak 防初始化前闪现） #}
-      <p x-show="error" x-text="error" x-cloak class="mt-4 rounded bg-red-50 px-3 py-2 text-sm text-red-600"></p>
-      <p x-show="hint" x-text="hint" x-cloak class="mt-4 rounded bg-brand-50 px-3 py-2 text-sm text-brand-700"></p>
+      {# 错误与字段通过 aria-describedby 关联；失败时 Alpine 不清空已输入内容。 #}
+      <p id="login-error" x-show="error" x-text="error" x-cloak role="alert"
+         class="mt-4 rounded bg-red-50 px-3 py-2 text-sm text-red-700"></p>
+      <p id="login-hint" x-show="hint" x-text="hint" x-cloak role="status"
+         class="mt-4 rounded bg-brand-50 px-3 py-2 text-sm text-brand-700"></p>
 
-      {# 第一步：学号 + 校园邮箱，发送验证码 #}
-      <div class="mt-6 space-y-4">
-        <div>
-          <label for="login-student-no" class="text-xs font-medium text-slate-500">学号</label>
-          <input id="login-student-no" type="text" x-model="student_no" placeholder="学号" :disabled="step > 1" class="input-base mt-1">
+      <form @submit.prevent="step === 1 ? sendCode() : verify()" :aria-busy="loading" class="mt-6">
+        <div class="space-y-4">
+          <div>
+            <label for="login-student-no" class="text-xs font-medium text-slate-500">学号</label>
+            <input id="login-student-no" name="student_no" type="text" x-model="student_no" required
+                   autocomplete="username" aria-describedby="login-error"
+                   placeholder="请输入学号" :disabled="step > 1 || loading" class="input-base mt-1">
+          </div>
+          <div>
+            <label for="login-email" class="text-xs font-medium text-slate-500">校园邮箱</label>
+            <input id="login-email" name="email" type="email" x-model="email" required
+                   autocomplete="email" aria-describedby="login-email-help login-error"
+                   placeholder="name@school.edu.cn" :disabled="step > 1 || loading" class="input-base mt-1">
+            <p id="login-email-help" class="mt-1 text-xs text-slate-400">仅用于学校身份认证，验证码 10 分钟内有效。</p>
+          </div>
         </div>
-        <div>
-          <label for="login-email" class="text-xs font-medium text-slate-500">校园邮箱</label>
-          <input id="login-email" type="email" x-model="email" placeholder="校园邮箱（@edu.cn）" :disabled="step > 1" class="input-base mt-1">
-        </div>
-        <button x-show="step === 1" @click="sendCode()" :disabled="loading || cooldown > 0"
-                class="btn btn-primary w-full !py-2.5">
-          <span x-text="loading ? '发送中…' : (cooldown > 0 ? '重新发送（' + cooldown + 's）' : '发送验证码')">发送验证码</span>
-        </button>
-      </div>
 
-      {# 第二步：输入验证码（附 60s 冷却的重发入口） #}
-      <div x-show="step >= 2" x-cloak class="mt-4 space-y-4">
-        <div>
+        <div x-show="step >= 2" x-cloak class="mt-4">
           <label for="login-code" class="text-xs font-medium text-slate-500">验证码</label>
-          <input id="login-code" type="text" x-model="code" placeholder="6 位验证码" maxlength="6"
-                 inputmode="numeric" autocomplete="one-time-code" class="input-base mt-1">
+          <input id="login-code" name="code" type="text" x-model="code" placeholder="6 位验证码" maxlength="6"
+                 pattern="[0-9]{6}" inputmode="numeric" autocomplete="one-time-code"
+                 :required="step >= 2" :disabled="loading" aria-describedby="login-error" class="input-base mt-1">
+          <button type="button" @click="sendCode()" :disabled="loading || cooldown > 0"
+                  class="mt-2 text-xs text-slate-500 transition-colors hover:text-brand-700 disabled:opacity-50">
+            <span x-text="cooldown > 0 ? '没收到？' + cooldown + 's 后可重发' : '没收到验证码？重新发送'"></span>
+          </button>
         </div>
-        <button @click="sendCode()" :disabled="loading || cooldown > 0"
-                class="text-xs text-slate-400 transition-colors hover:text-brand-700 disabled:opacity-50 disabled:hover:text-slate-400">
-          <span x-text="cooldown > 0 ? '没收到？' + cooldown + 's 后可重发' : '没收到验证码？重新发送'"></span>
+
+        <fieldset x-show="step === 3" x-cloak class="mt-4 space-y-4 rounded-lg border border-brand-100 bg-brand-50/40 p-4">
+          <legend class="px-1 text-sm font-medium text-slate-700">首次登录，请补全资料建档</legend>
+          <div>
+            <label for="login-real-name" class="text-xs font-medium text-slate-500">真实姓名</label>
+            <input id="login-real-name" name="real_name" type="text" x-model="real_name" :required="step === 3"
+                   :disabled="loading" aria-describedby="login-real-name-help login-error"
+                   placeholder="仅认证核验用" class="input-base mt-1 !bg-white">
+            <p id="login-real-name-help" class="mt-1 text-xs text-slate-400">真实姓名不会在社区公开。</p>
+          </div>
+          <div>
+            <label for="login-nickname" class="text-xs font-medium text-slate-500">昵称</label>
+            <input id="login-nickname" name="nickname" type="text" x-model="nickname" :required="step === 3"
+                   :disabled="loading" aria-describedby="login-error" placeholder="社区内展示的唯一昵称"
+                   class="input-base mt-1 !bg-white">
+          </div>
+          <div>
+            <label for="login-grade" class="text-xs font-medium text-slate-500">年级（选填）</label>
+            <input id="login-grade" name="grade" type="text" x-model="grade" :disabled="loading"
+                   placeholder="如 2023级" class="input-base mt-1 !bg-white">
+          </div>
+          <div>
+            <label for="login-major" class="text-xs font-medium text-slate-500">专业（选填）</label>
+            <select id="login-major" name="major_id" x-model="major_id" :disabled="loading"
+                    class="input-base mt-1 !bg-white">
+              <option value="">选择专业（选填）</option>
+              <template x-for="m in majors" :key="m.id">
+                <option :value="m.id" x-text="m.name"></option>
+              </template>
+            </select>
+          </div>
+        </fieldset>
+
+        <button type="submit" :disabled="loading || (step === 1 && cooldown > 0)" :aria-busy="loading"
+                :class="{'btn-loading': loading}" class="btn btn-primary mt-5 w-full !py-2.5">
+          <span x-text="loading ? (step === 1 ? '发送中…' : '验证中…') : (step === 1 ? (cooldown > 0 ? '重新发送（' + cooldown + 's）' : '发送验证码') : (step === 3 ? '建档并登录' : '登录'))">发送验证码</span>
         </button>
-      </div>
-
-      {# 第三步（仅首次登录）：补全学籍资料后建档（§3.1） #}
-      <div x-show="step === 3" x-cloak class="mt-4 space-y-4 rounded-lg border border-brand-100 bg-brand-50/40 p-4">
-        <p class="text-sm font-medium text-slate-700">首次登录，请补全资料建档</p>
-        <div>
-          <label for="login-real-name" class="text-xs font-medium text-slate-500">真实姓名</label>
-          <input id="login-real-name" type="text" x-model="real_name" placeholder="真实姓名（仅认证核验用，不公开）" class="input-base mt-1 !bg-white">
-        </div>
-        <div>
-          <label for="login-nickname" class="text-xs font-medium text-slate-500">昵称</label>
-          <input id="login-nickname" type="text" x-model="nickname" placeholder="昵称（社区内展示，唯一）" class="input-base mt-1 !bg-white">
-        </div>
-        <div>
-          <label for="login-grade" class="text-xs font-medium text-slate-500">年级（选填）</label>
-          <input id="login-grade" type="text" x-model="grade" placeholder="年级（如 2023级，选填）" class="input-base mt-1 !bg-white">
-        </div>
-        <div>
-          <label for="login-major" class="text-xs font-medium text-slate-500">专业（选填）</label>
-          <select id="login-major" x-model="major_id" class="input-base mt-1 !bg-white">
-            <option value="">选择专业（选填）</option>
-            <template x-for="m in majors" :key="m.id">
-              <option :value="m.id" x-text="m.name"></option>
-            </template>
-          </select>
-        </div>
-      </div>
-
-      <button x-show="step >= 2" x-cloak @click="verify()" :disabled="loading"
-              class="btn btn-primary mt-4 w-full !py-2.5">
-        <span x-text="loading ? '验证中…' : (step === 3 ? '建档并登录' : '登录')">登录</span>
-      </button>
-      <button x-show="step >= 2" x-cloak @click="reset()"
-              class="mt-2 w-full text-xs text-slate-400 transition-colors hover:text-brand-700">重新填写学号 / 邮箱</button>
+        <button type="button" x-show="step >= 2" x-cloak @click="reset()" :disabled="loading"
+                class="mt-2 w-full text-xs text-slate-500 transition-colors hover:text-brand-700">重新填写学号 / 邮箱</button>
+      </form>
     </div>
   </div>
 </div>

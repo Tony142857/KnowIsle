@@ -25,8 +25,10 @@ async def convert_preview(ctx: dict, document_id: int) -> None:
     非 word/ppt 文档无需转换，直接返回（pdf_textbook/markdown 预览用原文件）。
     """
     async with SessionLocal() as session:
-        doc = await session.get(Document, document_id)
-        if doc is None or doc.file_type not in _SUFFIX:
+        doc = await session.get(
+            Document, document_id, with_for_update=True, populate_existing=True
+        )
+        if doc is None or doc.file_type not in _SUFFIX or doc.preview_key:
             return
         data = await object_store.get_object(doc.storage_key)
         with tempfile.TemporaryDirectory() as tmpdir:

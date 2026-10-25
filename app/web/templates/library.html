@@ -1,259 +1,211 @@
 {% extends "base.html" %}
 {% block title %}个人知识库 · 知屿 KnowIsle{% endblock %}
 {% block head %}
-{# 页面交互逻辑已外置（CSP 兼容）：学期/课程/章节/上传/投稿/解析轮询。
-   同步加载（勿加 defer）：须在 defer 的 Alpine 启动前执行，x-data 才能找到全局工厂函数 #}
 <script src="/static/js/pages/library.js"></script>
 {% endblock %}
 {% from "_icons.html" import icon %}
 {% from "_illustrations.html" import illo %}
 {% from "_page_header.html" import page_header %}
 
-{# 解析状态徽章：解析中 / 已完成 / 失败 #}
-{% macro status_badge(status) %}
-{% if status == 'parsed' %}
-<span class="badge badge-brand">已完成</span>
-{% elif status == 'failed' %}
-<span class="badge bg-red-50 text-red-600">解析失败</span>
-{% else %}
-<span class="badge badge-slate">解析中</span>
-{% endif %}
-{% endmacro %}
-
-{# 投稿状态徽章：预检中 / 审核中 / 已上架 / 已驳回 #}
 {% macro review_badge(res) %}
 {% if res.review_status == 'approved' %}
-<a href="/resources/{{ res.resource_id }}"
-   class="badge badge-brand hover:underline">已上架</a>
+<a href="/resources/{{ res.resource_id }}" class="badge badge-brand hover:underline">已上架</a>
 {% elif res.review_status == 'co_reviewing' %}
-<span class="badge badge-accent">审核中</span>
+<span class="badge badge-accent">{{ '终审中' if res.review_stage == 'final' else '协审中' }}</span>
 {% elif res.review_status == 'pending' %}
 <span class="badge badge-slate">预检中</span>
 {% else %}
-<span class="badge bg-red-50 text-red-600">已驳回</span>
+<span class="badge bg-red-50 text-red-700">已驳回</span>
 {% endif %}
 {% endmacro %}
 
-{# 课程卡片：章节徽章 / 文档列表 / 添加章节 / 上传资料 / AI 问答入口 #}
+{% macro document_actions(d, res, course_id) %}
+<span class="flex flex-wrap items-center gap-x-2 gap-y-1">
+  <span class="badge" :class="statusClass(documentStatus({{ d.id }}, '{{ d.status }}'))"
+        x-text="statusLabel(documentStatus({{ d.id }}, '{{ d.status }}'))"></span>
+  {% if res %}{{ review_badge(res) }}{% endif %}
+  <span x-show="submitted[{{ d.id }}]" x-cloak class="badge badge-slate"
+        x-text="submitted[{{ d.id }}] && submitted[{{ d.id }}].label || '预检中'"></span>
+  <span class="text-xs text-slate-400" data-rel-time="{{ d.created_at.isoformat() }}"
+        title="{{ d.created_at.strftime('%Y-%m-%d %H:%M') }}">{{ d.created_at.strftime('%Y-%m-%d %H:%M') }}</span>
+  <a x-show="documentStatus({{ d.id }}, '{{ d.status }}') === 'parsed'" {% if d.status != 'parsed' %}x-cloak{% endif %}
+     href="/documents/{{ d.id }}/source" target="_blank" rel="noopener"
+     class="text-xs text-brand-600 hover:text-brand-700 hover:underline">原文溯源</a>
+  <button type="button" x-show="canSubmit({{ d.id }}, {{ 'true' if not res or res.review_status == 'rejected' else 'false' }})"
+          {% if d.status != 'parsed' or (res and res.review_status != 'rejected') %}x-cloak{% endif %}
+          @click="openSubmit({{ d.id }}, {{ d.file_name|tojson|forceescape }})"
+          class="text-xs text-brand-600 hover:text-brand-700 hover:underline">
+    {{ '重新投稿' if res else '投稿到公共库' }}
+  </button>
+  <button type="button" x-show="documentStatus({{ d.id }}, '{{ d.status }}') === 'failed'"
+          {% if d.status != 'failed' %}x-cloak{% endif %} @click="prepareReupload({{ course_id }}, {{ d.id }})"
+          class="text-xs font-medium text-red-700 hover:underline">选择同文件重传</button>
+  <button type="button" x-show="docStates[{{ d.id }}] && docStates[{{ d.id }}].poll_error" x-cloak
+          @click="resumePolling({{ d.id }})" class="text-xs text-brand-700 hover:underline">继续检查</button>
+  {% if res and res.review_status == 'pending' %}
+  <button type="button" @click="retrySubmission({{ d.id }})" :disabled="retryingSubmission === {{ d.id }}"
+          class="text-xs text-brand-700 hover:underline">重试预检</button>
+  {% endif %}
+  {% if d.file_type in ('word', 'ppt') and not d.preview_key %}
+  <button type="button" @click="retryPreview({{ d.id }})" class="text-xs text-brand-700 hover:underline">重试预览</button>
+  {% endif %}
+</span>
+<p x-show="documentError({{ d.id }}, {{ d.parse_error|default('', true)|tojson|forceescape }})" x-cloak role="alert"
+   class="mt-1 w-full rounded bg-red-50 px-2 py-1.5 text-xs text-red-700"
+   x-text="documentError({{ d.id }}, {{ d.parse_error|default('', true)|tojson|forceescape }})"></p>
+<p x-show="docStates[{{ d.id }}] && docStates[{{ d.id }}].poll_error" x-cloak role="alert"
+   class="mt-1 w-full text-xs text-accent-700" x-text="docStates[{{ d.id }}].poll_error"></p>
+{% if res %}
+<p class="mt-1 w-full text-xs text-slate-400">投稿进度：预检 → 协审 → 终审 → 上架</p>
+{% if res.review_status == 'rejected' and res.review_reason %}
+<p class="mt-1 w-full rounded bg-red-50 px-2 py-1.5 text-xs text-red-700">驳回理由：{{ res.review_reason }}</p>
+{% endif %}
+{% endif %}
+{% endmacro %}
+
 {% macro course_card(item, resource_map) %}
 {% set c = item.course %}
 {% set type_icons = {'pdf_textbook': 'file-pdf', 'ppt': 'file-ppt', 'word': 'file-word', 'markdown': 'file-md'} %}
 <div class="card card-hover animate-fade-up p-4">
   <div class="flex flex-wrap items-center gap-3">
     <h3 class="text-card-title text-slate-800">{{ c.name }}</h3>
-    {% if c.status != 'active' %}
-    <span class="badge {{ 'badge-accent' if c.status == 'pending' else 'badge-slate' }}">
-      {{ '待审批' if c.status == 'pending' else '已停用' }}
-    </span>
-    {% endif %}
+    {% if c.status != 'active' %}<span class="badge badge-slate">{{ '待审批' if c.status == 'pending' else '已停用' }}</span>{% endif %}
     <span class="text-xs text-slate-400">{{ item.documents|length }} 份资料</span>
     <div class="ml-auto flex flex-wrap items-center gap-2 text-sm">
-      <a href="/library/chat?course_id={{ c.id }}" class="text-brand-600 transition-colors hover:text-brand-700 hover:underline">AI 问答</a>
-      <a href="/library/review?course_id={{ c.id }}" class="text-brand-600 transition-colors hover:text-brand-700 hover:underline">复习工具</a>
-      <button @click="chapterFormFor = chapterFormFor === {{ c.id }} ? null : {{ c.id }}; chapterTitle = ''"
+      <a href="/library/chat?course_id={{ c.id }}" class="text-brand-600 hover:text-brand-700 hover:underline">AI 问答</a>
+      <a href="/library/review?course_id={{ c.id }}" class="text-brand-600 hover:text-brand-700 hover:underline">复习工具</a>
+      <button type="button" @click="chapterFormFor = chapterFormFor === {{ c.id }} ? null : {{ c.id }}; chapterTitle = ''"
               class="btn btn-ghost !px-3 !py-1.5 text-xs">添加章节</button>
-      <button @click="uploadFormFor = uploadFormFor === {{ c.id }} ? null : {{ c.id }}; uploadFile = null"
+      <button type="button" data-upload-course="{{ c.id }}" @click="openUpload({{ c.id }})"
               class="btn btn-ghost !px-3 !py-1.5 text-xs">上传资料</button>
     </div>
   </div>
 
-  {# 章节徽章（一级展示，用于上传挂载；id 供新建章节后客户端追加） #}
   <div id="chapter-list-{{ c.id }}" class="mt-2 flex flex-wrap items-center gap-1.5">
-    {% for ch in item.chapters %}
-    <span class="badge badge-slate">{{ ch.title }}{{ icon('chevron-right', 'w-3 h-3 text-slate-400') }}</span>
-    {% endfor %}
+    {% for ch in item.chapters %}<span class="badge badge-slate">{{ ch.title }}{{ icon('chevron-right', 'w-3 h-3 text-slate-400') }}</span>{% endfor %}
   </div>
 
-  {# 添加章节（简单一级，成功局部插入徽章 + toast） #}
-  <div x-show="chapterFormFor === {{ c.id }}" x-cloak
-       class="mt-3 flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 p-3">
-    <input type="text" x-model="chapterTitle" placeholder="章节标题"
-           class="input-base flex-1 !py-1.5">
-    <button @click="createChapter({{ c.id }})" :disabled="loading"
-            class="btn btn-primary !px-3 !py-1.5">
-      添加
-    </button>
+  <div x-show="chapterFormFor === {{ c.id }}" x-cloak class="mt-3 flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 p-3">
+    <label for="chapter-title-{{ c.id }}" class="sr-only">章节标题</label>
+    <input id="chapter-title-{{ c.id }}" type="text" x-model="chapterTitle" placeholder="章节标题" class="input-base flex-1 !py-1.5">
+    <button type="button" @click="createChapter({{ c.id }})" :disabled="loading" class="btn btn-primary !px-3 !py-1.5">添加</button>
   </div>
 
-  {# 上传资料：文件选择 → POST /api/documents；上传中 shimmer 进度反馈（章节由解析自动构建，v1.1 起移除人工挂载下拉） #}
-  <div x-show="uploadFormFor === {{ c.id }}" x-cloak
-       class="mt-3 space-y-2 rounded-lg border border-slate-200 bg-slate-50 p-3">
-    <div class="flex flex-wrap items-center gap-2">
-      <input type="file" @change="uploadFile = $event.target.files[0] || null"
-             class="text-sm text-slate-500 file:mr-2 file:rounded-md file:border-0 file:bg-brand-50 file:px-3 file:py-1.5 file:text-sm file:text-brand-700 file:transition-colors hover:file:bg-brand-100">
-      <button @click="upload({{ c.id }})" :disabled="loading"
-              class="btn btn-primary !px-3 !py-1.5"
-              x-text="uploading ? '上传中…' : '上传'">
-        上传
-      </button>
+  <div x-show="uploadFormFor === {{ c.id }}" x-cloak :aria-busy="uploading && uploadCourseId === {{ c.id }}"
+       class="mt-3 space-y-3 rounded-lg bg-slate-50 p-3">
+    <div class="upload-dropzone p-4 text-center" :class="{'is-dragging': draggingCourse === {{ c.id }}}"
+         @dragenter.prevent="draggingCourse = {{ c.id }}" @dragover.prevent
+         @dragleave.prevent="draggingCourse = null" @drop.prevent="selectDropped({{ c.id }}, $event)">
+      {{ icon('upload', 'mx-auto h-7 w-7 text-brand-500') }}
+      <p class="mt-2 text-sm text-slate-600">拖拽文件到这里，或</p>
+      <label :for="'upload-file-' + {{ c.id }}" class="mt-1 inline-block cursor-pointer text-sm font-medium text-brand-700 hover:underline">选择文件</label>
+      <input :id="'upload-file-' + {{ c.id }}" type="file" accept=".pdf,.pptx,.docx,.md,.markdown"
+             @change="selectFile({{ c.id }}, $event.target.files[0] || null)"
+             class="mt-2 block w-full text-sm text-slate-500 file:mr-2 file:rounded-md file:border-0 file:bg-brand-50 file:px-3 file:py-1.5 file:text-brand-700">
+      <p class="mt-2 text-xs text-slate-500">支持 PDF、PPTX、DOCX、Markdown，单文件不超过 50MB；旧 .doc/.ppt 请先另存为新格式。</p>
     </div>
-    {# 上传中：不定态 shimmer 进度条（multipart 无进度事件，用扫光反馈） #}
-    <div x-show="uploading" x-cloak class="h-1.5 w-full overflow-hidden rounded-full bg-brand-50">
-      <div class="skeleton block h-full w-full rounded-full"></div>
+    <p x-show="uploadFile && uploadCourseId === {{ c.id }}" class="text-sm text-slate-600" x-text="uploadFile && uploadFile.name"></p>
+    <div class="flex items-center gap-3">
+      <button type="button" @click="upload({{ c.id }})" :disabled="uploading || !uploadFile || uploadCourseId !== {{ c.id }}"
+              :aria-busy="uploading && uploadCourseId === {{ c.id }}" :class="{'btn-loading': uploading && uploadCourseId === {{ c.id }}}"
+              class="btn btn-primary !px-3 !py-1.5" x-text="retryDocId ? '重新上传' : '上传'"></button>
+      <span x-show="uploading && uploadCourseId === {{ c.id }}" class="text-xs text-slate-600" x-text="'上传 ' + uploadProgress + '%'"></span>
     </div>
-    <p class="text-xs text-slate-400">支持 PDF 教材 / PPT / Word / Markdown，上传后自动解析入库。</p>
+    <progress x-show="uploading && uploadCourseId === {{ c.id }}" max="100" :value="uploadProgress"
+              class="h-2 w-full accent-brand-600" :aria-label="'上传进度 ' + uploadProgress + '%'"></progress>
   </div>
 
-  {# 文档列表（服务端渲染 + 上传后客户端追加的解析中文档） #}
-  {% if item.documents %}
   <ul class="mt-3 divide-y divide-slate-100">
     {% for d in item.documents %}
     {% set res = resource_map.get(d.id) %}
-    <li class="flex flex-col gap-1 py-2.5 text-sm sm:flex-row sm:items-center sm:gap-x-3">
-      <span class="flex min-w-0 flex-1 items-center gap-1.5 text-slate-700" title="{{ d.file_name }}">
+    <li id="document-{{ d.id }}" data-document-id="{{ d.id }}" data-course-id="{{ c.id }}"
+        data-file-name="{{ d.file_name }}" data-status="{{ d.status }}"
+        class="flex scroll-mt-24 flex-col gap-1 py-2.5 text-sm">
+      <span class="flex min-w-0 items-center gap-1.5 text-slate-700" title="{{ d.file_name }}">
         {{ icon(type_icons.get(d.file_type, 'file-text'), 'w-4 h-4 shrink-0 text-slate-400') }}
         <span class="truncate">{{ d.file_name }}</span>
       </span>
-      <span class="flex flex-wrap items-center gap-x-2 gap-y-1">
-        {{ status_badge(d.status) }}
-        {% if res %}{{ review_badge(res) }}{% endif %}
-        {# 本次会话内新投稿：局部挂「审核中」徽章（投稿 modal 成功后置位，免整页刷新） #}
-        <span x-show="submitted[{{ d.id }}]" x-cloak class="badge badge-accent">审核中</span>
-        <span class="text-xs text-slate-400" data-rel-time="{{ d.created_at.isoformat() }}"
-              title="{{ d.created_at.strftime('%Y-%m-%d %H:%M') }}">{{ d.created_at.strftime('%Y-%m-%d %H:%M') }}</span>
-        <a href="/documents/{{ d.id }}/source" target="_blank"
-           class="text-xs text-brand-600 transition-colors hover:text-brand-700 hover:underline">原文溯源</a>
-        {# 已解析且未在审/未上架（或已驳回允许重投）的文档可投稿 #}
-        {% if d.status == 'parsed' and (not res or res.review_status == 'rejected') %}
-        <button x-show="!submitted[{{ d.id }}]"
-                @click="openSubmit({{ d.id }}, {{ d.file_name|tojson|forceescape }})"
-                class="text-xs text-brand-600 transition-colors hover:text-brand-700 hover:underline">
-          {{ '重新投稿' if res else '投稿到公共库' }}
-        </button>
-        {% endif %}
-      </span>
+      {{ document_actions(d, res, c.id) }}
     </li>
     {% endfor %}
     <template x-for="d in (pending[{{ c.id }}] || [])" :key="d.id">
-      <li class="flex flex-col gap-1 py-2.5 text-sm sm:flex-row sm:items-center sm:gap-x-3">
-        <span class="min-w-0 flex-1 truncate text-slate-700" x-text="d.file_name"></span>
+      <li :id="'document-' + d.id" class="flex scroll-mt-24 flex-col gap-1 py-2.5 text-sm">
+        <span class="min-w-0 truncate text-slate-700" x-text="d.file_name"></span>
         <span class="flex flex-wrap items-center gap-x-2 gap-y-1">
-          {# 解析中：不定态 shimmer 进度条（轮询期间视觉反馈） #}
-          <span x-show="d.status === 'parsing'"
-                class="h-1.5 w-24 shrink-0 overflow-hidden rounded-full bg-brand-50">
-            <span class="skeleton block h-full w-full rounded-full"></span>
-          </span>
-          <span class="badge"
-                :class="d.status === 'parsed' ? 'badge-brand'
-                      : (d.status === 'failed' ? 'bg-red-50 text-red-600' : 'badge-slate')"
-                x-text="statusLabel(d.status)"></span>
+          <span class="badge" :class="statusClass(d.status)" x-text="statusLabel(d.status)"></span>
+          <span x-show="submitted[d.id]" x-cloak class="badge badge-slate">预检中</span>
+          <button type="button" x-show="submitted[d.id]" x-cloak @click="retrySubmission(d.id)"
+                  :disabled="retryingSubmission === d.id" class="text-xs text-brand-700 hover:underline">重试预检</button>
           <span class="text-xs text-slate-400">刚刚</span>
-          <a :href="'/documents/' + d.id + '/source'" target="_blank"
-             class="text-xs text-brand-600 transition-colors hover:text-brand-700 hover:underline">原文溯源</a>
+          <a x-show="d.status === 'parsed'" x-cloak :href="'/documents/' + d.id + '/source'" target="_blank" rel="noopener"
+             class="text-xs text-brand-600 hover:underline">原文溯源</a>
+          <button type="button" x-show="d.status === 'parsed' && !submitted[d.id]" x-cloak
+                  @click="openSubmit(d.id, d.file_name)" class="text-xs text-brand-600 hover:underline">投稿到公共库</button>
+          <button type="button" x-show="d.status === 'failed'" x-cloak @click="prepareReupload({{ c.id }}, d.id)"
+                  class="text-xs font-medium text-red-700 hover:underline">选择同文件重传</button>
+          <button type="button" x-show="d.poll_error" x-cloak @click="resumePolling(d.id)" class="text-xs text-brand-700 hover:underline">继续检查</button>
         </span>
+        <p x-show="d.status === 'failed'" x-cloak role="alert" class="rounded bg-red-50 px-2 py-1.5 text-xs text-red-700"
+           x-text="d.parse_error || '解析失败，请选择同文件重传'"></p>
+        <p x-show="d.poll_error" x-cloak role="alert" class="text-xs text-accent-700" x-text="d.poll_error"></p>
       </li>
     </template>
   </ul>
-  {% else %}
-  <ul class="mt-3">
-    <template x-for="d in (pending[{{ c.id }}] || [])" :key="d.id">
-      <li class="flex flex-col gap-1 py-2.5 text-sm sm:flex-row sm:items-center sm:gap-x-3">
-        <span class="min-w-0 flex-1 truncate text-slate-700" x-text="d.file_name"></span>
-        <span class="flex flex-wrap items-center gap-x-2 gap-y-1">
-          <span x-show="d.status === 'parsing'"
-                class="h-1.5 w-24 shrink-0 overflow-hidden rounded-full bg-brand-50">
-            <span class="skeleton block h-full w-full rounded-full"></span>
-          </span>
-          <span class="badge"
-                :class="d.status === 'parsed' ? 'badge-brand'
-                      : (d.status === 'failed' ? 'bg-red-50 text-red-600' : 'badge-slate')"
-                x-text="statusLabel(d.status)"></span>
-          <span class="text-xs text-slate-400">刚刚</span>
-        </span>
-      </li>
-    </template>
-  </ul>
-  <p x-show="!(pending[{{ c.id }}] || []).length" class="mt-3 text-xs text-slate-400">
-    暂无资料。点击「上传资料」导入课件 / 教材，解析完成后即可向 AI 提问。
-  </p>
-  {% endif %}
+  <p x-show="!{{ item.documents|length }} && !(pending[{{ c.id }}] || []).length" class="mt-3 text-xs text-slate-400">暂无资料。上传课件 / 教材后即可向 AI 提问。</p>
 </div>
 {% endmacro %}
 
 {% block content %}
 <div x-data="libraryPage()">
-  {% call page_header('个人知识库',
-                      subtitle='私有资料上传 → 解析入库 → AI 问答与原文溯源',
-                      icon='folder-lines') %}
+  {% call page_header('个人知识库', subtitle='私有资料上传 → 解析入库 → AI 问答与原文溯源', icon='folder-lines') %}
     <a href="/library/review" class="btn btn-ghost">复习工具</a>
-    <button @click="showSemesterForm = !showSemesterForm; showCourseForm = false"
-            class="btn btn-ghost">
-      新建学期
-    </button>
-    <button @click="showCourseForm = !showCourseForm; showSemesterForm = false"
-            class="btn btn-primary">
-      新建课程
-    </button>
+    <button type="button" @click="showSemesterForm = !showSemesterForm; showCourseForm = false" class="btn btn-ghost">新建学期</button>
+    <button type="button" @click="showCourseForm = !showCourseForm; showSemesterForm = false" class="btn btn-primary">新建课程</button>
   {% endcall %}
 
-  <p x-show="error" x-text="error" x-cloak
-     class="mb-4 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600"></p>
+  <p x-show="error" x-text="error" x-cloak role="alert" class="mb-4 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700"></p>
 
-  {# 新建学期（成功客户端追加学期分组 + toast，免整页刷新） #}
-  <div x-show="showSemesterForm" x-cloak
-       class="card mb-4 flex items-center gap-2 p-4">
-    <input type="text" x-model="semesterName" placeholder="学期名称，如 2025 秋"
-           class="input-base flex-1">
-    <button @click="createSemester()" :disabled="loading" class="btn btn-primary">
-      创建
-    </button>
+  <div x-show="showSemesterForm" x-cloak class="card mb-4 flex items-center gap-2 p-4">
+    <label for="new-semester" class="sr-only">学期名称</label>
+    <input id="new-semester" type="text" x-model="semesterName" placeholder="学期名称，如 2025 秋" class="input-base flex-1">
+    <button type="button" @click="createSemester()" :disabled="loading" class="btn btn-primary">创建</button>
   </div>
-
-  {# 新建课程（选学期；成功客户端追加课程卡片 + toast） #}
-  <div x-show="showCourseForm" x-cloak
-       class="card mb-4 space-y-2 p-4">
+  <div x-show="showCourseForm" x-cloak class="card mb-4 space-y-2 p-4">
     <div class="flex flex-wrap items-center gap-2">
-      <input type="text" x-model="courseName" placeholder="课程名称，如 数据结构"
-             class="input-base flex-1">
-      <select id="course-semester-select" x-model="courseSemesterId"
-              class="input-base !w-auto">
+      <label for="new-course" class="sr-only">课程名称</label>
+      <input id="new-course" type="text" x-model="courseName" placeholder="课程名称，如 数据结构" class="input-base flex-1">
+      <label for="course-semester-select" class="sr-only">所属学期</label>
+      <select id="course-semester-select" x-model="courseSemesterId" class="input-base !w-auto">
         <option value="">不分组</option>
-        {% for s in semesters %}
-        <option value="{{ s.id }}">{{ s.name }}</option>
-        {% endfor %}
+        {% for s in semesters %}<option value="{{ s.id }}">{{ s.name }}</option>{% endfor %}
       </select>
-      <button @click="createCourse()" :disabled="loading" class="btn btn-primary">
-        创建
-      </button>
+      <button type="button" @click="createCourse()" :disabled="loading" class="btn btn-primary">创建</button>
     </div>
-    <input type="text" x-model="courseDesc" placeholder="课程简介（选填）"
-           class="input-base">
+    <label for="new-course-desc" class="sr-only">课程简介</label>
+    <input id="new-course-desc" type="text" x-model="courseDesc" placeholder="课程简介（选填）" class="input-base">
   </div>
 
   {% if not semester_groups and not uncategorized %}
-  {# 空状态引导：上传前需先有一门课程，CTA 直接展开新建课程表单 #}
   <div id="library-empty" class="empty-state bg-white py-16">
     {{ illo('shelf', 'mx-auto w-28 h-28') }}
     <p class="mt-4 text-slate-600">你的知识库还是空的</p>
-    <p class="mt-1 text-sm text-slate-400">
-      先创建一门课程，再上传课件 / 教材，解析完成后即可开始 AI 问答。
-    </p>
-    <button @click="showCourseForm = true; showSemesterForm = false"
-            class="btn btn-primary mt-5 !px-5 !py-2.5">
-      上传第一份资料
-    </button>
+    <p class="mt-1 text-sm text-slate-400">先创建一门课程，再上传课件 / 教材，解析完成后即可开始 AI 问答。</p>
+    <button type="button" @click="showCourseForm = true; showSemesterForm = false" class="btn btn-primary mt-5 !px-5 !py-2.5">创建课程并上传</button>
   </div>
   {% endif %}
 
-  {# 学期分组（新建学期成功由 library.js 追加 section 到本容器） #}
   <div id="semester-groups">
   {% for group in semester_groups %}
   <section class="mb-8" id="sem-section-{{ group.semester.id }}">
-    <h2 class="mb-3 flex items-center gap-2 text-lg font-semibold text-slate-700">
-      {{ group.semester.name }}
-      <span class="text-xs font-normal text-slate-400">{{ group.courses|length }} 门课程</span>
-    </h2>
+    <h2 class="mb-3 flex items-center gap-2 text-lg font-semibold text-slate-700">{{ group.semester.name }}
+      <span class="text-xs font-normal text-slate-400">{{ group.courses|length }} 门课程</span></h2>
     <div class="grid items-start gap-4 md:grid-cols-2" id="course-grid-{{ group.semester.id }}">
       {% for item in group.courses %}{{ course_card(item, resource_map) }}{% endfor %}
-      {% if not group.courses %}
-      <p data-empty-hint class="text-sm text-slate-400">该学期暂无课程，点击右上角「新建课程」添加。</p>
-      {% endif %}
+      {% if not group.courses %}<p data-empty-hint class="text-sm text-slate-400">该学期暂无课程，点击右上角「新建课程」添加。</p>{% endif %}
     </div>
   </section>
   {% endfor %}
   </div>
-
-  {# 未分组课程（恒渲染容器，供新课程客户端插入；无内容时整段隐藏） #}
   <section class="mb-8 {% if not uncategorized %}hidden{% endif %}" id="sem-section-none">
     <h2 class="mb-3 text-lg font-semibold text-slate-700">未分组</h2>
     <div class="grid items-start gap-4 md:grid-cols-2" id="course-grid-none">
@@ -261,56 +213,33 @@
     </div>
   </section>
 
-  {# 投稿到公共库 modal：标题 / 简介 / 目标课程 / 章节。
-     a11y（v1.1 F4）：role=dialog / aria-modal / 焦点圈定 / Esc 关闭 / 焦点还原，
-     由 library.js init 经 ZY.bindModalA11y 接入 #}
-  <div x-show="submitOpen" x-cloak x-ref="submitModal"
-       role="dialog" aria-modal="true" aria-labelledby="submit-modal-title"
+  <div x-show="submitOpen" x-cloak x-ref="submitModal" role="dialog" aria-modal="true" aria-labelledby="submit-modal-title"
        class="fixed inset-0 z-50 flex items-center justify-center bg-brand-950/40 p-4 animate-fade-in">
-    <div class="w-full max-w-lg animate-scale-in rounded-card bg-white p-5 shadow-lift" @click.outside="submitOpen = false">
+    <form @submit.prevent="submitResource()" class="w-full max-w-lg animate-scale-in rounded-card bg-white p-5 shadow-lift" :aria-busy="loading">
       <h2 id="submit-modal-title" class="text-base font-semibold text-slate-800">投稿到公共库</h2>
-      <p class="mt-1 text-xs text-slate-400">投稿后进入自动预检与三级审核，通过后全站可见。</p>
-
-      <p x-show="submitError" x-text="submitError" x-cloak
-         class="mt-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600"></p>
-
-      <label class="mt-4 block text-xs font-medium text-slate-500">标题</label>
-      <input type="text" x-model="submitTitle" maxlength="128" class="input-base mt-1">
-
-      <label class="mt-3 block text-xs font-medium text-slate-500">简介（选填）</label>
-      <textarea x-model="submitDesc" rows="3" maxlength="512"
-                placeholder="资料内容、适用场景的简要说明"
-                class="input-base mt-1"></textarea>
-
-      <label class="mt-3 block text-xs font-medium text-slate-500">目标公共课程</label>
-      <select x-model="submitCourseId" @change="loadChapters()" class="input-base mt-1">
+      <p class="mt-1 text-xs text-slate-500">投稿依次经过预检、协审、终审；通过后在公共课程空间上架。</p>
+      <p x-show="submitError" x-text="submitError" x-cloak role="alert" class="mt-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700"></p>
+      <label for="submit-title" class="mt-4 block text-xs font-medium text-slate-500">标题</label>
+      <input id="submit-title" type="text" x-model="submitTitle" maxlength="128" required class="input-base mt-1">
+      <label for="submit-desc" class="mt-3 block text-xs font-medium text-slate-500">简介（选填）</label>
+      <textarea id="submit-desc" x-model="submitDesc" rows="3" maxlength="512" placeholder="资料内容、适用场景的简要说明" class="input-base mt-1"></textarea>
+      <label for="submit-course" class="mt-3 block text-xs font-medium text-slate-500">目标公共课程</label>
+      <select id="submit-course" x-model="submitCourseId" @change="loadChapters()" required class="input-base mt-1">
         <option value="">请选择课程</option>
-        <template x-for="g in courseGroups" :key="g.major">
-          <optgroup :label="g.major">
-            <template x-for="c in g.items" :key="c.id">
-              <option :value="c.id" x-text="c.name"></option>
-            </template>
-          </optgroup>
-        </template>
+        <template x-for="g in courseGroups" :key="g.major"><optgroup :label="g.major">
+          <template x-for="c in g.items" :key="c.id"><option :value="c.id" x-text="c.name"></option></template>
+        </optgroup></template>
       </select>
-
-      <label class="mt-3 block text-xs font-medium text-slate-500">挂载章节（选填）</label>
-      <select x-model="submitChapterId" :disabled="!submitCourseId"
-              class="input-base mt-1 disabled:opacity-50">
+      <label for="submit-chapter" class="mt-3 block text-xs font-medium text-slate-500">挂载章节（选填）</label>
+      <select id="submit-chapter" x-model="submitChapterId" :disabled="!submitCourseId" class="input-base mt-1 disabled:opacity-50">
         <option value="">不指定章节</option>
-        <template x-for="ch in submitChapters" :key="ch.id">
-          <option :value="ch.id" x-text="ch.label"></option>
-        </template>
+        <template x-for="ch in submitChapters" :key="ch.id"><option :value="ch.id" x-text="ch.label"></option></template>
       </select>
-
       <div class="mt-5 flex justify-end gap-2">
-        <button @click="submitOpen = false" class="btn btn-ghost">取消</button>
-        <button @click="submitResource()" :disabled="loading" class="btn btn-primary"
-                x-text="loading ? '提交中…' : '提交投稿'">
-          提交投稿
-        </button>
+        <button type="button" @click="submitOpen = false" :disabled="loading" class="btn btn-ghost">取消</button>
+        <button type="submit" :disabled="loading" :class="{'btn-loading': loading}" class="btn btn-primary" x-text="loading ? '提交中…' : '提交投稿'"></button>
       </div>
-    </div>
+    </form>
   </div>
 </div>
 {% endblock %}

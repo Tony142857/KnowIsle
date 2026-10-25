@@ -94,7 +94,10 @@ def _corpus(course_chapter=None):
 
 
 def _chunks_ns():
-    return {cid: SimpleNamespace(chunk_id=cid) for cid in ("c1", "c2", "c3")}
+    texts = {chunk_id: text for chunk_id, _chapter, text in _corpus()}
+    return {
+        cid: SimpleNamespace(chunk_id=cid, content=texts[cid]) for cid in ("c1", "c2", "c3")
+    }
 
 
 async def test_bm25_entry_cached_on_second_call(monkeypatch):

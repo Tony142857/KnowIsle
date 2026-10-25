@@ -76,10 +76,10 @@ window.ZY = window.ZY || {};
     var host = document.getElementById('zy-toasts');
     if (!host) return;
     var el = document.createElement('div');
-    // relative + overflow-hidden：为底部 zy-toast-bar 进度条提供定位与圆角裁剪
     el.className = 'pointer-events-auto relative flex items-center gap-2 overflow-hidden rounded-lg border px-4 py-2.5 text-sm shadow-lift ' +
       'animate-fade-up transition-all duration-island ease-island ' + TOAST_STYLE[type];
-    el.setAttribute('role', 'status');
+    el.setAttribute('role', type === 'error' ? 'alert' : 'status');
+    el.setAttribute('aria-atomic', 'true');
     var icon = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
     icon.setAttribute('class', 'h-4 w-4 shrink-0');
     icon.setAttribute('viewBox', '0 0 24 24');
@@ -94,22 +94,33 @@ window.ZY = window.ZY || {};
     icon.appendChild(path);
     var text = document.createElement('span');
     text.textContent = message;
-    // 底部进度条（v1.2）：随 2.6s 存续时长线性缩短，样式见 main.css .zy-toast-bar
+    var close = document.createElement('button');
+    close.type = 'button';
+    close.className = '-mr-2 ml-2 rounded p-1 hover:bg-black/5';
+    close.setAttribute('aria-label', '关闭提示');
+    close.textContent = '×';
+    close.addEventListener('click', function () { el.remove(); });
+    el.appendChild(icon);
+    el.appendChild(text);
+    el.appendChild(close);
+    host.appendChild(el);
+    if (type === 'error') return;
     var bar = document.createElement('span');
     bar.className = 'zy-toast-bar';
     bar.setAttribute('aria-hidden', 'true');
-    el.appendChild(icon);
-    el.appendChild(text);
     el.appendChild(bar);
-    host.appendChild(el);
-    // 2.6s 存续到期（与进度条动画对齐）后向右上滑出退场；
-    // 先摘掉 animate-fade-up 入场动画，否则 forwards 填充态会压住 transform 过渡
     setTimeout(function () {
       el.classList.remove('animate-fade-up');
-      void el.offsetWidth; // 强制重排，让过渡从入场终态平滑接续
+      void el.offsetWidth;
       el.classList.add('opacity-0', 'translate-x-2', '-translate-y-1', 'scale-95');
     }, 2600);
     setTimeout(function () { el.remove(); }, 2900);
+  };
+
+  window.ZY.report = function (targetType, targetId) {
+    window.dispatchEvent(new CustomEvent('zy-report', {
+      detail: {targetType: targetType, targetId: Number(targetId)},
+    }));
   };
 
   /* 相对时间（列表页统一口径）：服务端时间戳为带时区 ISO，直接可解析 */
@@ -128,6 +139,49 @@ window.ZY = window.ZY || {};
     if (d === 1) return '昨天';
     if (d < 7) return d + ' 天前';
     return String(iso).slice(0, 10);
+  };
+
+  /* 本地草稿（v1.3 I6）：仅存于浏览器 localStorage，按页面名 + 账号隔离。
+   * load 返回去掉内部字段的草稿；账号不匹配或超过 7 天视为无草稿。
+   * 写失败（隐私模式/配额）返回 false，由页面提示，不阻塞发布。 */
+  window.ZY.drafts = {
+    key: function (name) { return 'zhiyu:' + name + ':v1'; },
+    load: function (name, userKey) {
+      try {
+        var raw = window.localStorage.getItem(this.key(name));
+        if (!raw) return null;
+        var parsed = JSON.parse(raw);
+        if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null;
+        if (parsed._user && userKey && String(parsed._user) !== String(userKey)) return null;
+        if (parsed._savedAt && Date.now() - Number(parsed._savedAt) > 7 * 86400000) {
+          this.remove(name);
+          return null;
+        }
+        var payload = {};
+        for (var key in parsed) {
+          if (Object.prototype.hasOwnProperty.call(parsed, key) && key !== '_user' && key !== '_savedAt') {
+            payload[key] = parsed[key];
+          }
+        }
+        return payload;
+      } catch (e) { return null; }
+    },
+    save: function (name, data, userKey) {
+      try {
+        var payload = {};
+        for (var key in data) {
+          if (Object.prototype.hasOwnProperty.call(data, key)) payload[key] = data[key];
+        }
+        payload._user = userKey ? String(userKey) : '';
+        payload._savedAt = Date.now();
+        window.localStorage.setItem(this.key(name), JSON.stringify(payload));
+        return true;
+      } catch (e) { return false; }
+    },
+    remove: function (name) {
+      try { window.localStorage.removeItem(this.key(name)); return true; }
+      catch (e) { return false; }
+    },
   };
 
   /* 弹窗可访问性辅助：焦点圈定 + Esc + 焦点还原。
@@ -226,6 +280,70 @@ document.addEventListener('alpine:init', function () {
           }
         } catch (e) { this.error = e.message; }
         finally { this.loading = false; }
+      },
+    };
+  });
+
+  Alpine.data('mobileNav', function () {
+    return {
+      mobileOpen: false, _a11y: null,
+      init() {
+        const panel = this.$refs.mobilePanel;
+        if (!panel) return;
+        this._a11y = ZY.bindModalA11y(panel, {
+          isOpen: () => this.mobileOpen,
+          onEscape: () => this.close(),
+        });
+        this.$watch('mobileOpen', () => this._a11y.sync());
+      },
+      toggle() { this.mobileOpen = !this.mobileOpen; },
+      close() { if (this.mobileOpen) this.mobileOpen = false; },
+    };
+  });
+
+  Alpine.data('reportModal', function () {
+    return {
+      open: false, loading: false, reason: '', error: '',
+      targetType: '', targetId: null, _a11y: null,
+      init() {
+        this._a11y = ZY.bindModalA11y(this.$root, {
+          isOpen: () => this.open,
+          onEscape: () => this.close(),
+        });
+        this.$watch('open', () => this._a11y.sync());
+      },
+      ask(detail) {
+        if (!detail || !detail.targetType || !detail.targetId) return;
+        this.targetType = detail.targetType;
+        this.targetId = Number(detail.targetId);
+        this.reason = '';
+        this.error = '';
+        this.open = true;
+      },
+      close() {
+        if (!this.loading) this.open = false;
+      },
+      async submit() {
+        const reason = this.reason.trim();
+        if (!reason) { this.error = '请填写举报理由'; return; }
+        this.loading = true;
+        this.error = '';
+        ZY.setBusy(this, true);
+        try {
+          const data = await ZY.api.post('/api/reports', {
+            target_type: this.targetType,
+            target_id: this.targetId,
+            reason: reason,
+          });
+          this.open = false;
+          ZY.toast(data.created === false ? '你已举报过该内容，无需重复提交' : '举报已提交，感谢共同维护社区',
+            data.created === false ? 'info' : 'success');
+        } catch (e) {
+          this.error = e.message || '举报提交失败，请重试';
+        } finally {
+          this.loading = false;
+          ZY.setBusy(this, false);
+        }
       },
     };
   });

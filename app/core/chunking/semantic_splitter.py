@@ -1,22 +1,20 @@
-"""语义化切块（模块 A1）。
+"""结构感知切块：标题边界、短段合并、确定性句读/字符二级切分。
 
-天然边界（标题/段落）优先；过长块按中文句读（。！？；\\n）切分，目标块长 400-600 字符，
-相邻块保留约 60 字符 overlap，过短的相邻块合并，不使用固定长度一刀切。
-
-chunk_id 业务 ID 由本模块生成，格式 per_d{document_id}_{seq:05d}（personal）/
-pub_d{document_id}_{seq:05d}（public）：同一文档重解析结果一致（幂等），全局唯一。
+数据库原文只放在 content；章节路径派生到 embedding_text / prompt_text，不污染原文。
+同一文档、章节映射和参数产生相同顺序与稳定业务 ID。
 """
 
 import re
 
+from app.core.context import embedding_text, prompt_text
 from app.core.parser.base import ParsedBlock
 
-TARGET_MIN = 400  # 目标块长下限
-TARGET_MAX = 600  # 目标块长上限
-OVERLAP = 60  # 相邻块重叠字符数（约 10%-15%）
-MERGE_MIN = 120  # 短于此长度的相邻块尝试合并
+TARGET_MIN = 400
+TARGET_MAX = 600
+OVERLAP = 60
+MERGE_MIN = 120
 
-_SENT_SPLIT_RE = re.compile(r"(?<=[。！？；\n])")
+_SENT_SPLIT_RE = re.compile(r"(?<=[。！？；!?\n])")
 
 
 def make_chunk_id(scope: str, document_id: int, seq: int) -> str:
@@ -25,26 +23,87 @@ def make_chunk_id(scope: str, document_id: int, seq: int) -> str:
 
 
 def _split_sentences(text: str) -> list[str]:
-    return [s for s in _SENT_SPLIT_RE.split(text) if s.strip()]
+    return [part for part in _SENT_SPLIT_RE.split(text) if part.strip()]
+
+
+def _hard_windows(text: str, target_max: int, overlap: int) -> list[str]:
+    if len(text) <= target_max:
+        return [text] if text.strip() else []
+    if not 0 <= overlap < target_max:
+        raise ValueError("overlap 必须小于硬上限且非负")
+    step = target_max - overlap
+    return [text[start : start + target_max] for start in range(0, len(text), step)]
 
 
 def _split_long_text(text: str, target_max: int = TARGET_MAX, overlap: int = OVERLAP) -> list[str]:
-    """按句读把长文本切成 target_max 内的片段，相邻片段尾部重叠 overlap 字符。"""
-    sentences = _split_sentences(text)
-    if not sentences:
-        return []
+    """先按句读组装；超长单句与 overlap 后余量均由硬窗口兜底。"""
+    if not 0 <= overlap < target_max:
+        raise ValueError("overlap 必须小于硬上限且非负")
+    sentences = _split_sentences(text) or [text]
     pieces: list[str] = []
     current = ""
-    for sent in sentences:
-        if current and len(current) + len(sent) > target_max:
+    for sentence in sentences:
+        if len(sentence) > target_max:
+            if current.strip():
+                pieces.append(current)
+                current = ""
+            pieces.extend(_hard_windows(sentence, target_max, overlap))
+            continue
+        candidate = current + sentence
+        if current and len(candidate) > target_max:
             pieces.append(current)
-            tail = current[-overlap:] if overlap < len(current) else current
-            current = tail + sent
+            tail = current[-overlap:] if overlap else ""
+            if len(tail) + len(sentence) > target_max:
+                tail = ""
+            current = tail + sentence
         else:
-            current += sent
+            current = candidate
     if current.strip():
         pieces.append(current)
     return pieces
+
+
+def _segment_blocks(
+    blocks: list[ParsedBlock], chapter_ids: list[int | None] | None
+) -> list[dict]:
+    segments: list[dict] = []
+    current: dict | None = None
+    chapter_title: str | None = None
+    section: str | None = None
+    for i, block in enumerate(blocks):
+        chapter_id = chapter_ids[i] if chapter_ids else None
+        if block.level >= 1 and block.title:
+            if current and current["content"].strip():
+                segments.append(current)
+            current = None
+            if block.level == 1:
+                chapter_title = block.title.strip()
+                section = None
+            else:
+                section = block.title.strip()
+        content = block.content.strip()
+        if not content:
+            continue
+        boundary = (
+            current is None
+            or current["chapter_id"] != chapter_id
+            or current["chapter_title"] != chapter_title
+            or current["section"] != section
+        )
+        if boundary:
+            if current and current["content"].strip():
+                segments.append(current)
+            current = {
+                "content": "",
+                "section": section,
+                "chapter_title": chapter_title,
+                "page_num": block.page_num,
+                "chapter_id": chapter_id,
+            }
+        current["content"] += ("\n" if current["content"] else "") + content
+    if current and current["content"].strip():
+        segments.append(current)
+    return segments
 
 
 def split_blocks(
@@ -53,79 +112,49 @@ def split_blocks(
     scope: str,
     chapter_ids: list[int | None] | None = None,
 ) -> list[dict]:
-    """把解析块切成检索用 chunk。
-
-    chapter_ids：tree_builder 为每个块解析出的章节 ID（与 blocks 等长，可为 None）；
-    缺省时 chunk 不带章节归属（chapter_id=None）。
-
-    返回 [{chunk_id, content, section, page_num, chapter_id}]，顺序即文档顺序。
-    """
     if chapter_ids is not None and len(chapter_ids) != len(blocks):
         raise ValueError("chapter_ids 与 blocks 长度不一致")
+    segments = _segment_blocks(blocks, chapter_ids)
 
-    # 1) 按天然边界聚段：标题块切分上下文，正文归入最近的标题
-    segments: list[dict] = []  # {content, section, page_num, chapter_id}
-    current: dict | None = None
-    section: str | None = None
-    for i, block in enumerate(blocks):
-        chapter_id = chapter_ids[i] if chapter_ids else None
-        if block.level >= 1 and block.title:
-            if current and current["content"].strip():
-                segments.append(current)
-            if block.level == 1:
-                section = None
-            else:
-                section = block.title
-            current = None
-        if not block.content.strip():
-            continue
-        if current is None:
-            current = {
-                "content": "",
-                "section": section,
-                "page_num": block.page_num,
-                "chapter_id": chapter_id,
-            }
-        current["content"] += ("\n" if current["content"] else "") + block.content
-    if current and current["content"].strip():
-        segments.append(current)
-
-    # 2) 长段按句读切分（带 overlap），短段保留
     chunks: list[dict] = []
-    seq = 0
-    for seg in segments:
+    for segment in segments:
         parts = (
-            [seg["content"]]
-            if len(seg["content"]) <= TARGET_MAX
-            else _split_long_text(seg["content"])
+            [segment["content"]]
+            if len(segment["content"]) <= TARGET_MAX
+            else _split_long_text(segment["content"])
         )
         for part in parts:
-            seq += 1
-            chunks.append(
-                {
-                    "chunk_id": make_chunk_id(scope, document_id, seq),
-                    "content": part,
-                    "section": seg["section"],
-                    "page_num": seg["page_num"],
-                    "chapter_id": seg["chapter_id"],
-                }
-            )
+            chunks.append({**segment, "content": part})
 
-    # 3) 过短相邻块向前合并（同章节同小节，且合并不超上限）
+    # 同一结构路径内连续短段合并；前块过短时也吸收后块，TARGET_MIN 因此实际生效。
     merged: list[dict] = []
     for chunk in chunks:
-        if (
-            merged
-            and len(chunk["content"]) < MERGE_MIN
-            and chunk["chapter_id"] == merged[-1]["chapter_id"]
-            and chunk["section"] == merged[-1]["section"]
-            and len(merged[-1]["content"]) + len(chunk["content"]) <= TARGET_MAX
-        ):
-            merged[-1]["content"] += "\n" + chunk["content"]
-            merged[-1]["page_num"] = merged[-1]["page_num"] or chunk["page_num"]
+        previous = merged[-1] if merged else None
+        same_path = previous and all(
+            previous[key] == chunk[key] for key in ("chapter_id", "chapter_title", "section")
+        )
+        separator_len = 1 if previous else 0
+        should_merge = same_path and (
+            len(chunk["content"]) < MERGE_MIN
+            or len(previous["content"]) < TARGET_MIN
+        )
+        if should_merge and len(previous["content"]) + separator_len + len(chunk["content"]) <= TARGET_MAX:
+            previous["content"] += "\n" + chunk["content"]
+            previous["page_num"] = previous["page_num"] or chunk["page_num"]
         else:
             merged.append(chunk)
-    # 合并后 chunk_id 按最终顺序重排，保证幂等（与内容顺序严格对应）
+
+    result: list[dict] = []
     for seq, chunk in enumerate(merged, start=1):
-        chunk["chunk_id"] = make_chunk_id(scope, document_id, seq)
-    return merged
+        item = {
+            "chunk_id": make_chunk_id(scope, document_id, seq),
+            "content": chunk["content"],
+            "section": chunk["section"],
+            "chapter_title": chunk["chapter_title"],
+            "page_num": chunk["page_num"],
+            "chapter_id": chunk["chapter_id"],
+        }
+        item["embedding_text"] = embedding_text(item)
+        item["prompt_text"] = prompt_text(item)
+        result.append(item)
+    return result

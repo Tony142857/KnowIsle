@@ -8,11 +8,11 @@
 {% endblock %}
 
 {% block content %}
-<div class="mx-auto max-w-3xl" x-data="postNew('{{ board }}')" x-init="loadCourses()">
+<div class="mx-auto max-w-3xl" x-data="postNew('{{ board }}', {{ user.id }})">
   {{ page_header('发帖', back_href='/boards/' ~ board, back_label=board_name) }}
 
-  <div class="card space-y-4 p-4 sm:p-6 animate-fade-up">
-    <p x-show="error" x-text="error" x-cloak
+  <form @submit.prevent="submit()" :aria-busy="loading" class="card space-y-4 p-4 sm:p-6 animate-fade-up">
+    <p x-show="error" x-text="error" x-cloak role="alert"
        class="rounded-md bg-red-50 px-3 py-2 text-sm text-red-600"></p>
 
     {# 分组一：板块与课程 #}
@@ -64,6 +64,9 @@
           </optgroup>
         </template>
       </select>
+      <div x-show="coursesError" x-cloak role="alert" class="mt-1 text-xs text-red-700">
+        <span x-text="coursesError"></span><button type="button" @click="loadCourses()" class="ml-2 underline">重试</button>
+      </div>
     </div>
     <div x-show="courseId" x-cloak x-transition>
       <label class="block text-xs font-medium text-slate-500">关联章节（选填）</label>
@@ -73,6 +76,9 @@
           <option :value="ch.id" x-text="ch.label"></option>
         </template>
       </select>
+      <div x-show="chaptersError" x-cloak role="alert" class="mt-1 text-xs text-red-700">
+        <span x-text="chaptersError"></span><button type="button" @click="loadChapters(true)" class="ml-2 underline">重试</button>
+      </div>
     </div>
 
     {# 分组二：标题与正文 #}
@@ -81,14 +87,27 @@
     </h2>
 
     <div>
-      <label class="block text-xs font-medium text-slate-500">标题 <span class="text-red-500">*</span></label>
-      <input type="text" x-model="title" maxlength="128"
+      <div class="flex items-center justify-between gap-3">
+        <label for="post-title" class="block text-xs font-medium text-slate-500">标题 <span class="text-red-500">*</span></label>
+        <span class="text-xs text-slate-400" x-text="title.length + ' / 128'"></span>
+      </div>
+      <input id="post-title" type="text" x-model="title" maxlength="128"
              placeholder="一句话说清楚你的问题、经验主题或求援需求"
              class="input-base mt-1 w-full">
     </div>
+    <div class="flex flex-wrap items-center gap-2 border-y border-slate-100 py-2">
+      <button type="button" @click="mode = 'edit'" :aria-pressed="mode === 'edit'"
+              :class="mode === 'edit' ? 'bg-brand-50 text-brand-700' : 'text-slate-500'"
+              class="rounded-md px-3 py-1.5 text-xs">编辑</button>
+      <button type="button" @click="showPreview()" :aria-pressed="mode === 'preview'"
+              :class="mode === 'preview' ? 'bg-brand-50 text-brand-700' : 'text-slate-500'"
+              class="rounded-md px-3 py-1.5 text-xs">Markdown 预览</button>
+      <span class="ml-auto text-xs text-slate-400" x-text="contentLength + ' 字'"></span>
+      <span x-show="draftMessage" x-text="draftMessage" x-cloak role="status" class="text-xs text-brand-600"></span>
+    </div>
 
     {# 经验长廊：结构化模板四栏卡片化（§4.3：背景 → 时间线 → 经验要点 → 避坑提示） #}
-    <div x-show="board === 'experience'" x-cloak x-transition class="space-y-4">
+    <div x-show="board === 'experience' && mode === 'edit'" x-cloak x-transition class="space-y-4">
       <template x-for="sec in experienceSections" :key="sec.key">
         <div class="rounded-lg border border-slate-200 bg-slate-50/50 p-3">
           <label class="block text-xs font-medium text-slate-600">
@@ -104,14 +123,18 @@
     </div>
 
     {# 其余板块：普通正文（Markdown 提示与评论区口径一致） #}
-    <div x-show="board !== 'experience'" x-transition>
-      <label class="block text-xs font-medium text-slate-500">正文 <span class="text-red-500">*</span></label>
+    <div x-show="board !== 'experience' && mode === 'edit'" x-transition>
+      <label for="post-content" class="block text-xs font-medium text-slate-500">正文 <span class="text-red-500">*</span></label>
       <p class="mt-1 flex items-center gap-1 text-xs text-slate-400">
         {{ icon('info', 'w-3.5 h-3.5') }} 支持 Markdown 与代码高亮。
       </p>
-      <textarea x-model="content" rows="10"
+      <textarea id="post-content" x-model="content" rows="10"
                 placeholder="问题的背景、你已尝试的思路、希望得到的帮助…"
                 class="input-base mt-2 w-full"></textarea>
+    </div>
+    <div x-show="mode === 'preview'" x-cloak class="min-h-40 rounded-lg border border-slate-200 bg-slate-50/50 p-4">
+      <div x-show="contentLength" class="md-body text-sm text-slate-700" x-html="previewHtml"></div>
+      <p x-show="!contentLength" class="py-10 text-center text-sm text-slate-400">暂无内容可预览</p>
     </div>
 
     {# 分组三：附加设置（悬赏 / 标签） #}
@@ -127,6 +150,10 @@
       </label>
       <input type="number" x-model.number="bountyScore" min="1" max="1000" step="1"
              class="input-base mt-1 w-40">
+      <p class="mt-2 text-xs text-slate-500">
+        当前余额 <span x-text="score === null ? '读取中…' : score + ' 分'"></span>
+        <span x-show="score !== null">，托管后余额 <span x-text="Math.max(0, score - (Number(bountyScore) || 0)) + ' 分'"></span></span>
+      </p>
     </div>
 
     <div>
@@ -137,9 +164,11 @@
     </div>
 
     <div class="flex justify-end gap-2 border-t border-slate-100 pt-4">
-      <a :href="'/boards/' + board" class="btn btn-ghost">取消</a>
-      <button @click="submit()" :disabled="loading" class="btn btn-primary">发布</button>
+      <a :href="'/boards/' + board" @click.prevent="leave('/boards/' + board)" class="btn btn-ghost">取消</a>
+      <button type="submit" :disabled="loading" class="btn btn-primary">
+        <span x-text="loading ? '发布中…' : '发布'"></span>
+      </button>
     </div>
-  </div>
+  </form>
 </div>
 {% endblock %}

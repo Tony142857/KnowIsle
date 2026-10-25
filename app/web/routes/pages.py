@@ -15,6 +15,7 @@ import logging
 import re
 from pathlib import Path
 from typing import Annotated
+from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import RedirectResponse
@@ -34,6 +35,7 @@ from app.community.posts import (
 from app.config import get_settings
 from app.identity.growth import LEVEL_THRESHOLDS
 from app.identity.rbac import get_current_user_optional
+from app.identity.redirects import safe_next_path
 from app.identity.session import destroy_session
 from app.storage.cache import get_redis
 from app.storage.db import get_db
@@ -85,10 +87,13 @@ def _ctx(user: User | None, **extra) -> dict:
     return {"user": user, **extra}
 
 
-def _login_redirect(user: User | None) -> RedirectResponse | None:
-    """需登录页面的统一处理：未登录 303 重定向到 /login。"""
+def _login_redirect(user: User | None, request: Request) -> RedirectResponse | None:
+    """需登录页面保留完整站内回跳地址，登录后恢复原查询参数与锚点。"""
     if user is None:
-        return RedirectResponse("/login", status_code=303)
+        next_path = request.url.path
+        if request.url.query:
+            next_path += "?" + request.url.query
+        return RedirectResponse("/login?next=" + quote(next_path, safe=""), status_code=303)
     return None
 
 
@@ -135,12 +140,20 @@ async def index(
 
 
 @router.get("/login")
-async def login(request: Request, user: Annotated[User | None, Depends(get_current_user_optional)]):
+async def login(
+    request: Request,
+    user: Annotated[User | None, Depends(get_current_user_optional)],
+    next: str = "/",
+):
+    try:
+        next_path = safe_next_path(next)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail="非法的登录回跳地址") from exc
     if user is not None:
-        return RedirectResponse("/", status_code=303)
+        return RedirectResponse(next_path, status_code=303)
     return templates.TemplateResponse(
         request, "login.html",
-        _ctx(user, active="", college_name=get_settings().college_name),
+        _ctx(user, active="", college_name=get_settings().college_name, next_path=next_path),
     )
 
 
@@ -283,7 +296,7 @@ async def library(
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
     """个人知识库页：学期 → 课程 → 文档 三级库树，服务端渲染首屏。"""
-    if (resp := _login_redirect(user)) is not None:
+    if (resp := _login_redirect(user, request)) is not None:
         return resp
     semesters = (
         await db.execute(
@@ -348,11 +361,48 @@ async def library(
                 .order_by(Resource.created_at.desc(), Resource.id.desc())
             )
         ).scalars().all()
+        latest_resources = {}
         for r in submissions:
-            resource_map.setdefault(
-                r.document_id,
-                {"review_status": r.review_status, "resource_id": r.id},
-            )
+            latest_resources.setdefault(r.document_id, r)
+        resource_ids = [r.id for r in latest_resources.values()]
+        task_map: dict[int, ReviewTask] = {}
+        if resource_ids:
+            tasks = (
+                await db.execute(
+                    select(ReviewTask)
+                    .where(ReviewTask.resource_id.in_(resource_ids))
+                    .order_by(ReviewTask.id.desc())
+                )
+            ).scalars().all()
+            for task in tasks:
+                task_map.setdefault(task.resource_id, task)
+        reason_map: dict[int, str] = {}
+        if task_map:
+            records = (
+                await db.execute(
+                    select(ReviewRecord)
+                    .where(
+                        ReviewRecord.task_id.in_([t.id for t in task_map.values()]),
+                        ReviewRecord.verdict == "reject",
+                    )
+                    .order_by(ReviewRecord.id.desc())
+                )
+            ).scalars().all()
+            task_resources = {t.id: t.resource_id for t in task_map.values()}
+            for record in records:
+                reason_map.setdefault(task_resources[record.task_id], record.comment)
+        for document_id, r in latest_resources.items():
+            task = task_map.get(r.id)
+            resource_map[document_id] = {
+                "review_status": r.review_status,
+                "review_stage": task.stage if task else None,
+                "review_reason": (
+                    reason_map.get(r.id)
+                    or ((task.precheck_result or {}).get("reason") if task else None)
+                ),
+                "resource_id": r.id,
+                "resource_url": f"/resources/{r.id}",
+            }
     return templates.TemplateResponse(
         request, "library.html",
         _ctx(user, active="library", semester_groups=semester_groups,
@@ -372,7 +422,7 @@ async def library_chat(
 
     个人课程仅本人可进；公共 active 课程任何登录用户可进（课程空间「AI 问答」
     Tab 链接到本页做预选），默认检索档按课程类型预选 personal/public。"""
-    if (resp := _login_redirect(user)) is not None:
+    if (resp := _login_redirect(user, request)) is not None:
         return resp
     if course_id is None:
         return RedirectResponse("/library", status_code=303)
@@ -400,7 +450,7 @@ async def library_review(
     """复习工具页（模块 A4，§13）：大纲 / 习题生成；课程与章节由前端 fetch
     （/api/library/ 个人课程 + /api/courses 公共课程），生成走 /api/review/*。
     course_id 仅作客户端预选，权限由 API 层校验，本路由不做服务端校验。"""
-    if (resp := _login_redirect(user)) is not None:
+    if (resp := _login_redirect(user, request)) is not None:
         return resp
     return templates.TemplateResponse(
         request, "library_review.html",
@@ -417,7 +467,7 @@ async def document_source(
 ):
     """原文溯源页：按 chunk 渲染解析文本，URL hash 定位高亮
     （public 文档任何登录用户可见，个人文档仅本人/管理员）。"""
-    if (resp := _login_redirect(user)) is not None:
+    if (resp := _login_redirect(user, request)) is not None:
         return resp
     doc = await db.get(Document, document_id)
     if doc is None or (
@@ -464,7 +514,7 @@ async def resource_detail(
 
     可见性与 API 一致（§3.2）：approved 任何登录用户 / 本人投稿 / admin，其余 404。
     """
-    if (resp := _login_redirect(user)) is not None:
+    if (resp := _login_redirect(user, request)) is not None:
         return resp
     resource = await db.get(Resource, resource_id)
     if resource is None or (
@@ -487,8 +537,10 @@ async def resource_detail(
     ).scalar_one_or_none()
     preview_available = doc.file_type in ("pdf_textbook", "markdown")
     if not preview_available:
-        public_doc = await _public_copy_of(db, doc)
-        preview_available = public_doc is not None and public_doc.preview_key is not None
+        preview_available = doc.preview_key is not None
+        if not preview_available:
+            public_doc = await _public_copy_of(db, doc)
+            preview_available = public_doc is not None and public_doc.preview_key is not None
     is_favorited = (
         await db.execute(
             select(Favorite.id).where(
@@ -556,7 +608,7 @@ async def review_workbench(
     task: int | None = None,
 ):
     """协审工作台（reviewer/admin）：本人被指派的 co_review 任务队列 + 裁决。"""
-    if (resp := _login_redirect(user)) is not None:
+    if (resp := _login_redirect(user, request)) is not None:
         return resp
     if user.role not in ("reviewer", "admin"):
         raise HTTPException(status_code=404)
@@ -616,7 +668,7 @@ async def admin_home(
 ):
     """管理后台主页（admin，v0.6）：审核终审入口 / 空间管理 / 用户治理 / 平台配置。
     数据均由前端 fetch 管理 API 渲染，本路由仅做门控与骨架渲染。"""
-    if (resp := _login_redirect(user)) is not None:
+    if (resp := _login_redirect(user, request)) is not None:
         return resp
     if user.role != "admin":
         raise HTTPException(status_code=404)
@@ -631,7 +683,7 @@ async def admin_review(
 ):
     """管理员终审页（admin）：final 任务队列（含协审意见聚合与预览）+
     等待协审的 co_review 任务（只读）+ 最近完成的 done 任务。"""
-    if (resp := _login_redirect(user)) is not None:
+    if (resp := _login_redirect(user, request)) is not None:
         return resp
     if user.role != "admin":
         raise HTTPException(status_code=404)
@@ -844,7 +896,7 @@ async def post_new(
 ):
     """发帖页（登录）：qa 帖必选公共课程（+可选章节）；experience 帖走结构化模板；
     bounty 帖须填悬赏贡献分；discuss 帖无附加要求。"""
-    if (resp := _login_redirect(user)) is not None:
+    if (resp := _login_redirect(user, request)) is not None:
         return resp
     if board not in OPEN_BOARDS:
         board = "qa"
@@ -1033,7 +1085,7 @@ async def me(
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
     """个人中心（登录）：SSR 注入等级进度，额度/明细/通知由前端 fetch 渲染。"""
-    if (resp := _login_redirect(user)) is not None:
+    if (resp := _login_redirect(user, request)) is not None:
         return resp
     major = await db.get(Major, user.major_id) if user.major_id else None
 
@@ -1076,7 +1128,7 @@ async def search_page(
     course_id: int | None = None,
 ):
     """全站搜索页（登录）：关键词 + 类型（all/post/resource）+ 板块 + 课程过滤。"""
-    if (resp := _login_redirect(user)) is not None:
+    if (resp := _login_redirect(user, request)) is not None:
         return resp
     if type not in ("all", "post", "resource"):
         type = "all"

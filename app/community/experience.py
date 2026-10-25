@@ -6,6 +6,8 @@
 经验帖的 AI 摘要与检索走 PostgreSQL，不进入 RAG chunk 向量检索（§4.3 一期口径）。
 """
 
+import re
+
 from app.storage.models import User
 
 # 结构化模板四个固定小节（发帖页按此渲染表单，空小节不入正文）
@@ -35,6 +37,13 @@ def build_experience_content(sections: dict[str, str]) -> str:
         if body:
             parts.append(f"{SECTION_HEADER_PREFIX}{name}\n{body}")
     return "\n\n".join(parts)
+
+
+def validate_experience_content(content: str) -> None:
+    """经验帖必须包含非空「背景」小节，防止客户端绕过结构化表单。"""
+    match = re.search(r"(?ms)^## 背景[\t ]*\r?\n(.*?)(?=^## |\Z)", content)
+    if match is None or not match.group(1).strip():
+        raise ValueError("经验帖必须填写背景小节")
 
 
 def can_feature(user: User, post_author_id: int) -> bool:

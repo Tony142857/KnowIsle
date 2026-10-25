@@ -15,6 +15,8 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.embeddings import get_embedding
+from app.core.indexing import EMBED_BATCH as _EMBED_BATCH
+from app.core.indexing import index_document_chunks, invalidate_document_index
 from app.core.retrieval.fine import invalidate_bm25
 from app.identity.growth import SCORE_UPLOAD_APPROVED, grant_score
 from app.moderation.assign import assign_reviewers
@@ -29,8 +31,7 @@ from app.storage.models import (
     ReviewTask,
     User,
 )
-from app.storage.vector_store import COLLECTION_PUBLIC, get_vector_store
-from app.workers.parse_worker import _EMBED_BATCH, build_chunk_meta
+from app.storage.vector_store import get_vector_store
 
 
 def make_public_chunk_id(doc_id: int, seq: int) -> str:
@@ -68,6 +69,11 @@ async def create_submission(
     同一文档重复投稿：审核中 → ValueError("duplicate")；已上架 → ValueError("approved")；
     已驳回 → 复用原 resource（更新元信息、状态回 pending）重走审核，is_resubmit=True。
     """
+    locked_doc = await session.get(
+        Document, doc.id, with_for_update=True, populate_existing=True
+    )
+    if locked_doc is not None:
+        doc = locked_doc
     existing = (
         await session.execute(select(Resource).where(Resource.document_id == doc.id))
     ).scalars().first()
@@ -106,6 +112,8 @@ async def apply_precheck_result(
     session: AsyncSession, task: ReviewTask, result: dict
 ) -> None:
     """应用预检结果：硬失败直接驳回；否则推进协审并指派/通知协审员。"""
+    if task.stage != "precheck":
+        return
     task.precheck_result = result
     resource = await session.get(Resource, task.resource_id)
     if result.get("hard_fail"):
@@ -263,6 +271,7 @@ async def _approve(session: AsyncSession, task: ReviewTask) -> int:
         file_name=src_doc.file_name,
         file_type=src_doc.file_type,
         storage_key=src_doc.storage_key,
+        preview_key=src_doc.preview_key,
         md5=src_doc.md5,
         status="parsed",
     )
@@ -278,25 +287,20 @@ async def _approve(session: AsyncSession, task: ReviewTask) -> int:
         {
             "chunk_id": make_public_chunk_id(new_doc.id, seq),
             "chapter_id": resource.chapter_id,
+            "chapter_title": getattr(src, "_rag_chapter_title", None),
             "page_num": src.page_num,
+            "section": src.section,
+            "content": src.content,
         }
         for seq, src in enumerate(src_chunks, start=1)
     ]
     if derived:
-        embedding = get_embedding()
-        vectors: list[list[float]] = []
-        for i in range(0, len(src_chunks), _EMBED_BATCH):
-            vectors.extend(
-                await embedding.embed([c.content for c in src_chunks[i : i + _EMBED_BATCH]])
-            )
-        store = get_vector_store()
-        collection = await store.get_or_create_collection(COLLECTION_PUBLIC)
-        await store.upsert(
-            collection,
-            ids=[d["chunk_id"] for d in derived],
-            embeddings=vectors,
-            metadatas=[build_chunk_meta(new_doc, d) for d in derived],
-            documents=[c.content for c in src_chunks],
+        await index_document_chunks(
+            new_doc,
+            derived,
+            embedding=get_embedding(),
+            store=get_vector_store(),
+            batch_size=_EMBED_BATCH,
         )
         session.add_all(
             Chunk(
@@ -316,7 +320,7 @@ async def _approve(session: AsyncSession, task: ReviewTask) -> int:
         )
         # 派生 public chunks 已写入：失效该课程公共库 BM25 语料缓存（v0.9；
         # v1.1 起含 Redis 版本戳跨进程失效，§20.5 B2）
-        await invalidate_bm25(new_doc.course_id, "public")
+        await invalidate_document_index(new_doc, invalidate_bm25)
 
     await grant_score(
         session, resource.uploader_id, SCORE_UPLOAD_APPROVED,

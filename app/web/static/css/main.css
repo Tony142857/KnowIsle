@@ -4,6 +4,35 @@
 
 /* ===== 公共组件类（供后续批次页面复用，避免各处重复原子类组合） ===== */
 
+.skip-link {
+  position: fixed;
+  top: 0.5rem;
+  left: 0.5rem;
+  z-index: 100;
+  transform: translateY(-150%);
+  border-radius: 0.5rem;
+  background: #065f46;
+  padding: 0.625rem 1rem;
+  color: #fff;
+}
+.skip-link:focus { transform: translateY(0); }
+
+.upload-dropzone {
+  border: 2px dashed #a7f3d0;
+  border-radius: 0.75rem;
+  background: rgb(236 253 245 / 0.45);
+  transition: border-color 0.2s, background-color 0.2s;
+}
+.upload-dropzone.is-dragging {
+  border-color: #059669;
+  background: #d1fae5;
+}
+.source-hit { background: #f4df97; border-radius: 0.125rem; }
+.source-hit-current { outline: 2px solid #c47420; outline-offset: 1px; }
+.progress-track { overflow: hidden; border-radius: 9999px; background: #d1fae5; }
+.progress-value { height: 100%; border-radius: inherit; background: #059669; transition: width 0.15s; }
+
+
 /* 按钮：.btn 基座 + .btn-primary / .btn-secondary / .btn-ghost / .btn-danger 变体 */
 .btn {
   display: inline-flex;
@@ -276,8 +305,19 @@ body {
 @media print {
   header,
   footer,
-  #flash {
+  #flash,
+  #zy-toasts {
     display: none !important;
+  }
+  .print-outline-only #main-content * { visibility: hidden; }
+  .print-outline-only #review-outline-print,
+  .print-outline-only #review-outline-print * { visibility: visible; }
+  .print-outline-only #review-outline-print {
+    position: absolute;
+    inset: 0 auto auto 0;
+    width: 100%;
+    border: 0;
+    background: #fff;
   }
 }
 

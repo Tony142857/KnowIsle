@@ -17,6 +17,15 @@ from app.storage.vector_store import get_vector_store
 COLLECTION_SUMMARIES = "chapter_summaries"
 
 
+class ChapterRecall(list):
+    def __init__(self, chapter_ids, chapters, incomplete=False):
+        super().__init__(chapter_ids)
+        self.chapter_titles = {
+            chapter.id: getattr(chapter, "title", None) for chapter in chapters
+        }
+        self.incomplete = incomplete
+
+
 async def coarse_recall(
     session: AsyncSession,
     query_embedding: list[float],
@@ -25,14 +34,11 @@ async def coarse_recall(
     top_k: int = 5,
 ) -> list[int] | None:
     """返回粗召回的章节 ID 列表；无摘要向量可用时返回 None（降级全课程精排）。"""
-    chapters = (
-        await session.execute(
-            select(Chapter).where(
-                Chapter.course_id == course_id, Chapter.summary_vector_id.isnot(None)
-            )
-        )
-    ).scalars().all()
-    if not chapters:
+    chapters = list((
+        await session.execute(select(Chapter).where(Chapter.course_id == course_id))
+    ).scalars().all())
+    summarized = [chapter for chapter in chapters if chapter.summary_vector_id is not None]
+    if not summarized:
         return None
     store = get_vector_store()
     collection = await store.get_or_create_collection(COLLECTION_SUMMARIES)
@@ -42,6 +48,8 @@ async def coarse_recall(
         n_results=top_k,
         where={"course_id": course_id},
     )
-    vector_to_chapter = {c.summary_vector_id: c.id for c in chapters}
+    vector_to_chapter = {c.summary_vector_id: c.id for c in summarized}
     chapter_ids = [vector_to_chapter[h["id"]] for h in hits if h["id"] in vector_to_chapter]
-    return chapter_ids or None
+    return ChapterRecall(
+        chapter_ids, chapters, incomplete=len(summarized) < len(chapters)
+    ) if chapter_ids else None

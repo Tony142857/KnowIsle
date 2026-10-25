@@ -40,8 +40,7 @@
 
   // 新评论可被采纳的条件与 SSR 宏一致：当前用户是帖主且板块为 qa/bounty
   function newCommentCanAccept() {
-    const pd = pageData();
-    return pd.is_author && (pd.board === 'qa' || pd.board === 'bounty');
+    return false;
   }
 
   function bumpCommentCount() {
@@ -63,9 +62,17 @@
   window.commentComposer = function () {
     return {
       content: '', loading: false, error: '',
+      init() {
+        const draft = ZY.drafts.load('comment:' + pageData().post_id);
+        if (draft) this.content = draft.content || '';
+        this.$watch('content', () => this.saveDraft());
+        window.addEventListener('zy:session-expired', () => this.saveDraft());
+      },
+      saveDraft() { ZY.drafts.save('comment:' + pageData().post_id, {content: this.content}); },
       async submit() {
         const content = this.content.trim();
         if (!content) { this.error = '评论内容不能为空'; return; }
+        this.saveDraft();
         this.loading = true; this.error = '';
         try {
           const pd = pageData();
@@ -84,6 +91,7 @@
           list.appendChild(node);
           ZY.md.renderInto(node.querySelector('[data-slot="body"]'), content);
           this.content = '';
+          ZY.drafts.remove('comment:' + pd.post_id);
           bumpCommentCount();
           ZY.toast('评论发表成功', 'success');
         } catch (e) { this.error = e.message; }
@@ -93,11 +101,29 @@
   };
 
   // 单条评论：点赞 + 楼内回复 + 采纳
-  window.commentBox = function (commentId, score, myVote, loggedIn, canAccept) {
+  window.commentBox = function (commentId, score, myVote, loggedIn, canAccept, eligible) {
     return {
       score: score, myVote: myVote, loading: false, error: '',
-      canAccept: canAccept,
+      canAccept: canAccept, initiallyAcceptable: eligible === undefined ? canAccept : eligible,
       replyOpen: false, replyContent: '', replyError: '',
+      init() {
+        const draft = ZY.drafts.load('reply:' + commentId);
+        if (draft) this.replyContent = draft.content || '';
+        this.$watch('replyContent', () => this.saveReplyDraft());
+        window.addEventListener('zy:session-expired', () => this.saveReplyDraft());
+      },
+      saveReplyDraft() { ZY.drafts.save('reply:' + commentId, {content: this.replyContent}); },
+      report() { return ZY.report('comment', commentId); },
+      handleAccepted(detail) {
+        const pd = pageData();
+        if (pd.board === 'bounty') pd.settled = true;
+        this.canAccept = pd.board === 'qa' && this.initiallyAcceptable && detail.commentId !== commentId;
+        if (detail.commentId !== commentId) {
+          this.$root.classList.remove('border-brand-300', 'ring-1', 'ring-brand-200');
+          const badge = this.$root.querySelector(':scope > .comment-head [data-slot="accepted-badge"]');
+          if (badge) badge.hidden = true;
+        }
+      },
       async vote(value) {
         if (!loggedIn) { window.location.href = '/login'; return; }
         this.loading = true; this.error = '';
@@ -110,6 +136,7 @@
       async reply() {
         const content = this.replyContent.trim();
         if (!content) { this.replyError = '回复内容不能为空'; return; }
+        this.saveReplyDraft();
         this.loading = true; this.replyError = '';
         try {
           const pd = pageData();
@@ -126,6 +153,7 @@
           wrap.appendChild(node);
           ZY.md.renderInto(node.querySelector('[data-slot="body"]'), content);
           this.replyContent = ''; this.replyOpen = false;
+          ZY.drafts.remove('reply:' + commentId);
           bumpCommentCount();
           ZY.toast('回复成功', 'success');
         } catch (e) { this.replyError = e.message; }
@@ -139,7 +167,7 @@
           this.$root.classList.add('border-brand-300', 'ring-1', 'ring-brand-200');
           const badge = this.$root.querySelector(':scope > .comment-head [data-slot="accepted-badge"]');
           if (badge) badge.hidden = false;
-          window.dispatchEvent(new CustomEvent('zy:accepted'));
+          window.dispatchEvent(new CustomEvent('zy:accepted', {detail: {commentId: commentId}}));
           ZY.toast(data.score_granted ? ('已采纳，对方获得 ' + data.score_granted + ' 贡献分') : '已采纳', 'success');
         } catch (e) { this.error = e.message; }
         finally { this.loading = false; }
@@ -199,18 +227,6 @@
   // AI 首答终态：done 渲染正文 + 引用网格（[chunk_id] 转为溯源链接，与 SSR ai_segments 同构）；
   // failed 换失败文案卡
   function renderAiResult(root, data) {
-    if (data.ai_answer_status !== 'done') {
-      root.className = 'mt-6 rounded-card border border-slate-200 bg-white p-6 shadow-card';
-      root.textContent = '';
-      const h = document.createElement('h2');
-      h.className = 'text-sm font-semibold text-slate-700';
-      h.textContent = 'AI 助教首答';
-      const p = document.createElement('p');
-      p.className = 'mt-3 text-sm text-slate-500';
-      p.textContent = 'AI 首答生成失败，等待同学回答。你也可以稍后在「AI 问答」中检索本课程资料。';
-      root.append(h, p);
-      return;
-    }
     root.className = 'mt-6 rounded-card border border-brand-200 bg-brand-50/50 p-6 shadow-card';
     root.textContent = '';
     root.appendChild(aiCardHeader('AI 助教首答', 'brand'));
@@ -226,20 +242,7 @@
     if (data.ai_citations && data.ai_citations.length) renderCitationsGrid(root, data.ai_citations);
   }
 
-  // 经验帖摘要终态：done 渲染摘要 / failed 换失败文案卡
   function renderSummaryResult(root, data) {
-    if (data.ai_summary_status !== 'done' || !data.ai_summary) {
-      root.className = 'mt-6 rounded-card border border-slate-200 bg-white p-6 shadow-card';
-      root.textContent = '';
-      const h = document.createElement('h2');
-      h.className = 'text-sm font-semibold text-slate-700';
-      h.textContent = 'AI 摘要';
-      const p = document.createElement('p');
-      p.className = 'mt-3 text-sm text-slate-500';
-      p.textContent = 'AI 摘要生成失败，可直接阅读正文。';
-      root.append(h, p);
-      return;
-    }
     root.className = 'mt-6 rounded-card border border-accent-200 bg-accent-50/50 p-6 shadow-card';
     root.textContent = '';
     root.appendChild(aiCardHeader('AI 摘要', 'accent'));
@@ -249,39 +252,58 @@
     ZY.md.renderInto(body, data.ai_summary);
   }
 
-  // AI 首答 pending：每 3s 轮询帖子状态，终态后停轮询并局部替换卡片
-  window.aiPoll = function (postId) {
+  function asyncPoll(postId, kind, initialStatus) {
+    const field = kind === 'answer' ? 'ai_answer_status' : 'ai_summary_status';
     return {
-      timer: null,
+      status: initialStatus || 'pending', error: '', timer: null, deadline: 0,
+      refreshing: false, timedOut: false,
       start() {
-        this.timer = setInterval(async () => {
-          try {
-            const data = await ZY.api.get('/api/posts/' + postId);
-            if (data.ai_answer_status === 'pending') return;
-            clearInterval(this.timer);
-            renderAiResult(this.$root, data);
-          } catch (e) { /* 网络抖动时下轮重试 */ }
+        if (this.status === 'pending') this.startTimer();
+      },
+      startTimer() {
+        clearInterval(this.timer);
+        this.deadline = Date.now() + 120000;
+        this.timedOut = false;
+        this.timer = setInterval(() => {
+          if (Date.now() >= this.deadline) {
+            this.stop(); this.timedOut = true; return;
+          }
+          this.refresh(true);
         }, 3000);
       },
+      stop() { clearInterval(this.timer); this.timer = null; },
+      async refresh(automatic) {
+        if (this.refreshing) return;
+        this.refreshing = true;
+        if (!automatic) this.error = '';
+        try {
+          const data = await ZY.api.get('/api/posts/' + postId);
+          this.status = data[field] || 'failed';
+          if (this.status === 'pending') return;
+          this.stop();
+          if (this.status === 'done') {
+            if (kind === 'answer') renderAiResult(this.$root, data);
+            else renderSummaryResult(this.$root, data);
+          }
+        } catch (e) {
+          if (!automatic) this.error = e.message;
+        } finally { this.refreshing = false; }
+      },
+      async retry() {
+        if (this.refreshing) return;
+        this.refreshing = true; this.error = '';
+        try {
+          await ZY.api.post('/api/posts/' + postId + '/ai-retry', {kind: kind});
+          this.status = 'pending';
+          this.startTimer();
+        } catch (e) { this.error = e.message; }
+        finally { this.refreshing = false; }
+      },
     };
-  };
+  }
 
-  // 经验帖 AI 摘要 pending：每 3s 轮询，终态后局部替换卡片（v0.7）
-  window.summaryPoll = function (postId) {
-    return {
-      timer: null,
-      start() {
-        this.timer = setInterval(async () => {
-          try {
-            const data = await ZY.api.get('/api/posts/' + postId);
-            if (data.ai_summary_status === 'pending') return;
-            clearInterval(this.timer);
-            renderSummaryResult(this.$root, data);
-          } catch (e) { /* 网络抖动时下轮重试 */ }
-        }, 3000);
-      },
-    };
-  };
+  window.aiPoll = function (postId, kind, status) { return asyncPoll(postId, kind || 'answer', status); };
+  window.summaryPoll = function (postId, status) { return asyncPoll(postId, 'summary', status); };
 
   // 精华标记开关（v0.7）：POST /api/admin/posts/{id}/feature（管理员/共建者）
   window.featureBox = function (postId, featured) {

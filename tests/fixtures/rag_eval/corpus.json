@@ -1,0 +1,134 @@
+{
+  "version": "1.0",
+  "license": "项目原创教学语料，可随项目评测使用；不含学生或个人信息",
+  "courses": [
+    {"id": 1, "name": "操作系统"},
+    {"id": 2, "name": "数据结构"},
+    {"id": 3, "name": "计算机网络"}
+  ],
+  "documents": [
+    {
+      "id": 101, "course_id": 1, "scope": "public", "owner_id": 1, "file_type": "pdf_textbook",
+      "file_name": "进程管理原创讲义.pdf", "chapter_id": 11, "has_summary": true,
+      "blocks": [
+        {"title": "进程管理", "level": 1, "content": "", "page_num": 1},
+        {"title": "进程与线程", "level": 2, "content": "", "page_num": 1},
+        {"title": null, "level": 0, "page_num": 1, "content": "进程是资源分配与保护的基本单位，拥有独立的地址空间。\n线程是CPU调度的基本单位，同一进程内的线程共享该进程的地址空间。\n进程切换通常需要更换地址空间，而同一进程内线程切换不需要更换地址空间。"},
+        {"title": "调度示例", "level": 2, "content": "", "page_num": 2},
+        {"title": null, "level": 0, "page_num": 2, "content": "时间片轮转示例中时间片为20ms，五个就绪进程依次到达且都不阻塞。\n若只考察首轮，第五个进程从队列开始等待80ms后首次获得CPU。"}
+      ]
+    },
+    {
+      "id": 102, "course_id": 1, "scope": "personal", "owner_id": 1, "file_type": "word",
+      "file_name": "分页存储原创笔记.docx", "chapter_id": 12, "has_summary": true,
+      "blocks": [
+        {"title": "内存管理", "level": 1, "content": ""},
+        {"title": "分页与TLB", "level": 2, "content": ""},
+        {"title": null, "level": 0, "content": "分页把逻辑地址空间和物理内存划分为固定大小的页与页框。\n当页大小为4KB时，页内偏移占12位，逻辑地址中的其余高位用于表示页号。\n32位逻辑地址在4KB页大小下共有2的20次方个页，也就是1048576个页。"},
+        {"title": "快表", "level": 2, "content": ""},
+        {"title": null, "level": 0, "content": "TLB保存近期使用的页表项，用于减少页号到页框号转换时的内存访问。\nTLB命中后仍需结合页框号与页内偏移形成物理地址，命中不代表取消了地址转换。"}
+      ]
+    },
+    {
+      "id": 103, "course_id": 1, "scope": "public", "owner_id": 1, "file_type": "ppt",
+      "file_name": "死锁课堂原创课件.pptx", "chapter_id": 13, "has_summary": false,
+      "blocks": [
+        {"title": "死锁与银行家算法", "level": 1, "content": "", "page_num": 1},
+        {"title": null, "level": 0, "page_num": 1, "content": "死锁的四个必要条件是互斥、占有且等待、不可剥夺和循环等待。\n预防死锁只需破坏四个必要条件中的至少一个，不必同时破坏全部条件。"},
+        {"title": "安全状态", "level": 1, "content": "", "page_num": 2},
+        {"title": null, "level": 0, "page_num": 2, "content": "银行家算法在分配前先检查是否存在安全序列，存在安全序列的状态才是安全状态。\n安全状态一定不会死锁，但不安全状态只是可能死锁，并不等同于已经发生死锁。"}
+      ]
+    },
+    {
+      "id": 104, "course_id": 1, "scope": "personal", "owner_id": 1, "file_type": "markdown",
+      "file_name": "文件系统原创整理.md", "chapter_id": null, "has_summary": false,
+      "blocks": [
+        {"title": "文件系统", "level": 1, "content": ""},
+        {"title": "索引与日志", "level": 2, "content": ""},
+        {"title": null, "level": 0, "content": "索引分配为文件建立索引块，索引项指向文件的数据块，支持直接访问而不必顺序遍历所有数据块。\n连续分配适合顺序访问且寻道开销较低，但文件增长时容易受到外部碎片影响。\n日志文件系统先记录元数据操作日志，再提交实际更新，以便异常断电后按日志恢复一致性。"}
+      ]
+    },
+    {
+      "id": 201, "course_id": 2, "scope": "public", "owner_id": 1, "file_type": "pdf_textbook",
+      "file_name": "树结构原创教材节选.pdf", "chapter_id": 21, "has_summary": true,
+      "blocks": [
+        {"title": "树与二叉树", "level": 1, "content": "", "page_num": 1},
+        {"title": "遍历与平衡", "level": 2, "content": "", "page_num": 1},
+        {"title": null, "level": 0, "page_num": 1, "content": "二叉搜索树的中序遍历按关键字递增顺序输出节点。\n前序遍历先访问根节点，再依次遍历左子树和右子树；后序遍历最后访问根节点。\nAVL树任意节点的左右子树高度差绝对值不超过1，插入失衡时通过旋转恢复平衡。"},
+        {"title": "旋转示例", "level": 2, "content": "", "page_num": 2},
+        {"title": null, "level": 0, "page_num": 2, "content": "在AVL树的左左型失衡中，对失衡节点执行一次右旋即可恢复局部平衡。\n左右型失衡需要先对左孩子左旋，再对原失衡节点右旋。"}
+      ]
+    },
+    {
+      "id": 202, "course_id": 2, "scope": "personal", "owner_id": 1, "file_type": "word",
+      "file_name": "图算法原创笔记.docx", "chapter_id": 22, "has_summary": true,
+      "blocks": [
+        {"title": "图算法", "level": 1, "content": ""},
+        {"title": "最短路径", "level": 2, "content": ""},
+        {"title": null, "level": 0, "content": "Dijkstra算法要求边的权值非负，每次确定当前距离最小的未访问顶点并松弛其出边。\n若图中存在负权边，Dijkstra的贪心结论可能失效，应选用允许负权边的其他算法。\n广度优先搜索使用队列，在邻接表表示下时间复杂度为O(V+E)。"},
+        {"title": "连通性", "level": 2, "content": ""},
+        {"title": null, "level": 0, "content": "无向图中一次从单点出发的广度优先搜索只能访问该点所在的连通分量。\n统计无向图连通分量时，需要对每个尚未访问的顶点都启动一次遍历。"}
+      ]
+    },
+    {
+      "id": 203, "course_id": 2, "scope": "public", "owner_id": 1, "file_type": "ppt",
+      "file_name": "排序算法原创课件.pptx", "chapter_id": 23, "has_summary": false,
+      "blocks": [
+        {"title": "排序复杂度与稳定性", "level": 1, "content": "", "page_num": 1},
+        {"title": null, "level": 0, "page_num": 1, "content": "快速排序平均时间复杂度为O(n log n)，最坏情况可退化为O(n^2)。\n快速排序通常不稳定，因为划分过程中相等元素的相对次序可能改变。\n归并排序稳定，标准实现需要O(n)的辅助数组空间。"},
+        {"title": "计数排序", "level": 1, "content": "", "page_num": 2},
+        {"title": null, "level": 0, "page_num": 2, "content": "计数排序适合取值范围有限的整数，通过计数与前缀和确定元素位置。\n计数排序可以稳定实现，其时间与额外空间开销都和值域大小有关。"}
+      ]
+    },
+    {
+      "id": 204, "course_id": 2, "scope": "personal", "owner_id": 1, "file_type": "markdown",
+      "file_name": "哈希表原创总结.md", "chapter_id": null, "has_summary": false,
+      "blocks": [
+        {"title": "哈希表", "level": 1, "content": ""},
+        {"title": "冲突与装填因子", "level": 2, "content": ""},
+        {"title": null, "level": 0, "content": "哈希冲突是不同关键字经哈希函数映射到同一位置的现象。\n链地址法把映射到同一桶的元素放入同一链表，删除元素时不需要像开放地址法那样设置墓碑。\n装填因子等于元素个数除以桶数组长度；某实现以0.75作为扩容阈值只是设计选择，并非哈希表定义的一部分。"}
+      ]
+    },
+    {
+      "id": 301, "course_id": 3, "scope": "public", "owner_id": 1, "file_type": "pdf_textbook",
+      "file_name": "网络分层原创讲义.pdf", "chapter_id": 31, "has_summary": true,
+      "blocks": [
+        {"title": "网络体系结构", "level": 1, "content": "", "page_num": 1},
+        {"title": "分层模型", "level": 2, "content": "", "page_num": 1},
+        {"title": null, "level": 0, "page_num": 1, "content": "OSI参考模型从低到高分为物理层、数据链路层、网络层、传输层、会话层、表示层和应用层。\nTCP/IP常按网络接口层、网际层、传输层和应用层四层理解。\nIP位于网际层，提供尽力而为的数据报交付，本身不保证可靠到达。"},
+        {"title": "可靠传输", "level": 2, "content": "", "page_num": 2},
+        {"title": null, "level": 0, "page_num": 2, "content": "TCP通过序号、确认、重传和校验等机制在不可靠的IP服务上提供可靠字节流。\nUDP不建立连接，也不承诺按序可靠交付，应用需要可靠性时应自行设计或选择其他协议。"}
+      ]
+    },
+    {
+      "id": 302, "course_id": 3, "scope": "personal", "owner_id": 1, "file_type": "word",
+      "file_name": "IP子网原创计算.docx", "chapter_id": 32, "has_summary": true,
+      "blocks": [
+        {"title": "IP编址", "level": 1, "content": ""},
+        {"title": "子网划分", "level": 2, "content": ""},
+        {"title": null, "level": 0, "content": "IPv4的斜杠26前缀表示子网掩码有26个1，主机位剩余6位。\n一个26前缀子网共有64个地址，传统可分配主机地址为62个，需排除网络地址与定向广播地址。\n192.168.10.0/26的可用主机范围是192.168.10.1到192.168.10.62。"},
+        {"title": "无类编址", "level": 2, "content": ""},
+        {"title": null, "level": 0, "content": "CIDR使用前缀长度描述网络部分，不再受A类B类C类固定边界限制。\n路由聚合把多个连续前缀汇总成较短前缀，可以减少路由表项，但汇总范围必须覆盖正确。"}
+      ]
+    },
+    {
+      "id": 303, "course_id": 3, "scope": "public", "owner_id": 1, "file_type": "ppt",
+      "file_name": "TCP连接原创课件.pptx", "chapter_id": 33, "has_summary": false,
+      "blocks": [
+        {"title": "TCP三次握手与超时估计", "level": 1, "content": "", "page_num": 1},
+        {"title": null, "level": 0, "page_num": 1, "content": "TCP建立连接的三次握手依次是SYN、SYN加ACK、ACK。\n第三次握手可以携带应用数据，前两次握手通常不携带应用数据。\n四次挥手用于双方分别关闭发送方向，TIME_WAIT帮助最后一个ACK丢失时完成重传。"},
+        {"title": "平滑RTT", "level": 1, "content": "", "page_num": 2},
+        {"title": null, "level": 0, "page_num": 2, "content": "一种教学示例采用SRTT新值等于0.875乘旧SRTT再加0.125乘本次RTT。\n该加权公式让历史估计占较大比例，避免单次RTT抖动完全改变超时估计。"}
+      ]
+    },
+    {
+      "id": 304, "course_id": 3, "scope": "personal", "owner_id": 1, "file_type": "markdown",
+      "file_name": "Web协议原创笔记.md", "chapter_id": null, "has_summary": false,
+      "blocks": [
+        {"title": "Web协议", "level": 1, "content": ""},
+        {"title": "HTTP与HTTPS", "level": 2, "content": ""},
+        {"title": null, "level": 0, "content": "HTTP是无状态协议，服务器可借助Cookie与Session在多次请求之间维持会话。\nHTTPS默认使用TCP的443端口，并通过TLS提供机密性、完整性与服务器身份认证。\nHTTP持久连接允许同一TCP连接承载多个请求响应，减少重复建立连接的开销。\nCookie本身不等同于登录态，是否可信还取决于服务端校验与安全属性设置。"}
+      ]
+    }
+  ]
+}

@@ -130,7 +130,9 @@ async def submit_verdict(
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
     """提交协审意见：人数未齐 recorded；多数决通过 advanced_final；多数驳回 rejected。"""
-    task = await db.get(ReviewTask, task_id)
+    task = await db.get(
+        ReviewTask, task_id, with_for_update=True, populate_existing=True
+    )
     if task is None:
         raise HTTPException(status_code=404, detail="Not Found")
     try:

@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% block title %}课程空间 · 知屿 KnowIsle{% endblock %}
+{% block head %}<script src="/static/js/pages/majors.js"></script>{% endblock %}
 {% block content %}
 {% from "_icons.html" import icon %}
 {% from "_illustrations.html" import illo %}
@@ -9,9 +10,16 @@
                 icon='graduation-cap') }}
 
 {% if majors %}
-<div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+<div x-data="majorFilter()">
+  <label for="major-filter" class="text-sm font-medium text-slate-600">筛选专业</label>
+  <input id="major-filter" type="search" x-model.debounce.150ms="query"
+         placeholder="输入专业名称或代码" autocomplete="off" class="input-base mt-2 max-w-md">
+  <p class="mt-2 text-xs text-slate-400" role="status"
+     x-text="query ? '匹配 ' + visibleCount + ' 个专业' : '共 ' + visibleCount + ' 个专业'"></p>
+<div class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
   {% for m in majors %}
-  <a href="/majors/{{ m.id }}"
+  <a href="/majors/{{ m.id }}" data-major-name="{{ (m.name ~ ' ' ~ (m.code or ''))|lower }}"
+     x-show="matches($el.dataset.majorName)" data-major-card
      class="card card-hover group block animate-fade-up p-5{% if loop.index % 3 == 2 %} d-80{% elif loop.index % 3 == 0 %} d-150{% endif %}">
     <div class="flex items-start justify-between gap-3">
       <span class="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-brand-50 text-brand-600 transition-colors duration-island ease-island group-hover:bg-brand-100">
@@ -29,6 +37,12 @@
     </div>
   </a>
   {% endfor %}
+</div>
+  <div x-show="query && visibleCount === 0" x-cloak class="empty-state mt-4 bg-white py-12">
+    {{ illo('search', 'mx-auto w-24 h-24') }}
+    <p class="mt-3 text-sm text-slate-500">没有匹配的专业</p>
+    <button type="button" @click="query = ''" class="btn btn-secondary mt-4">清空筛选</button>
+  </div>
 </div>
 {% else %}
 <div class="empty-state bg-white py-16">

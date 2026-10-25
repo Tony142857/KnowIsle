@@ -188,7 +188,7 @@ def test_split_blocks_long_text_with_overlap():
     blocks = [ParsedBlock(title=None, content=sentence * 40, level=0, page_num=3)]
     chunks = split_blocks(blocks, document_id=1, scope="public")
     assert len(chunks) >= 2
-    assert all(len(c["content"]) <= TARGET_MAX + 60 for c in chunks)
+    assert all(len(c["content"]) <= TARGET_MAX for c in chunks)
     # 相邻块存在 overlap：后块开头内容来自前块结尾
     assert chunks[1]["content"][:20] in chunks[0]["content"]
     assert all(c["page_num"] == 3 for c in chunks)
@@ -217,11 +217,11 @@ def test_split_blocks_merges_short_adjacent():
         ParsedBlock(title="第二章", content="", level=1),
         ParsedBlock(title=None, content="也很短。", level=0),
     ]
-    # 不传 chapter_ids：两章均映射为 None（同章节键），触发合并
+    # 即使 chapter_id 都缺失，标题路径仍阻止跨章合并
     chunks = split_blocks(blocks, document_id=2, scope="personal")
-    assert len(chunks) == 1
-    assert "很短" in chunks[0]["content"] and "也很短" in chunks[0]["content"]
-    # 章节 ID 不同时不合并
+    assert len(chunks) == 2
+    assert chunks[0]["chapter_title"] == "第一章"
+    assert chunks[1]["chapter_title"] == "第二章"
     separate = split_blocks(
         blocks, document_id=2, scope="personal", chapter_ids=[1, 1, 2, 2]
     )
@@ -323,7 +323,9 @@ def test_prompt_citation_example_matches_chunk_id_format():
 
 
 def test_build_chunk_meta_nullable_sentinels():
-    doc = SimpleNamespace(id=5, course_id=12, owner_id=34, file_type="pdf_textbook")
+    doc = SimpleNamespace(
+        id=5, course_id=12, owner_id=34, file_type="pdf_textbook", scope="personal"
+    )
     meta = build_chunk_meta(
         doc, {"chunk_id": "per_d5_00001", "chapter_id": None, "page_num": None}
     )
@@ -332,10 +334,14 @@ def test_build_chunk_meta_nullable_sentinels():
         "document_id": 5,
         "course_id": 12,
         "owner_id": 34,
+        "scope": "personal",
         "chapter_id": -1,
         "page_num": -1,
         "file_type": "pdf_textbook",
+        "index_version": "rag-structure-v2",
+        "embedding_model": meta["embedding_model"],
     }
+    assert meta["embedding_model"]  # R2：Collection 记录构建时的 embedding 模型
     assert all(isinstance(v, str | int) for v in meta.values())  # Chroma 仅接受标量
     meta2 = build_chunk_meta(
         doc, {"chunk_id": "per_d5_00002", "chapter_id": 7, "page_num": 78}

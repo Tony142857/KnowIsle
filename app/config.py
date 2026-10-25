@@ -46,6 +46,18 @@ class Settings(BaseSettings):
     embedding_base_url: str = ""  # remote 模式：OpenAI 兼容端点（不含 /embeddings 后缀亦可）
     embedding_api_key: str = ""  # remote 模式：Bearer Key
 
+    # ---------- RAG 检索与证据（阈值仅用 tune 集校准） ----------
+    rag_candidate_k: int = 10
+    rag_top_k: int = 5
+    rag_rrf_k: int = 60
+    rag_semantic_weight: float = 0.65
+    rag_bm25_weight: float = 0.35
+    rag_mixed_personal_weight: float = 1.2
+    rag_global_fallback_max_distance: float = 1.2
+    rag_evidence_max_distance: float = 1.6
+    rag_evidence_min_lexical_coverage: float = 0.28
+    rag_evidence_semantic_weak_lexical_min_similarity: float = 0.3
+
     # ---------- AI 额度策略 ----------
     ai_daily_free_quota: int = 30
     ai_quota_exchange_rate: int = 10  # 10 贡献分兑换 1 次额外问答

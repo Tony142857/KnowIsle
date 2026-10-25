@@ -1,29 +1,23 @@
-/* post_new.html 页面交互（CSP 外置，v1.1）。
- * 加载方式：{% block head %} 内同步 <script src>（原因见 board.js 头注）。
- * 统一走 ZY.api（/api/ 前缀由封装补齐），成功反馈用 ZY.toast。 */
 (function () {
   'use strict';
 
-  window.postNew = function (initialBoard) {
+  // 草稿经 ZY.drafts 写入 localStorage（键 zhiyu:post-draft:v1），按账号隔离
+  const DRAFT_NAME = 'post-draft';
+
+  window.postNew = function (initialBoard, userId) {
     return {
-      board: initialBoard,
-      title: '', content: '', tagsInput: '', bountyScore: 10,
-      courseId: '', chapterId: '', courses: [], chapters: [],
-      // 经验长廊结构化模板四栏（与 app/community/experience.py 的 EXPERIENCE_TEMPLATE_SECTIONS 一致）
+      board: initialBoard, title: '', content: '', tagsInput: '', bountyScore: 10,
+      courseId: '', chapterId: '', courses: [], chapters: [], score: null,
+      mode: 'edit', previewHtml: '', draftMessage: '', published: false,
       experienceSections: [
-        {key: '背景', label: '背景', desc: '专业、排名、英语、科研/项目经历等基本情况',
-         placeholder: '个人基本情况：专业、排名、英语、科研/项目经历等…'},
-        {key: '时间线', label: '时间线', desc: '按时间顺序记录关键节点',
-         placeholder: '按时间顺序记录关键节点，如：3 月报名 → 5 月夏令营 → 7 月 offer…'},
-        {key: '经验要点', label: '经验要点', desc: '你认为最有价值的经验，分条写清楚',
-         placeholder: '你认为最有价值的经验，分条写清楚…'},
-        {key: '避坑提示', label: '避坑提示', desc: '踩过的坑、需要注意的细节',
-         placeholder: '踩过的坑、需要注意的细节…'},
+        {key: '背景', label: '背景', desc: '专业、排名、英语、科研/项目经历等基本情况', placeholder: '个人基本情况：专业、排名、英语、科研/项目经历等…'},
+        {key: '时间线', label: '时间线', desc: '按时间顺序记录关键节点', placeholder: '按时间顺序记录关键节点，如：3 月报名 → 5 月夏令营 → 7 月 offer…'},
+        {key: '经验要点', label: '经验要点', desc: '你认为最有价值的经验，分条写清楚', placeholder: '你认为最有价值的经验，分条写清楚…'},
+        {key: '避坑提示', label: '避坑提示', desc: '踩过的坑、需要注意的细节', placeholder: '踩过的坑、需要注意的细节…'},
       ],
       sections: {'背景': '', '时间线': '', '经验要点': '', '避坑提示': ''},
-      loading: false, error: '',
+      loading: false, error: '', coursesError: '', chaptersError: '', saveTimer: null,
 
-      // 课程下拉按专业分组（GET /api/courses 的 items 带 major_name）
       get courseGroups() {
         const groups = {};
         for (const c of this.courses) {
@@ -33,26 +27,99 @@
         }
         return Object.values(groups);
       },
-
-      switchBoard(b) {
-        // 切换板块时清空课程绑定（experience 板块不使用课程）
-        this.board = b;
-        if (b === 'experience') { this.courseId = ''; this.chapterId = ''; }
+      get contentLength() {
+        return (this.board === 'experience' ? this.buildExperienceContent() : this.content).length;
       },
-
+      get dirty() {
+        return !!(this.title || this.content || this.tagsInput || this.courseId
+          || Object.values(this.sections).some(Boolean));
+      },
+      async init() {
+        this.restoreDraft();
+        const preselect = new URLSearchParams(window.location.search).get('course_id');
+        if (preselect && /^\d+$/.test(preselect)) this.courseId = preselect;
+        await Promise.all([this.loadCourses(), this.loadScore()]);
+        if (this.courseId) await this.loadChapters(true);
+        for (const key of ['title', 'content', 'tagsInput', 'bountyScore', 'courseId', 'chapterId', 'board']) {
+          this.$watch(key, () => this.scheduleDraftSave());
+        }
+        this.$watch('sections', () => this.scheduleDraftSave(), {deep: true});
+        window.addEventListener('zy:session-expired', () => this.saveDraftNow());
+        window.addEventListener('beforeunload', event => {
+          if (this.dirty && !this.published) this.saveDraftNow();
+          if (!this.dirty || this.published) return;
+          event.preventDefault();
+          event.returnValue = '';
+        });
+      },
+      restoreDraft() {
+        const draft = ZY.drafts.load(DRAFT_NAME, String(userId));
+        if (!draft) return;
+        for (const key of ['board', 'title', 'content', 'tagsInput', 'bountyScore', 'courseId', 'chapterId']) {
+          if (draft[key] !== undefined && draft[key] !== null) this[key] = draft[key];
+        }
+        if (draft.sections) this.sections = {...this.sections, ...draft.sections};
+        this.draftMessage = '已恢复当前账号的本地草稿';
+      },
+      saveDraftNow() {
+        if (this.published) return;
+        const saved = ZY.drafts.save(DRAFT_NAME, {
+          board: this.board, title: this.title, content: this.content,
+          tagsInput: this.tagsInput, bountyScore: this.bountyScore,
+          courseId: this.courseId, chapterId: this.chapterId, sections: this.sections,
+        }, String(userId));
+        this.draftMessage = saved ? '草稿已自动保存' : '本地草稿保存失败';
+      },
+      scheduleDraftSave() {
+        if (this.published) return;
+        clearTimeout(this.saveTimer);
+        this.saveTimer = setTimeout(() => this.saveDraftNow(), 350);
+      },
+      clearDraft() {
+        clearTimeout(this.saveTimer);
+        ZY.drafts.remove(DRAFT_NAME, String(userId));
+        this.draftMessage = '';
+      },
+      switchBoard(board) {
+        this.board = board;
+        this.mode = 'edit';
+        if (board === 'experience') { this.courseId = ''; this.chapterId = ''; }
+      },
+      showPreview() {
+        this.mode = 'preview';
+        const source = this.board === 'experience' ? this.buildExperienceContent() : this.content;
+        this.previewHtml = ZY.md.render(source);
+        this.$nextTick(() => ZY.md.highlight(this.$root));
+      },
+      leave(url) {
+        if (!this.dirty) { window.location.href = url; return; }
+        this.$dispatch('zy-ask', {
+          title: '离开发帖页', message: '内容已保存在本地草稿，确定离开吗？',
+          confirmText: '离开', onConfirm: () => { window.location.href = url; },
+        });
+      },
+      async loadScore() {
+        try {
+          const me = await ZY.api.get('/api/users/me');
+          this.score = me.score;
+        } catch (e) { this.score = null; }
+      },
       async loadCourses() {
+        this.coursesError = '';
         try {
           const data = await ZY.api.get('/api/courses?size=100');
           this.courses = data.items || [];
-        } catch (e) { this.error = e.message; }
+          if (this.courseId && !this.courses.some(c => String(c.id) === String(this.courseId))) {
+            this.courseId = ''; this.chapterId = '';
+          }
+        } catch (e) { this.coursesError = '公共课程加载失败：' + e.message; }
       },
-
-      async loadChapters() {
-        this.chapterId = ''; this.chapters = [];
+      async loadChapters(preserve) {
+        if (!preserve) this.chapterId = '';
+        this.chapters = []; this.chaptersError = '';
         if (!this.courseId) return;
         try {
           const data = await ZY.api.get('/api/courses/' + this.courseId + '/chapters');
-          // 章节树扁平化，用全角空格缩进体现层级
           const flat = [];
           const walk = (nodes, depth) => {
             for (const n of nodes || []) {
@@ -62,15 +129,12 @@
           };
           walk(data.items, 0);
           this.chapters = flat;
-        } catch (e) { this.error = e.message; }
+          if (this.chapterId && !flat.some(ch => String(ch.id) === String(this.chapterId))) this.chapterId = '';
+        } catch (e) { this.chaptersError = '章节加载失败：' + e.message; }
       },
-
       parseTags() {
-        return this.tagsInput.split(/[,，]/)
-          .map(t => t.trim()).filter(t => t).slice(0, 5);
+        return this.tagsInput.split(/[,，]/).map(t => t.trim()).filter(Boolean).slice(0, 5);
       },
-
-      // 经验帖正文：非空小节按固定顺序组装为「## 小节 + 内容」Markdown
       buildExperienceContent() {
         const parts = [];
         for (const sec of this.experienceSections) {
@@ -79,37 +143,59 @@
         }
         return parts.join('\n\n');
       },
-
-      async submit() {
-        this.error = '';
-        if (!this.title.trim()) { this.error = '请填写标题'; return; }
+      validate() {
+        if (!this.title.trim()) return '请填写标题';
         let content = this.content.trim();
         if (this.board === 'experience') {
-          if (!(this.sections['背景'] || '').trim()) { this.error = '请至少填写「背景」小节'; return; }
+          if (!(this.sections['背景'] || '').trim()) return '请至少填写「背景」小节';
           content = this.buildExperienceContent();
-          if (!content) { this.error = '请填写正文'; return; }
-        } else if (!content) { this.error = '请填写正文'; return; }
-        if (this.board === 'qa' && !this.courseId) { this.error = '问答帖必须选择关联课程'; return; }
+        }
+        if (!content) return '请填写正文';
+        if (this.board === 'qa' && !this.courseId) return '问答帖必须选择关联课程';
         if (this.board === 'bounty') {
           const n = Number(this.bountyScore);
-          if (!Number.isInteger(n) || n < 1 || n > 1000) { this.error = '悬赏贡献分须为 1~1000 的整数'; return; }
+          if (!Number.isInteger(n) || n < 1 || n > 1000) return '悬赏贡献分须为 1~1000 的整数';
+          if (this.score !== null && n > this.score) return '贡献分余额不足，无法托管该悬赏';
         }
-        this.loading = true;
+        return '';
+      },
+      submit() {
+        this.error = this.validate();
+        if (this.error) return;
+        if (this.board === 'bounty') {
+          const cost = Number(this.bountyScore);
+          this.$dispatch('zy-ask', {
+            title: '确认托管悬赏',
+            message: '发布将托管 ' + cost + ' 贡献分，采纳响应后结算给响应者。当前余额 '
+              + (this.score === null ? '未知' : this.score + ' 分') + '，托管后余额 '
+              + (this.score === null ? '以服务端为准' : (this.score - cost) + ' 分') + '。',
+            confirmText: '托管并发布', onConfirm: () => this.doSubmit(),
+          });
+          return;
+        }
+        this.doSubmit();
+      },
+      async doSubmit() {
+        if (this.loading) return;
+        this.saveDraftNow();
+        this.loading = true; this.error = '';
+        ZY.setBusy(this, true);
         try {
           const body = {
-            board: this.board,
-            title: this.title.trim(),
-            content: content,
+            board: this.board, title: this.title.trim(),
+            content: this.board === 'experience' ? this.buildExperienceContent() : this.content.trim(),
             course_id: this.courseId ? Number(this.courseId) : null,
             chapter_id: this.chapterId ? Number(this.chapterId) : null,
             tags: this.parseTags(),
           };
           if (this.board === 'bounty') body.bounty_score = Number(this.bountyScore);
           const data = await ZY.api.post('/api/posts', body);
+          this.published = true;
+          this.clearDraft();
           ZY.toast('发布成功', 'success');
-          setTimeout(() => { window.location.href = '/posts/' + data.post_id; }, 800);
+          window.location.href = '/posts/' + data.post_id;
         } catch (e) { this.error = e.message; }
-        finally { this.loading = false; }
+        finally { this.loading = false; ZY.setBusy(this, false); }
       },
     };
   };

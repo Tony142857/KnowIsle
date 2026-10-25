@@ -197,6 +197,7 @@ class Document(Base):
     preview_key: Mapped[str | None] = mapped_column(Text)  # 预览用 PDF 对象键
     md5: Mapped[str] = mapped_column(Text, nullable=False)  # 文件去重指纹
     status: Mapped[str] = mapped_column(Text, server_default="parsing", nullable=False)
+    parse_error: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = _created_at()
 
 
@@ -354,6 +355,7 @@ class Post(Base):
     tags: Mapped[list[str] | None] = mapped_column(ARRAY(Text))  # 如 {保研, 夏令营}
     bounty_score: Mapped[int] = mapped_column(Integer, server_default="0", nullable=False)
     ai_first_answer: Mapped[str | None] = mapped_column(Text)  # AI 首答（问答贴）
+    ai_citation_chunk_ids: Mapped[list[str] | None] = mapped_column(JSONB)
     ai_summary: Mapped[str | None] = mapped_column(Text)  # AI 摘要（经验长廊帖，v0.7）
     accepted_comment_id: Mapped[int | None] = mapped_column(BigInteger)  # 采纳的评论
     view_count: Mapped[int] = mapped_column(Integer, server_default="0", nullable=False)
@@ -537,6 +539,7 @@ class QaLog(Base):
     model_provider: Mapped[str | None] = mapped_column(Text)  # official / user_custom
     token_usage: Mapped[int | None] = mapped_column(Integer)
     latency_ms: Mapped[int | None] = mapped_column(Integer)
+    retrieval_metrics: Mapped[dict | None] = mapped_column(JSONB)
     created_at: Mapped[datetime] = _created_at()
 
 

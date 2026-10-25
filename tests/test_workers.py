@@ -99,13 +99,15 @@ def _patch_parse_pipeline(monkeypatch, session, blocks=None, chunks=None):
 
 
 def test_build_chunk_meta_sentinels():
-    # chapter_id/page_num 可空字段用 -1 哨兵；有值时透传
+    # chapter_id/page_num 可空字段用 -1 哨兵；有值时透传；v1.3 增补 scope/索引版本/模型
     doc = _doc()
     meta = build_chunk_meta(doc, {"chunk_id": "c1", "chapter_id": None, "page_num": None})
     assert meta == {
         "chunk_id": "c1", "document_id": 5, "course_id": 5, "owner_id": 1,
-        "chapter_id": -1, "page_num": -1, "file_type": "pdf_textbook",
+        "scope": doc.scope, "chapter_id": -1, "page_num": -1, "file_type": "pdf_textbook",
+        "index_version": "rag-structure-v2", "embedding_model": meta["embedding_model"],
     }
+    assert meta["embedding_model"]
     meta = build_chunk_meta(doc, {"chunk_id": "c2", "chapter_id": 10, "page_num": 7})
     assert meta["chapter_id"] == 10 and meta["page_num"] == 7
 
@@ -353,11 +355,33 @@ async def test_ai_answer_success(monkeypatch):
     _patch_ai_answer(monkeypatch, session, redis, FakeLLM("AI 答案"), hits=hits)
     await ai_answer_worker.generate_ai_first_answer({}, 7)
     assert post.ai_first_answer == "AI 答案"
+    assert post.ai_citation_chunk_ids == []
     assert key not in redis.kv
     notifications = [o for o in session.added if isinstance(o, Notification)]
     assert len(notifications) == 1
     assert notifications[0].type == "ai_answer" and notifications[0].user_id == 9
     assert session.commits == 1
+
+
+async def test_ai_answer_persists_only_current_legal_citations(monkeypatch):
+    redis = FakeRedis()
+    post = make_post(7, author_id=9, board="qa")
+    session = FakeSession(gets={(Post, 7): post, (User, 9): make_user(9)})
+    hits = [{"chunk": SimpleNamespace(chunk_id="pub_d1_00001", content="参考资料")}]
+    answer = "有效 [pub_d1_00001]，幻觉 [pub_d9_99999]。"
+    _patch_ai_answer(monkeypatch, session, redis, FakeLLM(answer), hits=hits)
+    await ai_answer_worker.generate_ai_first_answer({}, 7)
+    assert post.ai_citation_chunk_ids == ["pub_d1_00001"]
+
+
+async def test_ai_answer_no_hits_refuses_without_calling_llm(monkeypatch):
+    redis = FakeRedis()
+    post = make_post(7, author_id=9, board="qa")
+    session = FakeSession(gets={(Post, 7): post, (User, 9): make_user(9)})
+    _patch_ai_answer(monkeypatch, session, redis, FakeLLM(fail=True), hits=[])
+    await ai_answer_worker.generate_ai_first_answer({}, 7)
+    assert "未检索到" in post.ai_first_answer
+    assert post.ai_citation_chunk_ids == []
 
 
 async def test_ai_answer_failure_retry_then_failed_state(monkeypatch):
@@ -673,7 +697,11 @@ async def test_answer_question_citation_mapping_failure_degrades(monkeypatch):
     """引用映射查询抛错（token 已流出）：降级为空 citations，仍收到 done 且 qa_logs 落库。"""
 
     async def _retrieve(*_args):
-        return [], None
+        chunk = SimpleNamespace(
+            chunk_id="pub_d1_00001", content="死锁资料", section="死锁",
+            chapter_id=1, scope="public",
+        )
+        return [{"chunk": chunk, "score": 0.1}], [1]
 
     async def _boom(*_args):
         raise RuntimeError("DB 不可用")

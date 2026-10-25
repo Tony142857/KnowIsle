@@ -234,12 +234,15 @@ async def get_course(
 async def course_leaderboard(
     course_id: int,
     db: Annotated[AsyncSession, Depends(get_db)],
+    user: Annotated[User | None, Depends(get_current_user_optional)],
     limit: int = Query(default=20, ge=1, le=100),
 ):
     """课程贡献榜：优先读 Redis Sorted Set（rank:course:{id}，grant_score 实时 ZINCRBY 增量）；
     键为空或 Redis 异常时退化到 score_logs 现算（compute_course_scores），并回写 Redis 自愈。"""
     course = await db.get(Course, course_id)
     if course is None or course.scope != "public":
+        raise HTTPException(status_code=404, detail="Not Found")
+    if course.status != "active" and (user is None or user.role != "admin"):
         raise HTTPException(status_code=404, detail="Not Found")
     key = f"rank:course:{course_id}"
     entries: list[tuple[int, float]] = []

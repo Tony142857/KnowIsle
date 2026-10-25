@@ -10,6 +10,7 @@ venv/
 .ruff_cache/
 .coverage
 htmlcov/
+.local/
 
 # 环境与密钥（绝不提交）
 .env
@@ -22,6 +23,7 @@ client/build/
 
 # 备份与本地数据
 backups/
+.v13-work/
 
 # IDE / 系统
 .idea/

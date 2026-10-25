@@ -7,6 +7,32 @@
 (function () {
   'use strict';
 
+  function adminTabs() {
+    const allowed = ['review', 'space', 'users', 'config', 'reports', 'dashboard'];
+    return {
+      tab: 'review',
+      init() {
+        const current = new URLSearchParams(window.location.search).get('tab');
+        this.tab = allowed.includes(current) ? current : 'review';
+        window.addEventListener('popstate', () => {
+          const tab = new URLSearchParams(window.location.search).get('tab');
+          this.tab = allowed.includes(tab) ? tab : 'review';
+          this.notify();
+        });
+        this.notify();
+      },
+      setTab(tab) {
+        if (!allowed.includes(tab)) return;
+        this.tab = tab;
+        const params = new URLSearchParams(window.location.search);
+        if (tab === 'review') params.delete('tab'); else params.set('tab', tab);
+        window.history.pushState({}, '', window.location.pathname + (params.toString() ? '?' + params : ''));
+        this.notify();
+      },
+      notify() { this.$nextTick(() => window.dispatchEvent(new CustomEvent('admin:tab', {detail: this.tab}))); },
+    };
+  }
+
   // 专业批量导入：优先按 JSON 解析，失败按逐行「名称,代码」解析
   function majorImport() {
     return {
@@ -42,12 +68,14 @@
   // 公共课程列表：状态过滤 + 审批通过 / 停用
   function adminCourses() {
     return {
-      status: '', items: [], total: 0, loading: false, loaded: false, error: '',
-      statusLabel(s) { return {active: '已开通', pending: '待审批', disabled: '已停用'}[s] || s; },
-      async load() {
+      status: '', items: [], total: 0, page: 1, size: 20, loading: false, loaded: false, error: '', busyCourse: null,
+      statusLabel(s) { return {active: '已开通', pending: '待审批', disabled: '已停用'}[s] || '未知状态'; },
+      onTab(tab) { if (tab === 'space' && !this.loaded && !this.loading) this.load(1); },
+      async load(page) {
+        this.page = Math.max(1, page || 1);
         this.loading = true; this.error = '';
         try {
-          const data = await ZY.api.get('/api/admin/courses?size=100'
+          const data = await ZY.api.get('/api/admin/courses?page=' + this.page + '&size=' + this.size
             + (this.status ? '&status=' + this.status : ''));
           this.items = data.items || [];
           this.total = data.total || 0;
@@ -61,7 +89,7 @@
           this.$dispatch('zy-ask', {
             title: '停用课程',
             message: '确认停用课程「' + c.name + '」？停用后不再公开展示。',
-            confirmText: '停用',
+            confirmText: '停用', danger: true,
             onConfirm: () => this.applyStatus(c, status),
           });
           return;
@@ -69,13 +97,14 @@
         this.applyStatus(c, status);
       },
       async applyStatus(c, status) {
-        this.loading = true; this.error = '';
+        if (this.busyCourse !== null) return;
+        this.busyCourse = c.id; this.error = '';
         try {
           await ZY.api.patch('/api/admin/courses/' + c.id, {status: status});
           c.status = status;
           ZY.toast(status === 'active' ? '课程已开通' : '课程已停用', 'success');
         } catch (e) { this.error = e.message; }
-        finally { this.loading = false; }
+        finally { this.busyCourse = null; }
       },
     };
   }
@@ -83,12 +112,13 @@
   // 创建课程：管理员直接 active；专业列表取自 GET /api/majors
   function createCourse() {
     return {
-      majors: [], form: {name: '', major_id: '', description: ''},
+      majors: [], majorsLoaded: false, form: {name: '', major_id: '', description: ''},
       loading: false, error: '', result: '',
+      onTab(tab) { if (tab === 'space' && !this.majorsLoaded && !this.loading) this.loadMajors(); },
       async loadMajors() {
         try {
           const data = await ZY.api.get('/api/majors');
-          this.majors = data.items || [];
+          this.majors = data.items || []; this.majorsLoaded = true;
         } catch (e) { this.error = e.message; }
       },
       async submit() {
@@ -114,11 +144,13 @@
   // 用户治理：搜索 + 分页首屏
   function adminUsers() {
     return {
-      q: '', items: [], total: 0, loading: false, loaded: false, error: '',
-      async load() {
+      q: '', items: [], total: 0, page: 1, size: 20, loading: false, loaded: false, error: '',
+      onTab(tab) { if (tab === 'users' && !this.loaded && !this.loading) this.load(1); },
+      async load(page) {
+        this.page = Math.max(1, page || 1);
         this.loading = true; this.error = '';
         try {
-          const data = await ZY.api.get('/api/admin/users?size=50'
+          const data = await ZY.api.get('/api/admin/users?page=' + this.page + '&size=' + this.size
             + (this.q.trim() ? '&q=' + encodeURIComponent(this.q.trim()) : ''));
           this.items = data.items || [];
           this.total = data.total || 0;
@@ -135,7 +167,8 @@
       u: u, open: false, role: u.role, delta: null, reason: '',
       logs: null, logsLoading: false,
       loading: false, error: '', msg: '',
-      roleLabel(r) { return {student: '学生', reviewer: '协审员', builder: '共建者', admin: '管理员'}[r] || r; },
+      roleLabel(r) { return {student: '学生', reviewer: '协审员', builder: '共建者', admin: '管理员'}[r] || '未知角色'; },
+      statusLabel(s) { return {active: '正常', muted: '禁言中', frozen: '已冻结'}[s] || '未知状态'; },
       async setRole() {
         if (this.role === this.u.role) { this.error = '角色未变更'; this.msg = ''; return; }
         this.loading = true; this.error = ''; this.msg = '';
@@ -147,10 +180,16 @@
         } catch (e) { this.error = e.message; this.role = this.u.role; }
         finally { this.loading = false; }
       },
-      async submitCredit() {
+      submitCredit() {
         this.error = ''; this.msg = '';
         if (!Number.isInteger(this.delta) || this.delta === 0) { this.error = '分值须为 ±1~100 的非零整数'; return; }
         if (!this.reason.trim()) { this.error = '请填写裁决理由'; return; }
+        this.$dispatch('zy-ask', {
+          title: '确认信用裁决', message: '将对「' + this.u.nickname + '」调整信用分 ' + this.delta + '，并可能触发限流、禁言或冻结。',
+          confirmText: '提交裁决', danger: this.delta < 0, onConfirm: () => this.applyCredit(),
+        });
+      },
+      async applyCredit() {
         this.loading = true;
         try {
           const data = await ZY.api.post('/api/admin/users/' + this.u.id + '/credit', {
@@ -179,20 +218,23 @@
   // 平台配置：行内编辑生效值 + 保存（PUT），422 detail 行内展示
   function adminConfig() {
     return {
-      items: [], drafts: {}, rowErrors: {}, rowMsgs: {},
-      loading: false, error: '',
+      items: [], drafts: {}, rowErrors: {}, rowMsgs: {}, loaded: false,
+      loading: false, error: '', savingKey: '',
+      onTab(tab) { if (tab === 'config' && !this.loaded && !this.loading) this.load(); },
       async load() {
         this.loading = true; this.error = '';
         try {
           const data = await ZY.api.get('/api/admin/config');
           this.items = data.items || [];
+          this.loaded = true;
           this.drafts = {};
           for (const item of this.items) this.drafts[item.key] = item.value;
         } catch (e) { this.error = e.message; }
         finally { this.loading = false; }
       },
       async save(item) {
-        this.loading = true;
+        if (this.savingKey) return;
+        this.savingKey = item.key;
         this.rowErrors = {...this.rowErrors, [item.key]: ''};
         this.rowMsgs = {...this.rowMsgs, [item.key]: ''};
         try {
@@ -204,7 +246,7 @@
           await this.load();
         } catch (e) {
           this.rowErrors = {...this.rowErrors, [item.key]: e.message};
-        } finally { this.loading = false; }
+        } finally { this.savingKey = ''; }
       },
     };
   }
@@ -215,14 +257,15 @@
     return {
       status: '', items: [], total: 0, page: 1, size: 20,
       loading: false, loaded: false, error: '', msg: '',
+      onTab(tab) { if (tab === 'reports' && !this.loaded && !this.loading) this.load(1); },
       statusLabel(s) {
-        return {open: '待处理', processing: '处理中', resolved: '已解决', dismissed: '已驳回'}[s] || s;
+        return {open: '待处理', processing: '处理中', resolved: '已解决', dismissed: '已驳回'}[s] || '未知状态';
       },
       targetLabel(t) {
-        return {resource: '资源', post: '帖子', comment: '评论', user: '用户'}[t] || t;
+        return {resource: '资源', post: '帖子', comment: '评论', user: '用户'}[t] || '其他对象';
       },
-      // 评论无法定位到楼层、用户无公开主页：这两类仅显示摘要文本
       targetLink(r) {
+        if (r.target_url && r.target_url.startsWith('/') && !r.target_url.startsWith('//')) return r.target_url;
         if (r.target_type === 'resource') return '/resources/' + r.target_id;
         if (r.target_type === 'post') return '/posts/' + r.target_id;
         return null;
@@ -250,7 +293,7 @@
           title: action === 'resolve' ? '解决举报' : '驳回举报',
           withInput: true,
           placeholder: action === 'resolve' ? '处理备注（选填）' : '驳回理由（选填）',
-          confirmText: action === 'resolve' ? '解决' : '驳回',
+          confirmText: action === 'resolve' ? '解决' : '驳回', danger: action === 'dismiss',
           onConfirm: (note) => this.submitHandle(r, action, note),
         });
       },
@@ -274,11 +317,15 @@
   // （x-show 隐藏容器尺寸为 0，ECharts 必须在 Tab 可见后的 nextTick 初始化）
   function adminDashboard() {
     return {
-      inited: false, loading: false, error: '', data: null, chart: null,
-      onShow() {
+      inited: false, loading: false, error: '', data: null, chart: null, resizeHandler: null,
+      init() {
+        this.resizeHandler = () => { if (this.chart) this.chart.resize(); };
+        window.addEventListener('resize', this.resizeHandler);
+      },
+      onTab(tab) {
+        if (tab !== 'dashboard') return;
         if (this.inited) {
-          // 再次切回时容器从隐藏恢复，需重算尺寸
-          if (this.chart) this.chart.resize();
+          this.$nextTick(() => { if (this.chart) this.chart.resize(); });
           return;
         }
         this.inited = true;
@@ -315,6 +362,7 @@
     };
   }
 
+  window.adminTabs = adminTabs;
   window.majorImport = majorImport;
   window.adminCourses = adminCourses;
   window.createCourse = createCourse;

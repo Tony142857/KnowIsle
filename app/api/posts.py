@@ -8,7 +8,7 @@ v0.7：经验长廊发帖入队 AI 摘要异步生成（§11.7 提示词，写�
 
 import logging
 from datetime import UTC, datetime
-from typing import Annotated
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
@@ -317,7 +317,9 @@ async def get_post(
             # Redis 故障仅记日志放行：按无状态键处理（与项目容错惯例一致）
             logger.warning("AI 首答状态键读取失败 post_id=%s", post.id, exc_info=True)
     ai_citations = (
-        await build_ai_citations(db, post.ai_first_answer) if post.ai_first_answer else []
+        await build_ai_citations(db, post.ai_first_answer, post)
+        if post.ai_first_answer
+        else []
     )
     summary_state = None
     if post.board == "experience" and not post.ai_summary:
@@ -350,6 +352,56 @@ async def get_post(
         "accepted_comment_id": post.accepted_comment_id,
         "created_at": post.created_at.isoformat() if post.created_at else None,
     }
+
+
+class AiRetryRequest(BaseModel):
+    kind: Literal["answer", "summary"]
+
+
+@router.post("/{post_id}/ai-retry")
+async def retry_post_ai(
+    post_id: int,
+    payload: AiRetryRequest,
+    user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    """帖主/admin 重试失败的 AI 首答或摘要；pending/done 均不重复入队。"""
+    post = await db.get(Post, post_id, with_for_update=True, populate_existing=True)
+    if post is None or (post.author_id != user.id and user.role != "admin"):
+        raise HTTPException(status_code=404, detail="Not Found")
+    expected_board = "qa" if payload.kind == "answer" else "experience"
+    if post.board != expected_board:
+        raise HTTPException(status_code=422, detail="该帖子不支持此类 AI 任务")
+    content = post.ai_first_answer if payload.kind == "answer" else post.ai_summary
+    if content:
+        return {"post_id": post.id, "kind": payload.kind, "status": "done", "queued": False}
+
+    key = ai_answer_key(post.id) if payload.kind == "answer" else exp_summary_key(post.id)
+    job = "generate_ai_first_answer" if payload.kind == "answer" else "generate_experience_summary"
+    ttl = AI_ANSWER_KEY_TTL if payload.kind == "answer" else SUMMARY_KEY_TTL
+    redis = get_redis()
+    acquired = await redis.set(key, "pending", ex=ttl, nx=True)
+    if acquired is None:
+        state = await redis.get(key)
+        if state == "pending":
+            return {
+                "post_id": post.id,
+                "kind": payload.kind,
+                "status": "pending",
+                "queued": False,
+            }
+        await redis.set(key, "pending", ex=ttl)
+    if payload.kind == "answer":
+        post.ai_citation_chunk_ids = None
+    await db.commit()
+    try:
+        pool = await get_arq_pool()
+        await pool.enqueue_job(job, post.id)
+    except Exception as exc:
+        await redis.set(key, "failed", ex=ttl)
+        logger.exception("AI 重试入队失败 post_id=%s kind=%s", post.id, payload.kind)
+        raise HTTPException(status_code=503, detail="AI 任务暂时无法入队，请稍后重试") from exc
+    return {"post_id": post.id, "kind": payload.kind, "status": "pending", "queued": True}
 
 
 # ---------------------------------------------------------------------------
@@ -454,7 +506,7 @@ async def create_comment(
                     user_id=post.author_id,
                     type="bounty",
                     title=f"你的求援有了新响应：{post.title}",
-                    link=f"/posts/{post.id}",
+                    link=f"/posts/{post.id}#comment-{comment.id}",
                 )
             )
     await db.commit()
@@ -513,7 +565,7 @@ async def accept_comment(
                         user_id=comment.author_id,
                         type="bounty",
                         title=f"你的响应被采纳，获得悬赏 {award} 分",
-                        link=f"/posts/{post.id}",
+                        link=f"/posts/{post.id}#comment-{comment.id}",
                     )
                 )
                 db.add(
@@ -522,7 +574,7 @@ async def accept_comment(
                         type="bounty",
                         title=f"求援已结算：{post.title}",
                         body=f"悬赏 {award} 分已转给响应者",
-                        link=f"/posts/{post.id}",
+                        link=f"/posts/{post.id}#comment-{comment.id}",
                     )
                 )
         else:
@@ -537,7 +589,7 @@ async def accept_comment(
                     user_id=comment.author_id,
                     type="accepted",
                     title="你的回答被采纳",
-                    link=f"/posts/{post.id}",
+                    link=f"/posts/{post.id}#comment-{comment.id}",
                 )
             )
     else:

@@ -50,11 +50,13 @@ async def retrieval_trace(
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
     """检索链路详情（调试）：返回命中 chunk 列表与融合得分，不消耗额度、不调用 LLM。"""
-    hits, _ = await pipeline.retrieve(db, body.question, user, body.course_id, body.scope)
+    hits, coarse_ids = await pipeline.retrieve(db, body.question, user, body.course_id, body.scope)
     return {
         "question": body.question,
         "course_id": body.course_id,
         "scope": body.scope,
+        "coarse_chapter_ids": coarse_ids,
+        "retrieval_metrics": getattr(hits, "metrics", {}),
         "hits": [
             {
                 "chunk_id": h["chunk"].chunk_id,
@@ -62,6 +64,10 @@ async def retrieval_trace(
                 "chapter_id": h["chunk"].chapter_id,
                 "page_num": h["chunk"].page_num,
                 "score": round(h["score"], 6),
+                "sources": h.get("sources", []),
+                "route": h.get("route", body.scope),
+                "fallback": h.get("fallback", False),
+                "distance": getattr(h["chunk"], "_rag_distance", None),
                 "snippet": h["chunk"].content[:80],
             }
             for h in hits

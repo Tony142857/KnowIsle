@@ -12,9 +12,10 @@ import logging
 from fastapi import HTTPException
 
 from app.community.posts import AI_ANSWER_KEY_TTL, ai_answer_key
+from app.core.context import prompt_text
 from app.core.llm.prompts import AI_FIRST_ANSWER_PROMPT
 from app.core.llm.router import ModelTier, get_official_client
-from app.core.pipeline import retrieve
+from app.core.pipeline import extract_citations, retrieve
 from app.storage.cache import get_redis
 from app.storage.db import SessionLocal
 from app.storage.models import Notification, Post, User
@@ -44,16 +45,28 @@ async def generate_ai_first_answer(ctx: dict, post_id: int) -> None:
         try:
             question = f"{post.title}\n{post.content[:_QUERY_CONTENT_LIMIT]}"
             hits, _ = await retrieve(session, question, author, post.course_id, "public")
-            context = "\n\n".join(
-                f"[{h['chunk'].chunk_id}]\n{h['chunk'].content}" for h in hits
-            )
-            prompt = AI_FIRST_ANSWER_PROMPT.format(
-                context=context or "（未检索到相关资料）", question=question
-            )
-            answer, _ = await get_official_client(ModelTier.SHORT).chat(
-                [{"role": "user", "content": prompt}]
-            )
+            if getattr(hits, "metrics", {}).get("weak_evidence"):
+                hits = []
+            evidence_ids = {hit["chunk"].chunk_id for hit in hits}
+            if hits:
+                context = "\n\n".join(
+                    prompt_text(
+                        hit["chunk"], getattr(hit["chunk"], "_rag_chapter_title", None)
+                    )
+                    for hit in hits
+                )
+                prompt = AI_FIRST_ANSWER_PROMPT.format(context=context, question=question)
+                answer, _ = await get_official_client(ModelTier.SHORT).chat(
+                    [{"role": "user", "content": prompt}]
+                )
+            else:
+                answer = (
+                    "以下为 AI 基于社区资料的参考回答，欢迎同学补充纠正。"
+                    "当前公共资料中未检索到足以回答该问题的内容，请补充具体章节或相关课件；"
+                    "也欢迎了解该课程的同学补充实战经验。"
+                )
             post.ai_first_answer = answer
+            post.ai_citation_chunk_ids = extract_citations(answer, evidence_ids)
             session.add(
                 Notification(
                     user_id=post.author_id,

@@ -1,6 +1,6 @@
 """REST API 路由聚合（接口总表见文档 §12.1）。页面渲染与 API 同源提供。"""
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 
 from app.api import (
     admin,
@@ -8,6 +8,7 @@ from app.api import (
     chat,
     courses,
     documents,
+    experience_validation,
     favorites,
     feed,
     follows,
@@ -32,7 +33,10 @@ api_router.include_router(library.router)
 api_router.include_router(resources.router)
 api_router.include_router(chat.router)
 api_router.include_router(review.router)
-api_router.include_router(posts.router)
+api_router.include_router(
+    posts.router,
+    dependencies=[Depends(experience_validation.validate_experience_request)],
+)
 api_router.include_router(votes.router)
 api_router.include_router(favorites.router)
 api_router.include_router(follows.router)

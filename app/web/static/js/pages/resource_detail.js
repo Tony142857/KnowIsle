@@ -66,6 +66,85 @@
     };
   };
 
+  window.resourcePreview = function (url) {
+    return {
+      previewUrl: '', loading: false, failed: false, error: '', attempts: 0,
+      loadPreview() {
+        this.loading = true; this.failed = false; this.error = '';
+        this.previewUrl = url + (url.includes('?') ? '&' : '?') + 'retry=' + (++this.attempts);
+      },
+      checkPreview(event) {
+        this.loading = false;
+        try {
+          const doc = event.target.contentDocument;
+          if (doc && doc.contentType === 'application/json') {
+            this.failed = true;
+            this.previewUrl = '';
+            this.error = '预览仍在生成或暂时不可用，请稍后重试。';
+          }
+        } catch (e) { this.failed = false; }
+      },
+    };
+  };
+
+  window.resourceDownload = function (resourceId, cost, isSelf) {
+    if (isSelf) cost = 0;
+    return {
+      loading: false, error: '',
+      async requestDownload() {
+        this.error = '';
+        if (cost > 0) {
+          this.loading = true;
+          try {
+            const me = await ZY.api.get('/api/users/me');
+            const after = me.score - cost;
+            if (after < 0) {
+              this.error = '贡献分余额不足，还差 ' + (-after) + ' 分。';
+              return;
+            }
+            this.$dispatch('zy-ask', {
+              title: '确认付费下载',
+              message: '本次下载消耗 ' + cost + ' 贡献分；当前余额 ' + me.score + ' 分，下载后余额 ' + after + ' 分。',
+              confirmText: '确认下载', onConfirm: () => this.download(),
+            });
+          } catch (e) { this.error = e.message; }
+          finally { this.loading = false; }
+          return;
+        }
+        this.$dispatch('zy-ask', {
+          title: '下载资料', message: '确认下载该资料原件？', confirmText: '下载',
+          onConfirm: () => this.download(),
+        });
+      },
+      async download() {
+        if (this.loading) return;
+        this.loading = true; this.error = '';
+        try {
+          const response = await fetch('/api/resources/' + resourceId + '/download', {
+            credentials: 'same-origin', headers: {Accept: '*/*'},
+          });
+          if (!response.ok) {
+            const data = await response.json().catch(() => ({}));
+            const detail = data.detail;
+            throw new Error(typeof detail === 'string' ? detail : '下载失败（' + response.status + '），请稍后重试');
+          }
+          const blob = await response.blob();
+          const disposition = response.headers.get('Content-Disposition') || '';
+          const encoded = disposition.match(/filename\*=UTF-8''([^;]+)/i);
+          const plain = disposition.match(/filename="?([^";]+)"?/i);
+          const name = encoded ? decodeURIComponent(encoded[1]) : (plain ? plain[1] : '知屿资料');
+          const href = URL.createObjectURL(blob);
+          const link = document.createElement('a');
+          link.href = href; link.download = name;
+          document.body.appendChild(link); link.click(); link.remove();
+          setTimeout(() => URL.revokeObjectURL(href), 1000);
+          ZY.toast('下载已开始', 'success');
+        } catch (e) { this.error = e.message || '下载失败，请稍后重试'; }
+        finally { this.loading = false; }
+      },
+    };
+  };
+
   window.ratingBox = function (resourceId, initial) {
     return {
       myRating: initial, hover: 0, loading: false, error: '',

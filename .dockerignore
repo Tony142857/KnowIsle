@@ -5,6 +5,8 @@
 **/*.pyc
 .pytest_cache
 .ruff_cache
+.local
+.v13-work
 client/dist
 client/build
 backups

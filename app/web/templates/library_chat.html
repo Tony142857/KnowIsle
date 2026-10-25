@@ -1,21 +1,17 @@
 {% extends "base.html" %}
 {% block title %}AI 问答 · {{ course.name }} · 知屿 KnowIsle{% endblock %}
 {% block head %}
-{# 页面交互逻辑已外置（CSP 兼容）：SSE 流式问答 / 引用溯源跳转。
-   同步加载（勿加 defer）：须在 defer 的 Alpine 启动前执行，x-data 才能找到全局工厂函数 #}
 <script src="/static/js/pages/library_chat.js"></script>
 {% endblock %}
 {% from "_icons.html" import icon %}
 {% from "_page_header.html" import page_header %}
 {% block content %}
-{# 惰性数据块：application/json 不会被 CSP 拦截、不会执行，JS 里 JSON.parse 读取 #}
-<script type="application/json" id="page-data">{{ {"course_id": course.id, "default_scope": default_scope} | tojson }}</script>
-<div x-data="chatPage()">
+<script type="application/json" id="page-data">{{ {"course_id": course.id, "course_name": course.name, "default_scope": default_scope} | tojson }}</script>
+<div x-data="chatPage()" x-init="init()">
   {% call page_header(course.name ~ ' · AI 问答',
                       back_href='/library' if course.scope == 'personal' else '/courses/' ~ course.id,
                       back_label='返回个人知识库' if course.scope == 'personal' else '返回课程空间') %}
-    {# 检索范围三态（§4.3：个人库 / 公共库 / 混合）；公共课程无个人库语料，不展示「个人库」档。
-       分段控件样式；radio 用 sr-only 保持键盘可达，:focus-visible 经 has() 透出焦点环 #}
+    <button type="button" @click="newChat()" class="btn btn-ghost">新对话</button>
     <div class="flex max-w-full items-center gap-1 overflow-x-auto rounded-full border border-brand-100 bg-brand-50/50 p-1 text-sm"
          role="radiogroup" aria-label="检索范围">
       {% set scope_options = [('personal', '个人库'), ('public', '公共库'), ('mixed', '混合')]
@@ -24,89 +20,91 @@
       <label class="shrink-0 cursor-pointer rounded-full px-3 py-1 transition-colors duration-island ease-island
                     has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-brand-400"
              :class="scope === '{{ key }}' ? 'bg-brand-600 text-white font-medium shadow-sm' : 'text-slate-500 hover:text-brand-700'">
-        <input type="radio" name="scope" value="{{ key }}" x-model="scope" class="sr-only">
+        <input type="radio" name="scope" value="{{ key }}" x-model="scope" class="sr-only" :disabled="sending">
         {{ label }}
       </label>
       {% endfor %}
     </div>
   {% endcall %}
 
-  {# 对话区（小屏降高，避免输入区被首屏挤出） #}
-  <div x-ref="msgBox" class="h-[46vh] space-y-4 overflow-y-auto rounded-card border border-slate-200 bg-white p-4 shadow-card sm:h-[58vh]">
-    <div x-show="!messages.length" class="py-16 text-center text-sm text-slate-400">
-      {{ icon('chat', 'mx-auto mb-3 h-10 w-10 text-brand-200') }}
-      <p>基于本课程资料库向 AI 提问，回答附引用溯源。</p>
-      <p class="mt-1 text-xs">示例：这门课第三章的重点是什么？</p>
-    </div>
+  <section aria-label="当前问答范围与额度" class="mb-3 rounded-lg border border-brand-100 bg-brand-50/50 px-3 py-2 text-xs text-slate-600">
+    <p><span class="font-medium text-slate-700">当前课程：{{ course.name }}</span><span class="mx-1">·</span><span x-text="scopeText()"></span></p>
+    <p class="mt-1">
+      <span x-show="quota" x-text="quotaText()"></span>
+      <span x-show="quotaError" role="alert" class="text-red-700">额度信息暂不可用</span>
+      <button type="button" x-show="quotaError" @click="loadQuota()" class="ml-2 text-brand-700 underline">重试</button>
+      <a href="/me" class="ml-2 text-brand-700 hover:underline">查看额度</a>
+    </p>
+  </section>
 
-    <template x-for="(msg, i) in messages" :key="i">
-      <div class="animate-fade-up">
-        {# 用户气泡：右侧 brand 底白字 #}
-        <div x-show="msg.role === 'user'" class="flex justify-end">
-          <div class="max-w-[75%] whitespace-pre-wrap rounded-2xl rounded-br-sm bg-brand-600 px-4 py-2.5 text-sm leading-6 text-white shadow-card"
-               x-text="msg.text"></div>
-        </div>
-        {# AI 气泡：左侧白底边框，引用列表跟在气泡下方 #}
-        <div x-show="msg.role === 'ai'" class="flex flex-col items-start gap-2">
-          <div class="w-full max-w-[85%] rounded-2xl rounded-tl-sm border border-slate-200 bg-white px-4 py-3 shadow-card">
-            <div x-show="msg.error" class="rounded bg-red-50 px-3 py-2 text-sm text-red-600"
-                 x-text="msg.error"></div>
-            {# 流式过程保持纯文本逐字渲染（x-text），done 后整段 Markdown 重渲染，
-               避免中途解析半截标记闪烁；首个 token 到达前显示三点打字指示器 #}
-            <div x-show="!msg.error && !msg.done && !msg.text"
-                 class="flex items-center gap-1.5 py-1.5" aria-label="AI 正在输入">
-              <span class="typing-dot animate-pulse-dot"></span>
-              <span class="typing-dot animate-pulse-dot d-150"></span>
-              <span class="typing-dot animate-pulse-dot d-300"></span>
-            </div>
-            <div x-show="!msg.error && !msg.done && msg.text" class="whitespace-pre-wrap text-sm leading-6 text-slate-700"
-                 x-text="msg.text"></div>
-            <div x-show="!msg.error && msg.done" x-cloak class="md-body text-sm"
-                 x-effect="if (msg.done) ZY.md.renderInto($el, msg.text)"></div>
-
-            {# token 用量与耗时 #}
-            <p x-show="msg.usage" class="mt-2 text-xs text-slate-400"
-               x-text="msg.usage ? ('本次消耗 ' + msg.usage.token_usage + ' tokens · 耗时 ' +
-                      (msg.usage.latency_ms / 1000).toFixed(1) + ' s') : ''"></p>
-          </div>
-
-          {# 引用列表：气泡下方的小号卡片，点击跳转原文溯源页并高亮对应 chunk #}
-          <div x-show="msg.citations.length" class="w-full max-w-[85%] space-y-1.5">
-            <p class="text-xs font-medium text-slate-400">引用来源</p>
-            <template x-for="c in msg.citations" :key="c.chunk_id">
-              <a :href="'/documents/' + c.document_id + '/source#' + encodeURIComponent(c.chunk_id)"
-                 target="_blank"
-                 class="card-hover block rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs shadow-card">
-                <p class="flex flex-wrap items-center gap-1.5">
-                  <span x-show="c.chapter" class="badge badge-brand"
-                        x-text="c.chapter"></span>
-                  <span x-show="c.section" class="badge badge-slate"
-                        x-text="c.section"></span>
-                  <span x-show="c.page_num != null" class="text-slate-400"
-                        x-text="'第 ' + c.page_num + ' 页'"></span>
-                  <span class="badge"
-                        :class="c.source_scope === 'public' ? 'badge-accent' : 'badge-brand'"
-                        x-text="c.source_scope === 'public' ? '公共库' : '个人库'"></span>
-                  <span x-show="c.uploader" class="badge badge-slate"
-                        x-text="'by ' + c.uploader"></span>
-                </p>
-                <p class="mt-1 line-clamp-2 leading-5 text-slate-500" x-text="c.snippet"></p>
-              </a>
-            </template>
-          </div>
-        </div>
+  <div class="relative">
+    <div x-ref="msgBox" @scroll="onScroll()" :aria-busy="sending" aria-label="对话记录"
+         class="h-[46vh] space-y-4 overflow-y-auto rounded-card border border-slate-200 bg-white p-4 shadow-card sm:h-[58vh]">
+      <div x-show="!messages.length" class="py-16 text-center text-sm text-slate-400">
+        {{ icon('chat', 'mx-auto mb-3 h-10 w-10 text-brand-200') }}
+        <p>基于本课程资料库向 AI 提问，回答附引用溯源。</p>
+        <p class="mt-1 text-xs">示例：这门课第三章的重点是什么？</p>
       </div>
-    </template>
+
+      <template x-for="(msg, i) in messages" :key="msg.id">
+        <div class="animate-fade-up">
+          <div x-show="msg.role === 'user'" class="flex justify-end">
+            <div class="max-w-[85%] whitespace-pre-wrap rounded-2xl rounded-br-sm bg-brand-600 px-4 py-2.5 text-sm leading-6 text-white shadow-card sm:max-w-[75%]"
+                 x-text="msg.text"></div>
+          </div>
+          <div x-show="msg.role === 'ai'" class="flex flex-col items-start gap-2">
+            <div class="w-full max-w-full rounded-2xl rounded-tl-sm border border-slate-200 bg-white px-4 py-3 shadow-card sm:max-w-[85%]">
+              <div x-show="msg.error" x-cloak role="alert" class="rounded bg-red-50 px-3 py-2 text-sm text-red-700">
+                <p x-text="msg.error"></p>
+                <button type="button" @click="retry(i)" :disabled="sending" class="mt-2 font-medium text-red-800 underline">保留问题并重试</button>
+              </div>
+              <div x-show="!msg.error && !msg.done && !msg.text" class="flex items-center gap-1.5 py-1.5" aria-label="AI 正在输入">
+                <span class="typing-dot animate-pulse-dot"></span><span class="typing-dot animate-pulse-dot d-150"></span><span class="typing-dot animate-pulse-dot d-300"></span>
+              </div>
+              <div x-show="!msg.done && msg.text" class="whitespace-pre-wrap text-sm leading-6 text-slate-700" x-text="msg.text"></div>
+              <div x-show="msg.done && msg.text" x-cloak class="md-body text-sm" x-effect="if (msg.done) ZY.md.renderInto($el, msg.text)"></div>
+              <p x-show="msg.stopped" class="mt-2 text-xs text-slate-500">本次回答已停止；未发送新请求，不会重复扣减。</p>
+              <p x-show="msg.usage" class="mt-2 text-xs text-slate-400"
+                 x-text="msg.usage ? ('本次消耗 ' + msg.usage.token_usage + ' tokens · 耗时 ' + (msg.usage.latency_ms / 1000).toFixed(1) + ' s') : ''"></p>
+              <button type="button" x-show="msg.text && msg.done" @click="copy(msg.text)" class="mt-2 text-xs text-brand-700 hover:underline">复制回答</button>
+            </div>
+
+            <div x-show="msg.citations.length" class="w-full max-w-full space-y-1.5 sm:max-w-[85%]">
+              <p class="text-xs font-medium text-slate-400">引用来源</p>
+              <template x-for="c in msg.citations" :key="c.chunk_id">
+                <a :href="'/documents/' + c.document_id + '/source?from=' + encodeURIComponent(location.pathname + location.search) + '#' + encodeURIComponent(c.chunk_id)"
+                   target="_blank" rel="noopener" class="card-hover block rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs shadow-card">
+                  <p class="flex flex-wrap items-center gap-1.5">
+                    <span x-show="c.chapter" class="badge badge-brand" x-text="c.chapter"></span>
+                    <span x-show="c.section" class="badge badge-slate" x-text="c.section"></span>
+                    <span x-show="c.page_num != null" class="text-slate-400" x-text="'第 ' + c.page_num + ' 页'"></span>
+                    <span class="badge" :class="c.source_scope === 'public' ? 'badge-accent' : 'badge-brand'" x-text="c.source_scope === 'public' ? '公共库' : '个人库'"></span>
+                    <span x-show="c.uploader" class="badge badge-slate" x-text="'by ' + c.uploader"></span>
+                  </p>
+                  <p class="mt-1 line-clamp-2 leading-5 text-slate-500" x-text="c.snippet"></p>
+                </a>
+              </template>
+            </div>
+          </div>
+        </div>
+      </template>
+    </div>
+    <button type="button" x-show="!autoScroll" x-cloak @click="resumeScroll()"
+            class="absolute bottom-3 left-1/2 -translate-x-1/2 rounded-full bg-slate-800 px-3 py-1.5 text-xs text-white shadow-lift">回到最新回答</button>
   </div>
 
-  {# 输入区：底部吸底大输入区（圆角 textarea + 发送按钮） #}
-  <div class="sticky bottom-4 mt-4 flex items-end gap-2 rounded-2xl border border-slate-200 bg-white p-2 shadow-lift">
-    <textarea x-model="question" rows="2" placeholder="输入问题，Enter 发送，Shift+Enter 换行"
-              @keydown.enter.prevent="if (!$event.shiftKey) send()"
-              class="flex-1 resize-none rounded-xl border-0 bg-transparent px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-300"></textarea>
-    <button @click="send()" :disabled="sending"
-            class="rounded-xl bg-brand-600 px-5 py-2.5 text-sm text-white transition-colors hover:bg-brand-700 disabled:opacity-50"
-            x-text="sending ? '回答中…' : '发送'"></button>
+  <div class="sticky bottom-4 mt-4 rounded-2xl border border-slate-200 bg-white p-2 shadow-lift" :aria-busy="sending">
+    <label for="chat-question" class="sr-only">向当前课程资料提问</label>
+    <div class="flex items-end gap-2">
+      <textarea id="chat-question" x-ref="questionInput" x-model="question" rows="2" maxlength="2000"
+                placeholder="输入问题，Enter 发送，Shift+Enter 换行"
+                @keydown.enter="handleEnter($event)" @compositionstart="composing = true" @compositionend="composing = false"
+                class="min-w-0 flex-1 resize-none rounded-xl border-0 bg-transparent px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-300"></textarea>
+      <button type="button" x-show="sending" @click="stop()" class="btn btn-ghost !rounded-xl !px-4">停止</button>
+      <button type="button" @click="send()" :disabled="sending || !question.trim()" :aria-busy="sending"
+              class="btn btn-primary !rounded-xl !px-5">发送</button>
+    </div>
+    <p class="px-3 pb-1 text-xs text-slate-400">向上阅读时暂停自动滚动；失败不会清空当前问题。</p>
   </div>
 </div>
 {% endblock %}

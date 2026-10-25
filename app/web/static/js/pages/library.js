@@ -1,25 +1,24 @@
-/* 个人知识库页（library.html）交互逻辑（v1.1 翡翠绿·海岛改版）。
- * 模板 head 块内同步加载（勿加 defer）：须在 defer 的 Alpine 启动前定义全局工厂函数。
- *
- * v1.1 变更：
- * - JSON 请求统一走 ZY.api（消灭裸 fetch；文件上传为 multipart，ZY.api 仅支持 JSON，
- *   上传保留 fetch 并附 shimmer 进度条与按钮禁用反馈）；
- * - 消灭整页 location.reload()：新建学期/课程/章节成功改为客户端局部插入 + ZY.toast；
- * - 投稿 modal 接入 ZY.bindModalA11y（role=dialog/焦点圈定/Esc/焦点还原），
- *   成功 toast + 行内「审核中」徽章局部更新（submitted 映射）；
- * - 文档列表时间在 init 时经 ZY.relTime 转为相对格式（[data-rel-time] 挂载点）。 */
+/* 个人知识库：局部课程管理、真实进度上传、解析恢复与投稿状态。 */
 (function () {
   'use strict';
 
-  // 学期分组容器 / 新建课程学期下拉 / 未分组网格的 DOM id 约定（与 library.html 对齐）
-  function semesterGroupsEl() { return document.getElementById('semester-groups'); }
+  var MAX_FILE_SIZE = 50 * 1024 * 1024;
+  var POLL_TIMEOUT = 10 * 60 * 1000;
+  var ACCEPTED = ['.pdf', '.pptx', '.docx', '.md', '.markdown'];
 
+  function semesterGroupsEl() { return document.getElementById('semester-groups'); }
   function hideLibraryEmpty() {
     const el = document.getElementById('library-empty');
     if (el) el.classList.add('hidden');
   }
+  function reducedMotion() {
+    return window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  }
+  function extension(name) {
+    const i = name.lastIndexOf('.');
+    return i >= 0 ? name.slice(i).toLowerCase() : '';
+  }
 
-  // 新建学期成功：追加学期分组 section（含空课程网格），并同步新建课程表单下拉
   function appendSemesterSection(s) {
     hideLibraryEmpty();
     const host = semesterGroupsEl();
@@ -50,18 +49,12 @@
     }
   }
 
-  // 新建课程成功：向目标学期/未分组网格追加课程卡片。
-  // 卡片含 Alpine 绑定（添加章节/上传资料），Alpine 3 经 MutationObserver 自动初始化
-  // 新增 DOM 上的 x-data/@click；结构与模板 course_card 宏保持一致。
   function appendCourseCard(c) {
     hideLibraryEmpty();
-    const gridId = c.semester_id ? 'course-grid-' + c.semester_id : 'course-grid-none';
-    let grid = document.getElementById(gridId);
-    if (!grid && c.semester_id) return; // 目标学期 section 不在本页（理论不发生）
+    const grid = document.getElementById(c.semester_id ? 'course-grid-' + c.semester_id : 'course-grid-none');
     if (!grid) return;
     const uncat = document.getElementById('sem-section-none');
     if (!c.semester_id && uncat) uncat.classList.remove('hidden');
-
     const card = document.createElement('div');
     card.className = 'card card-hover animate-fade-up p-4';
     card.innerHTML =
@@ -69,51 +62,86 @@
         '<h3 class="text-card-title text-slate-800" data-role="name"></h3>' +
         '<span class="text-xs text-slate-400">0 份资料</span>' +
         '<div class="ml-auto flex flex-wrap items-center gap-2 text-sm">' +
-          '<a href="/library/chat?course_id=' + c.id + '" class="text-brand-600 transition-colors hover:text-brand-700 hover:underline">AI 问答</a>' +
-          '<a href="/library/review?course_id=' + c.id + '" class="text-brand-600 transition-colors hover:text-brand-700 hover:underline">复习工具</a>' +
-          '<button type="button" @click="chapterFormFor = chapterFormFor === ' + c.id + ' ? null : ' + c.id + '; chapterTitle = \'\'"' +
-                  ' class="btn btn-ghost !px-3 !py-1.5 text-xs">添加章节</button>' +
-          '<button type="button" @click="uploadFormFor = uploadFormFor === ' + c.id + ' ? null : ' + c.id + '; uploadFile = null"' +
-                  ' class="btn btn-ghost !px-3 !py-1.5 text-xs">上传资料</button>' +
+          '<a href="/library/chat?course_id=' + c.id + '" class="text-brand-600 hover:underline">AI 问答</a>' +
+          '<a href="/library/review?course_id=' + c.id + '" class="text-brand-600 hover:underline">复习工具</a>' +
+          '<button type="button" @click="chapterFormFor = chapterFormFor === ' + c.id + ' ? null : ' + c.id + '; chapterTitle = \'\'" class="btn btn-ghost !px-3 !py-1.5 text-xs">添加章节</button>' +
+          '<button type="button" data-upload-course="' + c.id + '" @click="openUpload(' + c.id + ')" class="btn btn-ghost !px-3 !py-1.5 text-xs">上传资料</button>' +
         '</div>' +
       '</div>' +
       '<div id="chapter-list-' + c.id + '" class="mt-2 flex flex-wrap items-center gap-1.5"></div>' +
-      '<div x-show="chapterFormFor === ' + c.id + '" x-cloak' +
-           ' class="mt-3 flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 p-3">' +
-        '<input type="text" x-model="chapterTitle" placeholder="章节标题" class="input-base flex-1 !py-1.5">' +
-        '<button type="button" @click="createChapter(' + c.id + ')" :disabled="loading"' +
-                ' class="btn btn-primary !px-3 !py-1.5">添加</button>' +
+      '<div x-show="chapterFormFor === ' + c.id + '" x-cloak class="mt-3 flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 p-3">' +
+        '<label for="new-chapter-' + c.id + '" class="sr-only">章节标题</label>' +
+        '<input id="new-chapter-' + c.id + '" type="text" x-model="chapterTitle" placeholder="章节标题" class="input-base flex-1 !py-1.5">' +
+        '<button type="button" @click="createChapter(' + c.id + ')" :disabled="loading" class="btn btn-primary !px-3 !py-1.5">添加</button>' +
       '</div>' +
-      '<div x-show="uploadFormFor === ' + c.id + '" x-cloak' +
-           ' class="mt-3 space-y-2 rounded-lg border border-slate-200 bg-slate-50 p-3">' +
-        '<div class="flex flex-wrap items-center gap-2">' +
-          '<input type="file" @change="uploadFile = $event.target.files[0] || null"' +
-                 ' class="text-sm text-slate-500 file:mr-2 file:rounded-md file:border-0 file:bg-brand-50 file:px-3 file:py-1.5 file:text-sm file:text-brand-700 file:transition-colors hover:file:bg-brand-100">' +
-          '<button type="button" @click="upload(' + c.id + ')" :disabled="loading"' +
-                  ' class="btn btn-primary !px-3 !py-1.5">上传</button>' +
-        '</div>' +
-        '<p class="text-xs text-slate-400">支持 PDF 教材 / PPT / Word / Markdown，上传后自动解析入库。</p>' +
+      '<div x-show="uploadFormFor === ' + c.id + '" x-cloak class="upload-dropzone mt-3 p-4" :class="{\'is-dragging\': draggingCourse === ' + c.id + '}"' +
+           ' @dragenter.prevent="draggingCourse = ' + c.id + '" @dragover.prevent @dragleave.prevent="draggingCourse = null" @drop.prevent="selectDropped(' + c.id + ', $event)">' +
+        '<label for="upload-file-' + c.id + '" class="block cursor-pointer text-sm font-medium text-brand-700">拖拽文件到这里，或选择文件</label>' +
+        '<input id="upload-file-' + c.id + '" type="file" accept=".pdf,.pptx,.docx,.md,.markdown" @change="selectFile(' + c.id + ', $event.target.files[0] || null)" class="mt-2 block w-full text-sm">' +
+        '<p class="mt-2 text-xs text-slate-500">支持 PDF、PPTX、DOCX、Markdown，单文件不超过 50MB；旧 .doc/.ppt 请先另存为新格式。</p>' +
+        '<button type="button" @click="upload(' + c.id + ')" :disabled="uploading || !uploadFile || uploadCourseId !== ' + c.id + '" class="btn btn-primary mt-3 !px-3 !py-1.5">上传</button>' +
+        '<span x-show="uploading" class="ml-2 text-xs" x-text="\'上传 \' + uploadProgress + \'%\'"></span>' +
+        '<progress x-show="uploading" max="100" :value="uploadProgress" class="mt-3 h-2 w-full accent-brand-600"></progress>' +
       '</div>' +
-      '<p class="mt-3 text-xs text-slate-400">暂无资料。点击「上传资料」导入课件 / 教材，解析完成后即可向 AI 提问。</p>';
+      '<ul class="mt-3"><template x-for="d in (pending[' + c.id + '] || [])" :key="d.id">' +
+        '<li :id="\'document-\' + d.id" class="py-2 text-sm">' +
+          '<span x-text="d.file_name"></span>' +
+          '<span class="badge ml-2" :class="statusClass(d.status)" x-text="statusLabel(d.status)"></span>' +
+          '<a x-show="d.status === \'parsed\'" :href="\'/documents/\' + d.id + \'/source\'" class="ml-2 text-xs text-brand-600">原文溯源</a>' +
+          '<button type="button" x-show="d.status === \'parsed\' && !submitted[d.id]" @click="openSubmit(d.id, d.file_name)" class="ml-2 text-xs text-brand-600">投稿到公共库</button>' +
+          '<button type="button" x-show="submitted[d.id]" @click="retrySubmission(d.id)" class="ml-2 text-xs text-brand-700">重试预检</button>' +
+          '<button type="button" x-show="d.status === \'failed\'" @click="prepareReupload(' + c.id + ', d.id)" class="ml-2 text-xs text-red-700">选择同文件重传</button>' +
+          '<button type="button" x-show="d.poll_error" @click="resumePolling(d.id)" class="ml-2 text-xs text-brand-700">继续检查</button>' +
+          '<p x-show="d.status === \'failed\'" x-text="d.parse_error || \'解析失败，请选择同文件重传\'" role="alert" class="mt-1 text-xs text-red-700"></p>' +
+          '<p x-show="d.poll_error" x-text="d.poll_error" role="alert" class="mt-1 text-xs text-accent-700"></p>' +
+        '</li>' +
+      '</template></ul>';
     card.querySelector('[data-role="name"]').textContent = c.name;
     grid.appendChild(card);
   }
 
-  // 章节徽章内的 chevron 图标（与 library.html course_card 宏的 icon('chevron-right') 输出一致）
-  var CHEVRON_SVG = '<svg class="w-3 h-3 text-slate-400" viewBox="0 0 24 24" fill="none" stroke="currentColor"'
-    + ' stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'
-    + '<path d="M9 6l6 6-6 6"/></svg>';
-
-  // 新建章节成功：徽章插入课程章节区（章节仅作展示，上传不再支持人工挂载——v1.1 起 chapter_id 由解析自动构建）
+  var CHEVRON_SVG = '<svg class="w-3 h-3 text-slate-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>';
   function appendChapterBadge(courseId, ch) {
     const list = document.getElementById('chapter-list-' + courseId);
-    if (list) {
-      const badge = document.createElement('span');
-      badge.className = 'badge badge-slate animate-fade-up';
-      badge.textContent = ch.title;
-      badge.insertAdjacentHTML('beforeend', CHEVRON_SVG);
-      list.appendChild(badge);
-    }
+    if (!list) return;
+    const badge = document.createElement('span');
+    badge.className = 'badge badge-slate animate-fade-up';
+    badge.textContent = ch.title;
+    badge.insertAdjacentHTML('beforeend', CHEVRON_SVG);
+    list.appendChild(badge);
+  }
+
+  function xhrUpload(file, courseId, onProgress) {
+    return new Promise(function (resolve, reject) {
+      const xhr = new XMLHttpRequest();
+      xhr.open('POST', '/api/documents');
+      xhr.responseType = 'json';
+      xhr.upload.addEventListener('progress', function (event) {
+        if (event.lengthComputable) onProgress(Math.min(100, Math.round(event.loaded / event.total * 100)));
+      });
+      xhr.addEventListener('load', function () {
+        const data = xhr.response || {};
+        if (xhr.status === 401) {
+          const next = location.pathname + location.search + location.hash;
+          location.href = '/login?next=' + encodeURIComponent(next);
+          reject(new Error('登录已过期，请重新登录'));
+          return;
+        }
+        if (xhr.status < 200 || xhr.status >= 300) {
+          const err = new Error(typeof data.detail === 'string' ? data.detail : '上传失败（HTTP ' + xhr.status + '）');
+          err.status = xhr.status;
+          reject(err);
+          return;
+        }
+        resolve(data);
+      });
+      xhr.addEventListener('error', function () { reject(new Error('网络错误，文件仍保留，请重试')); });
+      xhr.addEventListener('abort', function () { reject(new Error('上传已取消，可重新提交')); });
+      const fd = new FormData();
+      fd.append('file', file);
+      fd.append('course_id', String(courseId));
+      xhr.send(fd);
+    });
   }
 
   window.libraryPage = function () {
@@ -122,34 +150,44 @@
       showSemesterForm: false, showCourseForm: false,
       semesterName: '', courseName: '', courseSemesterId: '', courseDesc: '',
       chapterFormFor: null, chapterTitle: '',
-      uploadFormFor: null, uploadFile: null, uploading: false,
-      // 投稿 modal 状态
+      uploadFormFor: null, uploadCourseId: null, uploadFile: null,
+      uploading: false, uploadProgress: 0, draggingCourse: null, retryDocId: null,
       submitOpen: false, submitDocId: null, submitTitle: '', submitDesc: '',
       submitCourseId: '', submitChapterId: '', submitChapters: [],
-      submitError: '', courses: [],
-      // 本次会话内已成功投稿的文档：docId -> true（行内「审核中」徽章局部更新用）
-      submitted: {},
-      // 上传后待解析的文档：courseId -> [{id, file_name, status, status_url}]
-      pending: {},
+      submitError: '', courses: [], submitted: {}, retryingSubmission: null,
+      pending: {}, docStates: {}, pollers: {},
 
       init() {
-        // SSR 时间统一转相对格式（[data-rel-time] 挂载点）
         document.querySelectorAll('[data-rel-time]').forEach(function (el) {
           const text = ZY.relTime(el.getAttribute('data-rel-time'));
           if (text) el.textContent = text;
         });
-        // 投稿 modal 可访问性：焦点圈定 / Esc 关闭 / 焦点还原
-        // （$nextTick 等待子树初始化完成，确保 x-ref 已注册）
+        document.querySelectorAll('[data-document-id]').forEach((el) => {
+          const id = Number(el.getAttribute('data-document-id'));
+          const doc = {
+            id: id,
+            course_id: Number(el.getAttribute('data-course-id')),
+            file_name: el.getAttribute('data-file-name'),
+            status: el.getAttribute('data-status'),
+            status_url: '/api/documents/' + id + '/status',
+            parse_error: '', poll_error: '',
+          };
+          this.docStates[id] = doc;
+          if (doc.status === 'parsing') this.pollDocument(doc);
+        });
         this.$nextTick(() => {
           this._a11y = ZY.bindModalA11y(this.$refs.submitModal, {
             isOpen: () => this.submitOpen,
-            onEscape: () => { this.submitOpen = false; },
+            onEscape: () => { if (!this.loading) this.submitOpen = false; },
           });
           this.$watch('submitOpen', () => this._a11y.sync());
         });
+        if (new URLSearchParams(location.search).get('upload') === '1') {
+          const first = document.querySelector('[data-upload-course]');
+          if (first) this.openUpload(Number(first.getAttribute('data-upload-course')));
+        }
       },
 
-      // 课程下拉按专业分组（GET /api/courses 的 items 带 major_name）
       get courseGroups() {
         const groups = {};
         for (const c of this.courses) {
@@ -158,6 +196,162 @@
           groups[major].items.push(c);
         }
         return Object.values(groups);
+      },
+      documentStatus(id, fallback) { return this.docStates[id] ? this.docStates[id].status : fallback; },
+      documentError(id, fallback) {
+        const doc = this.docStates[id];
+        if (!doc) return fallback;
+        return doc.parse_error || fallback || (doc.status === 'failed' ? '解析失败，请选择同文件重传' : '');
+      },
+      statusLabel(s) { return s === 'parsed' ? '已完成' : (s === 'failed' ? '解析失败' : '解析中'); },
+      statusClass(s) { return s === 'parsed' ? 'badge-brand' : (s === 'failed' ? 'bg-red-50 text-red-700' : 'badge-slate'); },
+      canSubmit(id, initiallyAllowed) {
+        return initiallyAllowed && this.documentStatus(id, '') === 'parsed' && !this.submitted[id];
+      },
+
+      openUpload(courseId) {
+        this.uploadFormFor = this.uploadFormFor === courseId ? null : courseId;
+        this.uploadCourseId = courseId;
+        this.uploadFile = null;
+        this.retryDocId = null;
+        this.uploadProgress = 0;
+        this.error = '';
+      },
+      prepareReupload(courseId, docId) {
+        this.uploadFormFor = courseId;
+        this.uploadCourseId = courseId;
+        this.retryDocId = docId;
+        this.uploadFile = null;
+        this.error = '请选择与失败文档相同的文件；系统会去重并重新解析。';
+        this.$nextTick(() => {
+          const input = document.getElementById('upload-file-' + courseId);
+          if (input) input.focus();
+        });
+      },
+      selectFile(courseId, file) {
+        this.uploadCourseId = courseId;
+        this.uploadFile = file;
+        this.error = '';
+      },
+      selectDropped(courseId, event) {
+        this.draggingCourse = null;
+        this.uploadFormFor = courseId;
+        this.selectFile(courseId, event.dataTransfer.files[0] || null);
+      },
+      validateFile(file) {
+        if (!file) return '请先选择要上传的文件';
+        if (file.size > MAX_FILE_SIZE) return '文件超过 50MB 限制，请压缩或拆分后重试';
+        const ext = extension(file.name);
+        if (ext === '.doc' || ext === '.ppt') return '旧版 ' + ext + ' 暂不支持，请另存为 .docx/.pptx 后上传';
+        if (!ACCEPTED.includes(ext)) return '仅支持 PDF、PPTX、DOCX、Markdown 文件';
+        return '';
+      },
+
+      async upload(courseId) {
+        const validation = this.validateFile(this.uploadFile);
+        if (validation) { this.error = validation; return; }
+        if (this.uploading) return;
+        const file = this.uploadFile;
+        this.uploading = true;
+        this.uploadProgress = 0;
+        this.error = '';
+        try {
+          const data = await xhrUpload(file, courseId, (value) => { this.uploadProgress = value; });
+          this.uploadProgress = 100;
+          const doc = {
+            id: data.document_id,
+            course_id: courseId,
+            file_name: file.name,
+            status: data.status || 'parsing',
+            status_url: data.status_url || ('/api/documents/' + data.document_id + '/status'),
+            parse_error: '', poll_error: '',
+          };
+          const existingRow = document.getElementById('document-' + doc.id);
+          if (data.dedup && existingRow) {
+            if (this.docStates[doc.id]) Object.assign(this.docStates[doc.id], doc);
+            else this.docStates[doc.id] = doc;
+            this.removePending(doc.id);
+            existingRow.scrollIntoView({behavior: reducedMotion() ? 'auto' : 'smooth', block: 'center'});
+            existingRow.classList.add('ring-2', 'ring-brand-300');
+            setTimeout(() => existingRow.classList.remove('ring-2', 'ring-brand-300'), 1800);
+            ZY.toast(data.retry ? '已定位原文档并重新解析' : '文件已存在，已定位到原文档', 'info');
+          } else {
+            if (!this.pending[courseId]) this.pending[courseId] = [];
+            if (!this.pending[courseId].some((d) => d.id === doc.id)) this.pending[courseId].push(doc);
+            this.docStates[doc.id] = this.pending[courseId].find((d) => d.id === doc.id);
+            ZY.toast(data.dedup ? '文件已存在，已恢复原解析任务' : '上传成功，正在解析入库', 'success');
+          }
+          const input = document.getElementById('upload-file-' + courseId);
+          if (input) input.value = '';
+          this.uploadFile = null;
+          this.retryDocId = null;
+          this.uploadFormFor = null;
+          if (doc.status === 'parsing') this.pollDocument(this.docStates[doc.id]);
+        } catch (e) {
+          this.error = e.message || '上传失败，请重试';
+        } finally {
+          this.uploading = false;
+        }
+      },
+
+      removePending(id) {
+        Object.keys(this.pending).forEach((courseId) => {
+          this.pending[courseId] = this.pending[courseId].filter((d) => d.id !== id);
+        });
+      },
+      resumePolling(id) {
+        const doc = this.docStates[id];
+        if (!doc) return;
+        doc.poll_error = '';
+        this.pollDocument(doc, true);
+      },
+      pollDocument(doc, restart) {
+        if (!doc || (this.pollers[doc.id] && !restart)) return;
+        if (this.pollers[doc.id]) clearTimeout(this.pollers[doc.id]);
+        const state = {started: Date.now(), failures: 0};
+        const tick = async () => {
+          if (Date.now() - state.started >= POLL_TIMEOUT) {
+            doc.poll_error = '解析状态检查超时，任务可能仍在运行，请点击“继续检查”。';
+            delete this.pollers[doc.id];
+            return;
+          }
+          try {
+            const data = await ZY.api.get(doc.status_url);
+            state.failures = 0;
+            doc.status = data.status;
+            doc.parse_error = data.parse_error || '';
+            doc.poll_error = '';
+            if (data.status !== 'parsing') {
+              delete this.pollers[doc.id];
+              ZY.toast('「' + doc.file_name + '」' + (data.status === 'parsed' ? '解析完成，可溯源和投稿' : '解析失败'),
+                data.status === 'parsed' ? 'success' : 'error');
+              return;
+            }
+          } catch (e) {
+            state.failures += 1;
+            doc.poll_error = '暂时无法获取解析状态，将自动重试（第 ' + state.failures + ' 次）。';
+          }
+          const delay = state.failures ? Math.min(3000 * Math.pow(2, state.failures - 1), 15000) : 3000;
+          this.pollers[doc.id] = setTimeout(tick, delay);
+        };
+        this.pollers[doc.id] = setTimeout(tick, 0);
+      },
+
+      async retrySubmission(docId) {
+        if (this.retryingSubmission) return;
+        this.retryingSubmission = docId;
+        try {
+          const data = await ZY.api.post('/api/documents/' + docId + '/submit/retry');
+          this.submitted[docId] = {label: data.review_status === 'pending' ? '预检中' : '审核中'};
+          ZY.toast(data.queued === false ? '投稿已进入后续阶段，无需重试' : '预检任务已重新提交', 'success');
+        } catch (e) { ZY.toast(e.message, 'error'); }
+        finally { this.retryingSubmission = null; }
+      },
+      async retryPreview(docId) {
+        try {
+          const data = await ZY.api.post('/api/documents/' + docId + '/preview/retry');
+          ZY.toast(data.preview_pending ? '预览转换已重新提交' : '预览已可用，无需重试', 'success');
+        } catch (e) { ZY.toast(e.message, 'error'); }
       },
 
       async openSubmit(docId, fileName) {
@@ -173,13 +367,11 @@
           } catch (e) { this.submitError = e.message; }
         }
       },
-
       async loadChapters() {
         this.submitChapterId = ''; this.submitChapters = [];
         if (!this.submitCourseId) return;
         try {
           const data = await ZY.api.get('/api/courses/' + this.submitCourseId + '/chapters');
-          // 章节树扁平化，用全角空格缩进体现层级
           const flat = [];
           const walk = (nodes, depth) => {
             for (const n of nodes || []) {
@@ -191,28 +383,24 @@
           this.submitChapters = flat;
         } catch (e) { this.submitError = e.message; }
       },
-
       async submitResource() {
         if (!this.submitTitle.trim()) { this.submitError = '请填写标题'; return; }
         if (!this.submitCourseId) { this.submitError = '请选择目标课程'; return; }
         this.loading = true; this.submitError = '';
+        ZY.setBusy(this, true);
         try {
-          await ZY.api.post('/api/documents/' + this.submitDocId + '/submit', {
+          const data = await ZY.api.post('/api/documents/' + this.submitDocId + '/submit', {
             title: this.submitTitle.trim(),
             description: this.submitDesc.trim() || null,
             course_id: Number(this.submitCourseId),
             chapter_id: this.submitChapterId ? Number(this.submitChapterId) : null,
           });
-          // 局部更新：行内改挂「审核中」徽章（消灭整页 reload）
-          this.submitted[this.submitDocId] = true;
+          this.submitted[this.submitDocId] = {label: '预检中'};
           this.submitOpen = false;
-          ZY.toast('已提交审核，可在列表查看进度');
+          ZY.toast(data.precheck_queued === false ? '投稿已创建，但预检待重试，请在文档行点击“重试预检”' : '已提交投稿，进入预检阶段',
+            data.precheck_queued === false ? 'error' : 'success');
         } catch (e) { this.submitError = e.message; }
-        finally { this.loading = false; }
-      },
-
-      statusLabel(s) {
-        return s === 'parsed' ? '已完成' : (s === 'failed' ? '解析失败' : '解析中');
+        finally { this.loading = false; ZY.setBusy(this, false); }
       },
 
       async createSemester() {
@@ -220,16 +408,12 @@
         this.loading = true; this.error = '';
         try {
           const data = await ZY.api.post('/api/library/semesters', {name: this.semesterName.trim()});
-          // 同名幂等返回已有（200）：已存在则跳过插入，仅提示
-          if (!document.getElementById('sem-section-' + data.id)) {
-            appendSemesterSection(data);
-          }
+          if (!document.getElementById('sem-section-' + data.id)) appendSemesterSection(data);
           this.semesterName = ''; this.showSemesterForm = false;
           ZY.toast('学期已创建');
         } catch (e) { this.error = e.message; }
         finally { this.loading = false; }
       },
-
       async createCourse() {
         if (!this.courseName.trim()) { this.error = '请填写课程名称'; return; }
         this.loading = true; this.error = '';
@@ -245,65 +429,16 @@
         } catch (e) { this.error = e.message; }
         finally { this.loading = false; }
       },
-
       async createChapter(courseId) {
         if (!this.chapterTitle.trim()) { this.error = '请填写章节标题'; return; }
         this.loading = true; this.error = '';
         try {
-          const ch = await ZY.api.post('/api/library/courses/' + courseId + '/chapters',
-            {title: this.chapterTitle.trim()});
+          const ch = await ZY.api.post('/api/library/courses/' + courseId + '/chapters', {title: this.chapterTitle.trim()});
           appendChapterBadge(courseId, ch);
           this.chapterTitle = ''; this.chapterFormFor = null;
           ZY.toast('章节已添加');
         } catch (e) { this.error = e.message; }
         finally { this.loading = false; }
-      },
-
-      // multipart 上传：ZY.api 仅支持 JSON，此处保留 fetch（全站唯一例外）
-      async upload(courseId) {
-        if (!this.uploadFile) { this.error = '请先选择要上传的文件'; return; }
-        this.loading = true; this.uploading = true; this.error = '';
-        try {
-          const fd = new FormData();
-          fd.append('file', this.uploadFile);
-          fd.append('course_id', String(courseId));
-          const resp = await fetch('/api/documents', {method: 'POST', body: fd});
-          const data = await resp.json().catch(() => ({}));
-          if (resp.status === 401) { window.location.href = '/login'; return; }
-          if (!resp.ok) {
-            const detail = typeof data.detail === 'string' ? data.detail : null;
-            throw new Error(detail || ('上传失败 ' + resp.status));
-          }
-          const doc = {
-            id: data.document_id,
-            file_name: this.uploadFile.name,
-            status: data.status || 'parsing',
-            status_url: data.status_url || ('/api/documents/' + data.document_id + '/status'),
-          };
-          if (!this.pending[courseId]) this.pending[courseId] = [];
-          this.pending[courseId].push(doc);
-          this.uploadFile = null; this.uploadFormFor = null;
-          ZY.toast('上传成功，正在解析入库');
-          // 经由响应式数组取回代理对象再轮询修改——直接改原始对象会绕过 Alpine 响应式
-          const docRef = this.pending[courseId][this.pending[courseId].length - 1];
-          if (docRef.status === 'parsing') this.pollStatus(docRef);
-        } catch (e) { this.error = e.message; }
-        finally { this.loading = false; this.uploading = false; }
-      },
-
-      // 每 3 秒轮询解析状态，直到 parsed / failed
-      pollStatus(doc) {
-        const timer = setInterval(async () => {
-          try {
-            const s = await ZY.api.get(doc.status_url);
-            doc.status = s.status;
-            if (s.status !== 'parsing') {
-              clearInterval(timer);
-              ZY.toast(s.status === 'parsed' ? '「' + doc.file_name + '」解析完成' : '「' + doc.file_name + '」解析失败',
-                s.status === 'parsed' ? 'success' : 'error');
-            }
-          } catch (e) { /* 网络抖动时下轮重试 */ }
-        }, 3000);
       },
     };
   };

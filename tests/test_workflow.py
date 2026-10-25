@@ -143,7 +143,7 @@ class FakeSession:
     async def flush(self):
         pass  # id 在 _register 时已分配
 
-    async def get(self, model, pk):
+    async def get(self, model, pk, **_kwargs):
         return next((o for o in self._table(model) if getattr(o, "id", None) == pk), None)
 
     def _candidates(self, entity, is_full_entity, column_name):
@@ -669,16 +669,23 @@ async def test_final_verdict_approve_derives_public_copy(monkeypatch):
     assert all(c.scope == "public" and c.chapter_id == 500 for c in derived)
     assert all(c.embedding_id == c.chunk_id and c.owner_id == 1 for c in derived)
 
-    # 重 embed（分 2 批）并写入 chunks_public
-    assert embedding.batches == [["内容一", "内容二"], ["内容三"]]
+    # 重 embed（分 2 批）并写入 chunks_public；R2 起 embedding 输入带结构路径
+    assert embedding.batches == [
+        ["第一章 > 正文\n内容一", "第一章 > 正文\n内容二"],
+        ["第一章 > 正文\n内容三"],
+    ]
     assert store.collections == ["chunks_public"]
-    (upsert,) = store.upserts
-    assert upsert["collection"] == "coll-chunks_public"
-    assert upsert["ids"] == [c.chunk_id for c in derived]
-    assert upsert["documents"] == ["内容一", "内容二", "内容三"]
-    assert [m["chapter_id"] for m in upsert["metadatas"]] == [500, 500, 500]
-    assert upsert["metadatas"][2]["page_num"] == -1  # None 用 -1 哨兵
-    assert bm25_calls == [(10, "public")]  # BM25 语料缓存失效
+    # index_document_chunks 按批次 upsert：monkeypatch 后 3 块分 2 批
+    assert len(store.upserts) == 2
+    ids = [cid for upsert in store.upserts for cid in upsert["ids"]]
+    documents = [doc for upsert in store.upserts for doc in upsert["documents"]]
+    metadatas = [meta for upsert in store.upserts for meta in upsert["metadatas"]]
+    assert all(upsert["collection"] == "coll-chunks_public" for upsert in store.upserts)
+    assert ids == [c.chunk_id for c in derived]
+    assert documents == ["内容一", "内容二", "内容三"]
+    assert [meta["chapter_id"] for meta in metadatas] == [500, 500, 500]
+    assert metadatas[2]["page_num"] == -1  # None 用 -1 哨兵
+    assert bm25_calls == [(10, "public", 1)]  # BM25 语料缓存按权限键失效
 
     # 积分结算与实时榜
     assert uploader.score == SCORE_UPLOAD_APPROVED

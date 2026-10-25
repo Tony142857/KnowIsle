@@ -9,6 +9,7 @@ from typing import Annotated, Literal
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from pydantic import BaseModel
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.community.social import (
@@ -69,20 +70,29 @@ async def add_favorite(
 ):
     """收藏资源 / 帖子：重复收藏幂等返回 200（created=false）。"""
     target = await _get_fav_target(db, payload.target_type, payload.target_id)
+    if payload.target_type == "resource":
+        target = await db.get(
+            Resource, payload.target_id, with_for_update=True, populate_existing=True
+        )
     existing = await _find_favorite(db, user.id, payload.target_type, payload.target_id)
     created = decide_social_write(existing is not None) == "insert"
     if created:
-        db.add(
-            Favorite(
-                user_id=user.id,
-                target_type=payload.target_type,
-                target_id=payload.target_id,
-            )
+        favorite = Favorite(
+            user_id=user.id,
+            target_type=payload.target_type,
+            target_id=payload.target_id,
         )
-        if payload.target_type == "resource":
-            target.fav_count += 1
-        await db.commit()
-    else:
+        try:
+            async with db.begin_nested():
+                db.add(favorite)
+                await db.flush()
+        except IntegrityError:
+            created = False
+        else:
+            if payload.target_type == "resource":
+                target.fav_count += 1
+    await db.commit()
+    if not created:
         response.status_code = 200
     return {
         "target_type": payload.target_type,
@@ -103,7 +113,9 @@ async def remove_favorite(
     existing = await _find_favorite(db, user.id, payload.target_type, payload.target_id)
     if existing is not None:
         if payload.target_type == "resource":
-            target = await db.get(Resource, payload.target_id)
+            target = await db.get(
+                Resource, payload.target_id, with_for_update=True, populate_existing=True
+            )
             if target is not None and target.fav_count > 0:
                 target.fav_count -= 1
         await db.delete(existing)

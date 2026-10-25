@@ -40,34 +40,34 @@ def test_board_pages_render_without_db():
 
 
 def test_me_and_post_new_require_login():
-    # v0.5：个人中心 / 发帖页需登录，未登录 303 重定向到 /login
+    # v1.3 I2：未登录 303 到 /login，并携带站内 next 供登录后回跳
     for path in ("/me", "/posts/new"):
         resp = client.get(path, follow_redirects=False)
         assert resp.status_code == 303, path
-        assert resp.headers["location"] == "/login"
+        assert resp.headers["location"].startswith("/login?next=")
 
 
 def test_library_pages_require_login():
-    # v0.3：个人知识库 / AI 对话 / 原文溯源 均需登录，未登录 303 重定向到 /login
+    # v1.3 I2：个人知识库 / AI 对话 / 原文溯源 均需登录并携带 next 回跳
     for path in ("/library", "/library/chat?course_id=1", "/documents/1/source"):
         resp = client.get(path, follow_redirects=False)
         assert resp.status_code == 303, path
-        assert resp.headers["location"] == "/login"
+        assert resp.headers["location"].startswith("/login?next=")
 
 
 def test_review_pages_require_login():
-    # v0.4：协审工作台 / 管理后台·审核 / 资源详情页 需登录，未登录 303 重定向到 /login
+    # v1.3 I2：协审工作台 / 管理后台·审核 / 资源详情页 需登录并携带 next 回跳
     for path in ("/review", "/admin/review", "/resources/1"):
         resp = client.get(path, follow_redirects=False)
         assert resp.status_code == 303, path
-        assert resp.headers["location"] == "/login"
+        assert resp.headers["location"].startswith("/login?next=")
 
 
 def test_admin_page_requires_login():
-    # v0.6：管理后台主页需登录，未登录 303 重定向到 /login（非 admin 登录用户 404）
+    # v1.3 I2：管理后台主页需登录并携带 next 回跳（非 admin 登录用户 404）
     resp = client.get("/admin", follow_redirects=False)
     assert resp.status_code == 303
-    assert resp.headers["location"] == "/login"
+    assert resp.headers["location"].startswith("/login?next=")
 
 
 def test_moderation_apis_require_login():

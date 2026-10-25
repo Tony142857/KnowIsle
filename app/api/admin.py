@@ -5,10 +5,12 @@
 v0.8：举报处理流转与运营看板（GET /dashboard）。
 """
 
+import logging
 from datetime import UTC, datetime, timedelta
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -43,6 +45,7 @@ from app.workers.pool import get_arq_pool
 from app.workers.review_timeout_worker import CO_REVIEW_NEEDED, merge_assignees
 
 router = APIRouter(prefix="/admin", tags=["admin"])
+logger = logging.getLogger(__name__)
 
 
 async def _audit(db: AsyncSession, admin_id: int, action: str, detail: dict) -> None:
@@ -191,15 +194,39 @@ class FinalVerdictRequest(BaseModel):
     comment: str | None = Field(default=None, max_length=512)
 
 
+async def _approval_side_effects(
+    db: AsyncSession, task: ReviewTask, new_doc_id: int | None
+) -> dict[str, bool]:
+    """审核提交后的非事务副作用；每个任务独立报告，失败不影响已上架事实。"""
+    queued = {"preview": False, "chapter_summaries": False}
+    resource = await db.get(Resource, task.resource_id)
+    new_doc = await db.get(Document, new_doc_id) if new_doc_id is not None else None
+    if new_doc is not None and new_doc.file_type in ("word", "ppt") and not new_doc.preview_key:
+        try:
+            pool = await get_arq_pool()
+            await pool.enqueue_job("convert_preview", new_doc.id)
+            queued["preview"] = True
+        except Exception:
+            logger.exception("终审预览入队失败 task_id=%s", task.id)
+    try:
+        pool = await get_arq_pool()
+        await pool.enqueue_job("backfill_chapter_summaries", resource.course_id)
+        queued["chapter_summaries"] = True
+    except Exception:
+        logger.exception("终审摘要入队失败 task_id=%s", task.id)
+    return queued
+
+
 @router.post("/review/final")
 async def final_review(
     payload: FinalVerdictRequest,
     admin: Annotated[User, Depends(require_admin)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
-    """管理员终审（§12.2）：通过后复制派生 public 副本、结算积分，
-    并入队 Office→PDF 预览转换（仅 word/ppt）与目标课程章节摘要回填。"""
-    task = await db.get(ReviewTask, payload.task_id)
+    """管理员终审：行锁防重复派生/计分，commit 后的副作用可单独恢复。"""
+    task = await db.get(
+        ReviewTask, payload.task_id, with_for_update=True, populate_existing=True
+    )
     if task is None:
         raise HTTPException(status_code=404, detail="Not Found")
     try:
@@ -214,17 +241,15 @@ async def final_review(
                  {"task_id": task.id, "resource_id": task.resource_id,
                   "verdict": payload.verdict, "comment": payload.comment})
     await db.commit()
+    queued = {"preview": False, "chapter_summaries": False}
     if payload.verdict == "approve":
-        resource = await db.get(Resource, task.resource_id)
-        new_doc = await db.get(Document, new_doc_id)
-        pool = await get_arq_pool()
-        if new_doc.file_type in ("word", "ppt"):
-            await pool.enqueue_job("convert_preview", new_doc_id)
-        await pool.enqueue_job("backfill_chapter_summaries", resource.course_id)
+        queued = await _approval_side_effects(db, task, new_doc_id)
     return {
         "resource_id": task.resource_id,
         "review_status": "approved" if payload.verdict == "approve" else "rejected",
         "score_granted": score_granted,
+        "queued": queued,
+        "side_effect_retry_url": f"/api/admin/review/{task.id}/retry-side-effects",
     }
 
 
@@ -244,7 +269,9 @@ async def reassign_reviewers(
     已提交协审意见者保留；改派后协审计时重置。无可用协审员且无已提交意见时，
     按既定兜底策略直送终审（与超时扫描一致）。
     """
-    task = await db.get(ReviewTask, payload.task_id)
+    task = await db.get(
+        ReviewTask, payload.task_id, with_for_update=True, populate_existing=True
+    )
     if task is None:
         raise HTTPException(status_code=404, detail="Not Found")
     if task.stage != "co_review":
@@ -317,6 +344,8 @@ async def reassign_reviewers(
         task.assignee_ids = new_assignee_ids
         task.created_at = datetime.now(UTC)  # 改派后重新计时
         for uid in new_ids:
+            if uid in old_ids:
+                continue
             db.add(
                 Notification(
                     user_id=uid,
@@ -345,9 +374,10 @@ async def direct_review(
     admin: Annotated[User, Depends(require_admin)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
-    """管理员直审（v0.5）：协审中/待终审任务直接裁决，复用终审路径，
-    通过后同样复制派生 public 副本、结算积分并入队预览转换与摘要回填。"""
-    task = await db.get(ReviewTask, payload.task_id)
+    """管理员直审：与终审共用行锁、阶段复核和可恢复副作用。"""
+    task = await db.get(
+        ReviewTask, payload.task_id, with_for_update=True, populate_existing=True
+    )
     if task is None:
         raise HTTPException(status_code=404, detail="Not Found")
     from_stage = task.stage
@@ -368,18 +398,66 @@ async def direct_review(
                   "verdict": payload.verdict, "comment": payload.comment,
                   "from_stage": from_stage})
     await db.commit()
+    queued = {"preview": False, "chapter_summaries": False}
     if payload.verdict == "approve":
-        resource = await db.get(Resource, task.resource_id)
-        new_doc = await db.get(Document, new_doc_id)
-        pool = await get_arq_pool()
-        if new_doc.file_type in ("word", "ppt"):
-            await pool.enqueue_job("convert_preview", new_doc_id)
-        await pool.enqueue_job("backfill_chapter_summaries", resource.course_id)
+        queued = await _approval_side_effects(db, task, new_doc_id)
     return {
         "resource_id": task.resource_id,
         "review_status": "approved" if payload.verdict == "approve" else "rejected",
         "score_granted": score_granted,
+        "queued": queued,
+        "side_effect_retry_url": f"/api/admin/review/{task.id}/retry-side-effects",
     }
+
+
+@router.post("/review/{task_id}/retry-side-effects")
+async def retry_review_side_effects(
+    task_id: int,
+    admin: Annotated[User, Depends(require_admin)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    """恢复已完结审核的预览/摘要任务，响应始终明确审核终态。"""
+    task = await db.get(ReviewTask, task_id)
+    if task is None:
+        raise HTTPException(status_code=404, detail="Not Found")
+    resource = await db.get(Resource, task.resource_id)
+    if task.stage != "done" or resource.review_status != "approved":
+        return {
+            "task_id": task.id,
+            "review_status": resource.review_status,
+            "queued": {"preview": False, "chapter_summaries": False},
+        }
+    src_doc = await db.get(Document, resource.document_id)
+    public_doc = (
+        await db.execute(
+            select(Document).where(
+                Document.scope == "public", Document.storage_key == src_doc.storage_key
+            )
+        )
+    ).scalars().first()
+    preview_doc = public_doc or src_doc
+    queued = {"preview": False, "chapter_summaries": False}
+    failed = False
+    if preview_doc.file_type in ("word", "ppt") and not preview_doc.preview_key:
+        try:
+            pool = await get_arq_pool()
+            await pool.enqueue_job("convert_preview", preview_doc.id)
+            queued["preview"] = True
+        except Exception:
+            failed = True
+            logger.exception("审核预览恢复入队失败 task_id=%s", task.id)
+    try:
+        pool = await get_arq_pool()
+        await pool.enqueue_job("backfill_chapter_summaries", resource.course_id)
+        queued["chapter_summaries"] = True
+    except Exception:
+        failed = True
+        logger.exception("审核摘要恢复入队失败 task_id=%s", task.id)
+    body = {"task_id": task.id, "review_status": "approved", "queued": queued}
+    if failed:
+        body["detail"] = "部分后续任务暂时无法入队，请继续重试"
+        return JSONResponse(body, status_code=503)
+    return body
 
 # ---------------------------------------------------------------------------
 # 用户治理（模块 B6，v0.6）：用户列表 / 角色任命 / 信用裁决
@@ -783,6 +861,7 @@ async def list_reports(
     for report, _ in rows:
         by_type.setdefault(report.target_type, set()).add(report.target_id)
     summaries: dict[tuple[str, int], str] = {}
+    target_urls: dict[tuple[str, int], str] = {}
     if ids := by_type.get("resource"):
         summaries.update(
             {
@@ -794,6 +873,7 @@ async def list_reports(
                 ).all()
             }
         )
+        target_urls.update({("resource", rid): f"/resources/{rid}" for rid in ids})
     if ids := by_type.get("post"):
         summaries.update(
             {
@@ -803,15 +883,20 @@ async def list_reports(
                 ).all()
             }
         )
+        target_urls.update({("post", pid): f"/posts/{pid}" for pid in ids})
     if ids := by_type.get("comment"):
+        comment_rows = (
+            await db.execute(
+                select(Comment.id, Comment.content, Comment.post_id).where(Comment.id.in_(ids))
+            )
+        ).all()
         summaries.update(
+            {("comment", cid): (content or "")[:80] for cid, content, _ in comment_rows}
+        )
+        target_urls.update(
             {
-                ("comment", cid): (content or "")[:80]
-                for cid, content in (
-                    await db.execute(
-                        select(Comment.id, Comment.content).where(Comment.id.in_(ids))
-                    )
-                ).all()
+                ("comment", cid): f"/posts/{post_id}#comment-{cid}"
+                for cid, _, post_id in comment_rows
             }
         )
     if ids := by_type.get("user"):
@@ -823,6 +908,7 @@ async def list_reports(
                 ).all()
             }
         )
+        target_urls.update({("user", uid): f"/admin?tab=users&user_id={uid}" for uid in ids})
 
     handler_ids = {r.handler_id for r, _ in rows if r.handler_id is not None}
     handlers: dict[int, str] = {}
@@ -842,6 +928,11 @@ async def list_reports(
                 "target_type": report.target_type,
                 "target_id": report.target_id,
                 "target_summary": summaries.get((report.target_type, report.target_id)),
+                "target_url": (
+                    target_urls.get((report.target_type, report.target_id))
+                    if (report.target_type, report.target_id) in summaries
+                    else None
+                ),
                 "reason": report.reason,
                 "status": report.status,
                 "handler": (

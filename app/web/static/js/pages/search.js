@@ -1,76 +1,151 @@
-/* 全站搜索（v0.8）：GET /api/search?q=&type=&board=&course_id=&page=&size=
- * 响应分组返回：{posts: {total, items: [...]}, resources: {total, items: [...]}}
- * 原 search.html 内联脚本外置（CSP 兼容）；查询条件由模板经 #page-data
- * （type=application/json 惰性数据块）注入，不再内联 Jinja 到脚本里。
- * v1.1：请求统一 ZY.api（消灭裸 fetch）；结果时间统一 ZY.relTime 相对格式。
- *
- * 加载时序：与 pages/login.js 相同——非 defer 在 head 解析期执行，早于 Alpine 启动。
- */
 document.addEventListener('alpine:init', function () {
   'use strict';
 
   Alpine.data('searchPage', function () {
-    // SSR 注入的查询条件（q / type / board / course_id），缺省与服务端路由默认值一致
     let cfg = {};
     const dataEl = document.getElementById('page-data');
     if (dataEl) {
       try { cfg = JSON.parse(dataEl.textContent); } catch (e) { cfg = {}; }
     }
+    const params = new URLSearchParams(window.location.search);
     return {
-      q: cfg.q || '', type: cfg.type || 'all',
-      board: cfg.board || '', courseId: cfg.course_id || null,
-      posts: [], postsTotal: 0, resources: [], resourcesTotal: 0,
-      page: 1, size: 10,
-      loading: false, searched: false, error: '',
-      courseOptions: [],
+      q: cfg.q || '', submittedQuery: '', type: cfg.type || 'all',
+      board: cfg.board || '', courseId: cfg.course_id ? String(cfg.course_id) : '',
+      majorId: params.get('major_id') || '',
+      posts: [], postsTotal: 0, postPage: 1, postLoading: false, postError: '', postRequestSeq: 0,
+      resources: [], resourcesTotal: 0, resourcePage: 1, resourceLoading: false, resourceError: '', resourceRequestSeq: 0,
+      failedPages: {post: null, resource: null},
+      size: 10, loading: false, searched: false, error: '', requestSeq: 0,
+      courseOptions: [], majorOptions: [], optionsError: '', optionsLoading: false,
 
-      boardLabel(b) {
-        return {qa: '知屿问答', discuss: '讨论区', experience: '经验长廊', bounty: '资料求援'}[b] || b;
+      boardLabel(board) {
+        return {qa: '知屿问答', discuss: '讨论区', experience: '经验长廊', bounty: '资料求援'}[board] || '其他板块';
       },
-      relTime(iso) {
-        return window.ZY && ZY.relTime ? ZY.relTime(iso) : (iso || '').slice(0, 10);
+      typeLabel(type) { return {all: '全部类型', post: '仅帖子', resource: '仅资源'}[type] || '全部类型'; },
+      relTime(iso) { return ZY.relTime(iso); },
+      majorName() {
+        const item = this.majorOptions.find(m => String(m.id) === String(this.majorId));
+        return item ? item.name : '#' + this.majorId;
       },
-      get hasMore() {
-        return this.posts.length < this.postsTotal || this.resources.length < this.resourcesTotal;
+      courseName() {
+        const item = this.courseOptions.find(c => String(c.id) === String(this.courseId));
+        return item ? item.name : '#' + this.courseId;
       },
-      buildUrl(page) {
-        const params = new URLSearchParams({
-          q: this.q.trim(), type: this.type, page: String(page), size: String(this.size),
+      buildUrl(page, groupType) {
+        const query = new URLSearchParams({
+          q: this.submittedQuery, type: groupType || this.type,
+          page: String(page), size: String(this.size),
         });
-        if (this.board) params.set('board', this.board);
-        if (this.courseId) params.set('course_id', String(this.courseId));
-        return '/api/search?' + params.toString();
+        if (this.board) query.set('board', this.board);
+        if (this.courseId) query.set('course_id', this.courseId);
+        if (this.majorId) query.set('major_id', this.majorId);
+        return '/api/search?' + query;
       },
-      // 课程下拉选项（GET /api/courses 公共课程列表）；失败静默降级为「全部课程」
-      async loadCourses() {
-        try {
-          const data = await ZY.api.get('/api/courses?size=100');
-          this.courseOptions = data.items || [];
-        } catch (e) { /* 课程下拉加载失败不阻塞搜索 */ }
+      syncUrl() {
+        const query = new URLSearchParams();
+        if (this.submittedQuery) query.set('q', this.submittedQuery);
+        if (this.type !== 'all') query.set('type', this.type);
+        if (this.board) query.set('board', this.board);
+        if (this.courseId) query.set('course_id', this.courseId);
+        if (this.majorId) query.set('major_id', this.majorId);
+        window.history.pushState({}, '', '/search' + (query.toString() ? '?' + query : ''));
+      },
+      async loadOptions() {
+        if (this.optionsLoading) return;
+        this.optionsLoading = true; this.optionsError = '';
+        const [courses, majors] = await Promise.allSettled([
+          ZY.api.get('/api/courses?size=100'), ZY.api.get('/api/majors'),
+        ]);
+        const errors = [];
+        if (courses.status === 'fulfilled') this.courseOptions = courses.value.items || [];
+        else errors.push('公共课程');
+        if (majors.status === 'fulfilled') this.majorOptions = majors.value.items || [];
+        else errors.push('专业');
+        if (errors.length) this.optionsError = errors.join('、') + '筛选项加载失败，请重试';
+        this.optionsLoading = false;
       },
       async init() {
-        this.loadCourses();
-        if (this.q.trim()) await this.load(1);
+        this.loadOptions();
+        if (this.q.trim()) {
+          this.submittedQuery = this.q.trim();
+          await this.runSearch(false);
+        }
       },
-      async load(page) {
-        this.loading = true; this.error = '';
+      applyFilters() {
+        if (!this.q.trim()) { this.error = '请输入搜索关键词'; return; }
+        this.submittedQuery = this.q.trim();
+        this.syncUrl();
+        this.runSearch(false);
+      },
+      async runSearch() {
+        const seq = ++this.requestSeq;
+        this.postRequestSeq++; this.resourceRequestSeq++;
+        this.postLoading = false; this.resourceLoading = false;
+        this.loading = true; this.error = ''; this.searched = false;
+        this.postError = ''; this.resourceError = '';
+        this.failedPages = {post: null, resource: null};
         try {
-          const data = await ZY.api.get(this.buildUrl(page));
-          const posts = data.posts || {};
-          const resources = data.resources || {};
-          if (page === 1) {
-            this.posts = posts.items || [];
-            this.resources = resources.items || [];
+          const data = await ZY.api.get(this.buildUrl(1));
+          if (seq !== this.requestSeq) return;
+          this.posts = (data.posts || {}).items || [];
+          this.postsTotal = (data.posts || {}).total || 0;
+          this.resources = (data.resources || {}).items || [];
+          this.resourcesTotal = (data.resources || {}).total || 0;
+          this.postPage = 1; this.resourcePage = 1; this.searched = true;
+        } catch (e) { if (seq === this.requestSeq) this.error = e.message; }
+        finally { if (seq === this.requestSeq) this.loading = false; }
+      },
+      async loadMore(group, retryPage) {
+        const isPost = group === 'post';
+        const loadingKey = isPost ? 'postLoading' : 'resourceLoading';
+        const seqKey = isPost ? 'postRequestSeq' : 'resourceRequestSeq';
+        const errorKey = isPost ? 'postError' : 'resourceError';
+        if (this[loadingKey]) return;
+        const page = retryPage || (isPost ? this.postPage : this.resourcePage) + 1;
+        const seq = ++this[seqKey];
+        const generation = this.requestSeq;
+        this[loadingKey] = true; this[errorKey] = '';
+        try {
+          const data = await ZY.api.get(this.buildUrl(page, group));
+          if (generation !== this.requestSeq || seq !== this[seqKey]) return;
+          const result = (isPost ? data.posts : data.resources) || {};
+          if (isPost) {
+            this.posts = this.posts.concat(result.items || []);
+            this.postsTotal = result.total || 0; this.postPage = page;
           } else {
-            this.posts = this.posts.concat(posts.items || []);
-            this.resources = this.resources.concat(resources.items || []);
+            this.resources = this.resources.concat(result.items || []);
+            this.resourcesTotal = result.total || 0; this.resourcePage = page;
           }
-          this.postsTotal = posts.total || 0;
-          this.resourcesTotal = resources.total || 0;
-          this.page = page;
-          this.searched = true;
-        } catch (e) { this.error = e.message; }
-        finally { this.loading = false; }
+          this.failedPages[group] = null;
+        } catch (e) {
+          if (generation !== this.requestSeq || seq !== this[seqKey]) return;
+          this.failedPages[group] = page;
+          this[errorKey] = e.message || '加载失败，请重试';
+        } finally {
+          if (seq === this[seqKey]) this[loadingKey] = false;
+        }
+      },
+      retryGroup(group) {
+        const failed = this.failedPages[group];
+        return this.loadMore(group, failed || undefined);
+      },
+      retry() {
+        if (this.submittedQuery) this.runSearch();
+        else this.applyFilters();
+      },
+      clearFilter(key) {
+        this[key] = '';
+        if (this.searched || this.submittedQuery) this.applyFilters();
+      },
+      clearAll() {
+        this.requestSeq++; this.postRequestSeq++; this.resourceRequestSeq++;
+        this.q = ''; this.submittedQuery = ''; this.type = 'all'; this.board = '';
+        this.courseId = ''; this.majorId = ''; this.posts = []; this.resources = [];
+        this.postsTotal = 0; this.resourcesTotal = 0; this.error = ''; this.searched = false;
+        this.postError = ''; this.resourceError = ''; this.failedPages = {post: null, resource: null};
+        this.loading = false; this.postLoading = false; this.resourceLoading = false;
+        window.history.pushState({}, '', '/search');
+        document.getElementById('search-query').focus();
       },
     };
   });

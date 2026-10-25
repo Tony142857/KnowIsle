@@ -6,6 +6,7 @@ import re
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Form, HTTPException, UploadFile
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
@@ -17,7 +18,7 @@ from app.identity.rbac import get_current_user
 from app.moderation.workflow import create_submission
 from app.storage import object_store
 from app.storage.db import get_db
-from app.storage.models import Chapter, Chunk, Course, Document, User
+from app.storage.models import Chapter, Chunk, Course, Document, Resource, ReviewTask, User
 from app.workers.pool import get_arq_pool
 
 router = APIRouter(prefix="/documents", tags=["documents"])
@@ -97,22 +98,26 @@ async def upload_document(
         raise HTTPException(status_code=422, detail="文件超过 50MB 限制")
 
     md5 = hashlib.md5(data).hexdigest()
+    personal_dedup = (
+        Document.owner_id == user.id,
+        Document.md5 == md5,
+        Document.scope == "personal",
+    )
     existing = (
-        await db.execute(
-            select(Document).where(Document.owner_id == user.id, Document.md5 == md5)
-        )
+        await db.execute(select(Document).where(*personal_dedup))
     ).scalars().first()
     if existing is not None:
         if existing.status == "failed":
             # 解析失败的文档允许重传重试：重置状态并重新入队（同一文件不重复占用存储）
             existing.status = "parsing"
+            existing.parse_error = None
             await db.commit()
             pool = await get_arq_pool()
             try:
                 await pool.enqueue_job("parse_document", existing.id)
             except Exception as exc:
-                # 入队失败补偿（镜像 posts.py 发帖）：落回 failed 供再次重传，避免卡 parsing
                 existing.status = "failed"
+                existing.parse_error = "解析任务暂时无法启动，请稍后重传"
                 await db.commit()
                 logger.exception("解析任务入队失败 document_id=%s", existing.id)
                 raise HTTPException(
@@ -149,9 +154,7 @@ async def upload_document(
         # 幂等返回对方已建的文档（不出 500）
         await db.rollback()
         existing = (
-            await db.execute(
-                select(Document).where(Document.owner_id == user.id, Document.md5 == md5)
-            )
+            await db.execute(select(Document).where(*personal_dedup))
         ).scalars().first()
         if existing is not None:
             logger.info("并发上传撞唯一索引，回落去重 document_id=%s", existing.id)
@@ -162,8 +165,8 @@ async def upload_document(
     try:
         await pool.enqueue_job("parse_document", doc.id)
     except Exception as exc:
-        # 入队失败补偿（镜像 posts.py 发帖）：标记 failed 供重传，避免文档永久卡 parsing
         doc.status = "failed"
+        doc.parse_error = "解析任务暂时无法启动，请稍后重传"
         await db.commit()
         logger.exception("解析任务入队失败 document_id=%s", doc.id)
         raise HTTPException(
@@ -194,7 +197,29 @@ async def get_document_status(
         "file_name": doc.file_name,
         "status": doc.status,
         "chunk_count": chunk_count,
+        "parse_error": doc.parse_error if doc.status == "failed" else None,
     }
+
+
+@router.post("/{document_id}/preview/retry")
+async def retry_document_preview(
+    document_id: int,
+    user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    """本人/admin 幂等重试 Office 预览；已有产物时不重复入队。"""
+    doc = await _get_owned_document(db, document_id, user)
+    if doc.file_type not in ("word", "ppt"):
+        return {"document_id": doc.id, "preview_pending": False, "queued": False}
+    if doc.preview_key:
+        return {"document_id": doc.id, "preview_pending": False, "queued": False}
+    try:
+        pool = await get_arq_pool()
+        await pool.enqueue_job("convert_preview", doc.id)
+    except Exception as exc:
+        logger.exception("预览重试入队失败 document_id=%s", doc.id)
+        raise HTTPException(status_code=503, detail="预览任务暂时无法入队，请稍后重试") from exc
+    return {"document_id": doc.id, "preview_pending": True, "queued": True}
 
 
 @router.get("/{document_id}/chunks")
@@ -275,11 +300,84 @@ async def submit_to_public(
             raise HTTPException(status_code=422, detail="该资料已上架") from exc
         raise
     await db.commit()
-    pool = await get_arq_pool()
-    await pool.enqueue_job("precheck_submission", task.id)
-    return {
+    queued = {"precheck": False, "preview": False}
+    try:
+        pool = await get_arq_pool()
+        await pool.enqueue_job("precheck_submission", task.id)
+        queued["precheck"] = True
+    except Exception:
+        task.precheck_result = {"error": "预检任务暂时无法启动，请稍后重试"}
+        await db.commit()
+        logger.exception("投稿预检入队失败 task_id=%s", task.id)
+    if doc.file_type in ("word", "ppt") and not doc.preview_key:
+        try:
+            pool = await get_arq_pool()
+            await pool.enqueue_job("convert_preview", doc.id)
+            queued["preview"] = True
+        except Exception:
+            logger.exception("投稿预览入队失败 document_id=%s", doc.id)
+    body = {
         "resource_id": resource.id,
         "review_status": "pending",
         "review_task_id": task.id,
         "resubmit": is_resubmit,
+        "precheck_queued": queued["precheck"],
+        "preview_pending": doc.file_type in ("word", "ppt") and not doc.preview_key,
+        "preview_queued": queued["preview"],
+        "submit_retry_url": f"/api/documents/{doc.id}/submit/retry",
+        "preview_retry_url": f"/api/documents/{doc.id}/preview/retry",
+    }
+    if not queued["precheck"]:
+        return JSONResponse(body, status_code=202)
+    return body
+
+
+@router.post("/{document_id}/submit/retry")
+async def retry_submission(
+    document_id: int,
+    user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    """重试仍处于 precheck 的投稿；已推进阶段时幂等返回当前状态。"""
+    doc = await _get_owned_document(db, document_id, user)
+    resource = (
+        await db.execute(select(Resource).where(Resource.document_id == doc.id))
+    ).scalars().first()
+    if resource is None:
+        raise HTTPException(status_code=404, detail="Not Found")
+    task = (
+        await db.execute(
+            select(ReviewTask)
+            .where(ReviewTask.resource_id == resource.id)
+            .order_by(ReviewTask.id.desc())
+            .limit(1)
+            .with_for_update()
+        )
+    ).scalars().first()
+    if task is None:
+        raise HTTPException(status_code=404, detail="Not Found")
+    if task.stage != "precheck":
+        return {
+            "resource_id": resource.id,
+            "review_task_id": task.id,
+            "review_status": resource.review_status,
+            "precheck_queued": False,
+            "queued": False,
+        }
+    task.precheck_result = None
+    await db.commit()
+    try:
+        pool = await get_arq_pool()
+        await pool.enqueue_job("precheck_submission", task.id)
+    except Exception as exc:
+        task.precheck_result = {"error": "预检任务暂时无法启动，请稍后重试"}
+        await db.commit()
+        logger.exception("投稿预检重试入队失败 task_id=%s", task.id)
+        raise HTTPException(status_code=503, detail="预检任务暂时无法入队，请稍后重试") from exc
+    return {
+        "resource_id": resource.id,
+        "review_task_id": task.id,
+        "review_status": resource.review_status,
+        "precheck_queued": True,
+        "queued": True,
     }

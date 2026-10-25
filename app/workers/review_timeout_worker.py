@@ -111,13 +111,19 @@ async def review_timeout_scan(ctx: dict) -> dict:
         deadline = co_review_deadline(now, timeout_hours)
         tasks = (
             await session.execute(
-                select(ReviewTask).where(
+                select(ReviewTask)
+                .where(
                     ReviewTask.stage == "co_review",
                     ReviewTask.created_at < deadline,
                 )
+                .with_for_update()
             )
         ).scalars().all()
         for task in tasks:
+            if task.stage != "co_review" or not is_co_overdue(
+                task.created_at, now, timeout_hours
+            ):
+                continue
             voted_ids = await _voted_reviewer_ids(session, task.id)
             old_ids = task.assignee_ids or []
             timed_out = [uid for uid in old_ids if uid not in set(voted_ids)]

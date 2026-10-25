@@ -1,15 +1,6 @@
-/* 课程空间详情页交互（course_detail.html，v1.1 翡翠绿·海岛改版）。
- * courseFollow —— 关注课程开关；courseTabs —— Tab 懒加载 + 章节树联动过滤；
- * chapterAdder —— 添加章节（原模板内联 x-data 外置）：成功后客户端插入章节树节点
- * + ZY.toast 反馈，消灭整页 reload。
- * 全部请求走 ZY.api（api.js）；匿名用户不拉取资料列表（/api/resources 需登录），
- * 展示登录引导卡代替原 401 文案。
- * 注意：本文件须在 Alpine 启动前执行（模板 head 块内同步加载，勿加 defer，
- * 实测 defer 脚本晚于 alpine 的 queueMicrotask 启动，x-data 会找不到组件）。 */
 (function () {
   'use strict';
 
-  // 关注课程开关（v0.6）：POST/DELETE /api/follows（target_type=course），未登录跳 /login
   function courseFollow(courseId, following, count, loggedIn) {
     return {
       following: following, count: count, loading: false, error: '',
@@ -30,44 +21,117 @@
   }
 
   function courseTabs(courseId, loggedIn) {
+    const tabs = ['resources', 'chat', 'discuss', 'rank'];
     return {
-      tab: 'resources',
-      resources: [], loading: false, loaded: false, error: '',
-      needLogin: !loggedIn,
-      selectedChapter: null,
+      tab: 'resources', resources: [], total: 0, page: 1, size: 12, query: '',
+      loading: false, loaded: false, error: '', needLogin: !loggedIn,
+      selectedChapter: null, selectedChapterTitle: '', requestSeq: 0, searchTimer: null,
       rankItems: [], rankLoading: false, rankLoaded: false, rankError: '',
 
       init() {
-        // Tab 首次激活时懒加载（resources 为默认 Tab，首屏即触发）
-        this.$watch('tab', (value) => {
-          if (value === 'resources' && !this.loaded) this.loadResources();
-          if (value === 'rank' && !this.rankLoaded) this.loadRank();
+        this.readUrl();
+        window.addEventListener('popstate', () => {
+          this.readUrl();
+          this.activateTab(false);
         });
-        this.loadResources();
+        this.activateTab(false);
       },
-
-      // 章节树点击：选中/再点取消，联动「资料库」Tab 按 chapter_id 重新拉取
+      readUrl() {
+        const params = new URLSearchParams(window.location.search);
+        this.tab = tabs.includes(params.get('tab')) ? params.get('tab') : 'resources';
+        this.query = params.get('q') || '';
+        this.page = Math.max(1, Number(params.get('page')) || 1);
+        const chapter = Number(params.get('chapter_id'));
+        this.selectedChapter = chapter > 0 ? chapter : null;
+        this.updateChapterTitle();
+      },
+      syncUrl(push) {
+        const params = new URLSearchParams(window.location.search);
+        if (this.tab === 'resources') params.delete('tab'); else params.set('tab', this.tab);
+        if (this.query.trim()) params.set('q', this.query.trim()); else params.delete('q');
+        if (this.selectedChapter !== null) params.set('chapter_id', this.selectedChapter);
+        else params.delete('chapter_id');
+        if (this.page > 1 && this.tab === 'resources') params.set('page', this.page);
+        else params.delete('page');
+        const url = window.location.pathname + (params.toString() ? '?' + params : '');
+        window.history[push ? 'pushState' : 'replaceState']({tab: this.tab}, '', url);
+      },
+      setTab(tab) {
+        if (!tabs.includes(tab) || tab === this.tab) return;
+        this.tab = tab;
+        this.syncUrl(true);
+        this.activateTab(false);
+      },
+      activateTab(push) {
+        this.syncUrl(push);
+        if (this.tab === 'resources') this.loadResources();
+        if (this.tab === 'rank' && !this.rankLoaded && !this.rankLoading) this.loadRank();
+      },
+      updateChapterTitle() {
+        this.selectedChapterTitle = '';
+        if (this.selectedChapter === null) return;
+        const item = document.querySelector('li[data-chapter-id="' + this.selectedChapter + '"] [data-chapter-title]');
+        this.selectedChapterTitle = item ? item.dataset.chapterTitle : '章节 #' + this.selectedChapter;
+      },
       selectChapter(id) {
         this.selectedChapter = this.selectedChapter === id ? null : id;
-        if (this.needLogin) return;
+        this.page = 1;
+        this.updateChapterTitle();
+        this.tab = 'resources';
+        this.syncUrl(true);
+        if (!this.needLogin) this.loadResources();
+      },
+      clearChapter() {
+        this.selectedChapter = null;
+        this.selectedChapterTitle = '';
+        this.page = 1;
+        this.syncUrl(true);
         this.loadResources();
       },
-
+      clearResourceFilters() {
+        this.query = '';
+        this.selectedChapter = null;
+        this.selectedChapterTitle = '';
+        this.page = 1;
+        this.syncUrl(true);
+        this.loadResources();
+      },
+      scheduleSearch() {
+        clearTimeout(this.searchTimer);
+        this.searchTimer = setTimeout(() => this.searchResources(), 320);
+      },
+      searchResources() {
+        clearTimeout(this.searchTimer);
+        this.page = 1;
+        this.syncUrl(true);
+        this.loadResources();
+      },
+      goPage(page) {
+        if (page < 1 || (page - 1) * this.size >= this.total) return;
+        this.page = page;
+        this.syncUrl(true);
+        this.loadResources();
+      },
       async loadResources() {
-        // /api/resources 需登录：匿名展示登录引导卡（ZY.api 对 401 一律跳 /login，
-        // 这里前置拦截避免匿名浏览课程页被重定向）
         if (this.needLogin) { this.loaded = true; return; }
+        const seq = ++this.requestSeq;
         this.loading = true; this.error = '';
         try {
-          let url = '/api/resources?course_id=' + courseId + '&size=50';
-          if (this.selectedChapter !== null) url += '&chapter_id=' + this.selectedChapter;
-          const data = await ZY.api.get(url);
+          const params = new URLSearchParams({course_id: String(courseId), page: String(this.page), size: String(this.size)});
+          if (this.selectedChapter !== null) params.set('chapter_id', this.selectedChapter);
+          if (this.query.trim()) params.set('q', this.query.trim());
+          const data = await ZY.api.get('/api/resources?' + params);
+          if (seq !== this.requestSeq) return;
           this.resources = data.items || [];
+          this.total = data.total || 0;
           this.loaded = true;
-        } catch (e) { this.error = e.message; }
-        finally { this.loading = false; }
+          if (!this.resources.length && this.total && this.page > 1) this.goPage(Math.ceil(this.total / this.size));
+        } catch (e) {
+          if (seq === this.requestSeq) this.error = e.message;
+        } finally {
+          if (seq === this.requestSeq) this.loading = false;
+        }
       },
-
       async loadRank() {
         this.rankLoading = true; this.rankError = '';
         try {
@@ -80,14 +144,11 @@
     };
   }
 
-  // 添加章节成功：客户端插入章节树节点（结构与 chapter_node 宏一致，
-  // Alpine 3 经 MutationObserver 自动初始化新增节点上的 x-data/@click 绑定）
   function insertChapterNode(ch) {
     const tree = document.getElementById('chapter-tree');
     if (!tree) return;
     const empty = document.getElementById('chapter-tree-empty');
     if (empty) empty.classList.add('hidden');
-
     const li = document.createElement('li');
     li.setAttribute('x-data', '{ open: true }');
     li.setAttribute('data-chapter-id', ch.id);
@@ -96,20 +157,20 @@
     row.className = 'flex items-center gap-0.5';
     const spacer = document.createElement('span');
     spacer.className = 'w-4 shrink-0';
-    const label = document.createElement('span');
-    label.className = 'block min-w-0 flex-1 cursor-pointer truncate rounded px-2 py-1 text-sm transition-colors';
+    const label = document.createElement('button');
+    label.type = 'button';
+    label.dataset.chapterTitle = ch.title;
+    label.setAttribute(':aria-pressed', 'selectedChapter === ' + ch.id);
+    label.className = 'block min-w-0 flex-1 truncate rounded px-2 py-1 text-left text-sm transition-colors';
     label.setAttribute(':class', 'selectedChapter === ' + ch.id +
       " ? 'bg-brand-50 text-brand-700 font-medium ring-1 ring-brand-200' : 'text-slate-600 hover:bg-slate-100'");
     label.setAttribute('@click', 'selectChapter(' + ch.id + ')');
     label.textContent = ch.title;
-    row.appendChild(spacer);
-    row.appendChild(label);
+    row.append(spacer, label);
     li.appendChild(row);
-
     if (ch.parent_id) {
       const parent = tree.querySelector('li[data-chapter-id="' + ch.parent_id + '"]');
       if (parent) {
-        // 父节点已有子列表则追加；没有则补一个恒展开的子列表（无折叠按钮，直接可见）
         let ul = parent.querySelector(':scope > ul');
         if (!ul) {
           ul = document.createElement('ul');
@@ -123,8 +184,6 @@
     tree.appendChild(li);
   }
 
-  // 添加章节（共建者/管理员）：POST /api/courses/{id}/chapters，
-  // 成功局部更新章节树与父章节下拉 + toast，失败内联错误
   function chapterAdder(courseId) {
     return {
       title: '', parent_id: '', loading: false, error: '',
@@ -133,11 +192,9 @@
         this.loading = true; this.error = '';
         try {
           const ch = await ZY.api.post('/api/courses/' + courseId + '/chapters', {
-            title: this.title.trim(),
-            parent_id: this.parent_id ? Number(this.parent_id) : null,
+            title: this.title.trim(), parent_id: this.parent_id ? Number(this.parent_id) : null,
           });
           insertChapterNode(ch);
-          // 根章节同步补进父章节下拉（仅根节点可作父级，与模板 SSR 口径一致）
           if (!ch.parent_id) {
             const select = document.getElementById('chapter-parent-select');
             if (select) {

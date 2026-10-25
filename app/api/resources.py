@@ -19,6 +19,8 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.embeddings import get_embedding
+from app.core.indexing import EMBED_BATCH as _EMBED_BATCH
+from app.core.indexing import index_document_chunks, invalidate_document_index
 from app.core.retrieval.fine import invalidate_bm25
 from app.identity.growth import download_share, grant_score
 from app.identity.rbac import get_current_user
@@ -34,8 +36,7 @@ from app.storage.models import (
     ReviewTask,
     User,
 )
-from app.storage.vector_store import COLLECTION_PERSONAL, get_vector_store
-from app.workers.parse_worker import _EMBED_BATCH, build_chunk_meta
+from app.storage.vector_store import get_vector_store
 
 logger = logging.getLogger(__name__)
 
@@ -84,6 +85,14 @@ async def _get_public_copy(db: AsyncSession, doc: Document) -> Document | None:
             )
         )
     ).scalars().first()
+
+
+async def _office_preview_key(db: AsyncSession, doc: Document) -> str | None:
+    """优先使用投稿阶段生成的 personal 原件预览，兼容旧 public 副本产物。"""
+    if doc.preview_key:
+        return doc.preview_key
+    public_doc = await _get_public_copy(db, doc)
+    return public_doc.preview_key if public_doc is not None else None
 
 
 @router.get("", include_in_schema=False)  # 兼容无尾斜杠（nginx 反代下 307 会丢失端口）
@@ -159,8 +168,7 @@ async def get_resource(
     ).scalar_one_or_none()
     preview_available = doc.file_type in ("pdf_textbook", "markdown")
     if not preview_available:
-        public_doc = await _get_public_copy(db, doc)
-        preview_available = public_doc is not None and public_doc.preview_key is not None
+        preview_available = await _office_preview_key(db, doc) is not None
     return {
         **_resource_item(resource, doc.file_type, uploader.nickname),
         "preview_available": preview_available,
@@ -217,8 +225,7 @@ async def preview_resource(
             media_type=media_type,
             headers=await _stream_headers(doc.storage_key, "inline"),
         )
-    public_doc = await _get_public_copy(db, doc)
-    preview_key = public_doc.preview_key if public_doc is not None else None
+    preview_key = await _office_preview_key(db, doc)
     if not preview_key:
         raise HTTPException(status_code=409, detail="预览生成中")
     return StreamingResponse(
@@ -510,27 +517,17 @@ async def clone_resource(
         for seq, src in enumerate(src_chunks, start=1)
     ]
     if derived:
-        embedding = get_embedding()
-        vectors: list[list[float]] = []
-        for i in range(0, len(derived), _EMBED_BATCH):
-            vectors.extend(
-                await embedding.embed([d["content"] for d in derived[i : i + _EMBED_BATCH]])
-            )
-        store = get_vector_store()
-        collection = await store.get_or_create_collection(COLLECTION_PERSONAL)
-        await store.upsert(
-            collection,
-            ids=[d["chunk_id"] for d in derived],
-            embeddings=vectors,
-            metadatas=[build_chunk_meta(new_doc, d) for d in derived],
-            documents=[d["content"] for d in derived],
+        await index_document_chunks(
+            new_doc,
+            derived,
+            embedding=get_embedding(),
+            store=get_vector_store(),
+            batch_size=_EMBED_BATCH,
         )
         db.add_all(Chunk(**d) for d in derived)
     await db.commit()
     if derived:
-        # 克隆 chunks 已落库：失效目标个人课程 BM25 语料缓存（v0.9；
-        # v1.1 起含 Redis 版本戳跨进程失效，§20.5 B2）
-        await invalidate_bm25(course.id, "personal", user.id)
+        await invalidate_document_index(new_doc, invalidate_bm25)
     return JSONResponse(
         {"document_id": new_doc.id, "course_id": course.id, "cloned": True},
         status_code=201,

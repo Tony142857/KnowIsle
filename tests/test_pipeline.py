@@ -12,7 +12,6 @@ import pytest
 from fastapi import HTTPException
 
 import app.core.pipeline as pipeline
-from app.core.llm.router import ModelTier
 from app.storage.models import QaLog
 
 
@@ -195,6 +194,7 @@ async def test_retrieve_personal_passes_chapter_ids(monkeypatch):
     assert chapter_ids == [3, 4]
     assert seen == {"scope": "personal", "owner_id": 7, "chapter_ids": [3, 4]}
     assert hits[0]["chunk"].chunk_id == "per_d1_00001"
+    assert {"embedding_ms", "coarse_ms", "fine_ms", "retrieval_ms", "index_version"} <= set(hits.metrics)
 
 
 async def test_retrieve_public_degrades_when_coarse_none(monkeypatch):
@@ -216,6 +216,26 @@ async def test_retrieve_public_degrades_when_coarse_none(monkeypatch):
     hits, chapter_ids = await pipeline.retrieve(session, "q", _user(7), 7, "public")
     assert hits == [] and chapter_ids is None
     assert seen == {"scope": "public", "chapter_ids": None}
+    assert hits.metrics["fallback"] == ["no_coarse_summary"]
+
+
+async def test_retrieve_coarse_failure_is_explained_and_uses_global_fine(monkeypatch):
+    monkeypatch.setattr(pipeline, "get_embedding", lambda: FakeEmbedding())
+
+    async def broken_coarse(*_args):
+        raise RuntimeError("summary index down")
+
+    async def fake_fine(*_args, **kwargs):
+        assert kwargs["chapter_ids"] is None
+        return []
+
+    monkeypatch.setattr(pipeline, "coarse_recall", broken_coarse)
+    monkeypatch.setattr(pipeline, "fine_search", fake_fine)
+    session = FakeSession(_course(scope="public", owner_id=None))
+    hits, chapter_ids = await pipeline.retrieve(session, "q", _user(7), 7, "public")
+    assert chapter_ids is None and hits == []
+    assert hits.metrics["fallback"] == ["coarse_error"]
+    assert hits.metrics["degraded"] == ["coarse"]
 
 
 async def test_retrieve_mixed_fuses_with_personal_boost(monkeypatch):
@@ -354,6 +374,8 @@ async def test_answer_question_full_flow(monkeypatch):
     assert log.answer == "分页是定长划分 [per_d1_00001]。"
     assert log.model_provider == "official"
     assert log.token_usage == 42
+    assert log.retrieval_metrics["first_token_ms"] is not None
+    assert log.retrieval_metrics["total_ms"] >= 0
     assert "什么是分页存储" in log.prompt
     assert "per_d1_00001" in log.prompt  # 上下文带入 chunk_id 供模型引用
     assert consumed == [7] and session.commits == 1
@@ -384,24 +406,24 @@ async def test_answer_question_user_custom_skips_quota(monkeypatch):
     assert session.executes == 0  # 空引用不查库
 
 
-async def test_answer_question_default_client_uses_official_short(monkeypatch):
-    """client=None 时走官方 SHORT 档模型。"""
+async def test_answer_question_no_hits_refuses_without_llm_or_quota(monkeypatch):
+    """无命中时固定提示资料不足，不调用 LLM、不扣官方额度。"""
     _patch_retrieve(monkeypatch, [], None)
-    _patch_quota(monkeypatch, [])
-    tiers = []
+    consumed = []
+    _patch_quota(monkeypatch, consumed)
 
-    def fake_official(tier):
-        tiers.append(tier)
-        return FakeLLMClient(["空结果回答。"], usage={"total_tokens": 3})
+    def fake_official(_tier):
+        raise AssertionError("无命中不应创建 LLM 客户端")
 
     monkeypatch.setattr(pipeline, "get_official_client", fake_official)
     session = FakeSession()
     events = [e async for e in pipeline.answer_question(session, _user(7), _body())]
-    assert tiers == [ModelTier.SHORT]
-    assert events[-1]["type"] == "done"
+    assert [event["type"] for event in events] == ["token", "citations", "done"]
+    assert "资料中未提及" in events[0]["text"]
+    assert events[-1]["token_usage"] == 0 and consumed == []
     log = session.added[0]
-    assert log.top_chunks == []
-    assert "（未检索到相关资料）" in log.prompt  # 空命中兜底上下文
+    assert log.top_chunks == [] and log.retrieval_metrics["first_token_ms"] is not None
+    assert "（未检索到相关资料）" in log.prompt
 
 
 async def test_answer_question_retrieve_http_error(monkeypatch):

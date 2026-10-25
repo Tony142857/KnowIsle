@@ -163,7 +163,7 @@ def test_create_post_experience_enqueues_summary(monkeypatch):
     with http_client(session, USER) as client:
         resp = client.post(
             "/api/posts/",
-            json={"board": "experience", "title": "保研经验", "content": "正文",
+            json={"board": "experience", "title": "保研经验", "content": "## 背景\n正文",
                   "tags": ["保研", "保研", "夏令营"]},  # 标签去重
         )
     assert resp.status_code == 201
@@ -614,7 +614,8 @@ def test_document_status_and_chunks_permission():
     session = FakeSession(gets={(Document, 11): doc}, results=[FakeResult(scalar=4)])
     with http_client(session, USER) as client:
         body = client.get("/api/documents/11/status").json()
-    assert body == {"document_id": 11, "file_name": "笔记.pdf", "status": "parsed", "chunk_count": 4}
+    assert body == {"document_id": 11, "file_name": "笔记.pdf", "status": "parsed",
+                    "chunk_count": 4, "parse_error": None}
     with http_client(FakeSession(gets={(Document, 11): doc}), make_user(2)) as client:
         assert client.get("/api/documents/11/status").status_code == 404
     # 切块：个人文档他人 404；admin 可见；public 文档任何登录用户可见
@@ -676,8 +677,12 @@ def test_submit_to_public_success_and_conflicts(monkeypatch):
         resp = client.post("/api/documents/11/submit", json={"title": "笔记", "course_id": 5})
     assert resp.status_code == 201
     body = resp.json()
-    assert body == {"resource_id": 21, "review_status": "pending",
-                    "review_task_id": 41, "resubmit": True}
+    assert body["resource_id"] == 21
+    assert body["review_status"] == "pending"
+    assert body["review_task_id"] == 41
+    assert body["resubmit"] is True
+    assert body["precheck_queued"] is True
+    assert body["preview_pending"] is False
     assert pool.jobs == [("precheck_submission", 41)]
     # 审核中 / 已上架冲突
     for error, detail in (("duplicate", "该资料已在审核中"), ("approved", "该资料已上架")):
@@ -1187,7 +1192,9 @@ def test_final_review_verdict_flows(monkeypatch):
         resp = client.post("/api/admin/review/final",
                            json={"task_id": 41, "verdict": "approve"})
     assert resp.status_code == 200
-    assert resp.json() == {"resource_id": 21, "review_status": "approved", "score_granted": 20}
+    assert resp.json()["review_status"] == "approved"
+    assert resp.json()["score_granted"] == 20
+    assert resp.json()["queued"] == {"preview": True, "chapter_summaries": True}
     assert pool.jobs == [("convert_preview", 55), ("backfill_chapter_summaries", 5)]
     audit = next(o for o in session.added if isinstance(o, AuditLog))
     assert audit.action == "final_verdict"
@@ -1308,7 +1315,9 @@ def test_direct_review_flows(monkeypatch):
     with http_client(session, ADMIN) as client:
         resp = client.post("/api/admin/review/direct",
                            json={"task_id": 41, "verdict": "approve"})
-    assert resp.json() == {"resource_id": 21, "review_status": "approved", "score_granted": 15}
+    assert resp.json()["review_status"] == "approved"
+    assert resp.json()["score_granted"] == 15
+    assert resp.json()["queued"] == {"preview": False, "chapter_summaries": True}
     assert pool.jobs == [("backfill_chapter_summaries", 5)]
     audit = next(o for o in session.added if isinstance(o, AuditLog))
     assert audit.action == "review_direct_verdict"
@@ -1505,7 +1514,7 @@ def test_list_reports_with_target_summaries():
         FakeResult(rows=reports),
         FakeResult(rows=[(21, "资源标题")]),
         FakeResult(rows=[(7, "帖子标题")]),
-        FakeResult(rows=[(31, "评论内容")]),
+        FakeResult(rows=[(31, "评论内容", 7)]),
         FakeResult(rows=[(9, "用户9")]),
         FakeResult(rows=[make_user(50, nickname="处理人")]),
     ])
@@ -1515,6 +1524,8 @@ def test_list_reports_with_target_summaries():
     by_type = {i["target_type"]: i for i in body["items"]}
     assert by_type["resource"]["target_summary"] == "资源标题"
     assert by_type["comment"]["target_summary"] == "评论内容"
+    assert by_type["comment"]["target_url"] == "/posts/7#comment-31"
+    assert by_type["resource"]["target_url"] == "/resources/21"
     assert by_type["user"]["handler"] == {"id": 50, "nickname": "处理人"}
     assert by_type["post"]["handler"] is None
 
@@ -1611,7 +1622,7 @@ def test_create_post_experience_enqueue_failure_compensates(monkeypatch):
     with http_client(session, USER) as client:
         resp = client.post(
             "/api/posts/",
-            json={"board": "experience", "title": "t", "content": "c"},
+            json={"board": "experience", "title": "t", "content": "## 背景\nc"},
         )
     assert resp.status_code == 500
     assert "AI 摘要任务入队失败" in resp.json()["detail"]

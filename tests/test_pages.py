@@ -189,6 +189,8 @@ def test_library_page_requires_login_and_renders_tree():
         FakeResult(rows=[chapter]),
         FakeResult(rows=[doc]),
         FakeResult(rows=[resource]),
+        FakeResult(rows=[]),
+        FakeResult(rows=[]),
     ])
     with http_client(session, USER) as client:
         resp = client.get("/library")

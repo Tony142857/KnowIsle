@@ -143,8 +143,10 @@ def test_build_where_personal_owner_and_chapters():
 
 
 def test_build_where_personal_without_owner():
-    """owner_id 为 None 时不加 owner 条件（personal 双层过滤的兜底）。"""
-    assert fine._build_where("personal", 7, None, None) == {"course_id": 7}
+    """owner 缺失使用不可能命中的哨兵，不能退化成全个人库查询。"""
+    assert fine._build_where("personal", 7, None, None) == {
+        "$and": [{"course_id": 7}, {"owner_id": -1}]
+    }
 
 
 def test_build_where_public_with_chapters():
@@ -183,7 +185,10 @@ def _corpus():
 
 
 def _chunks(*ids):
-    return {cid: SimpleNamespace(chunk_id=cid) for cid in ids}
+    texts = {chunk_id: text for chunk_id, _chapter, text in _corpus()}
+    return {
+        cid: SimpleNamespace(chunk_id=cid, content=texts.get(cid, "")) for cid in ids
+    }
 
 
 async def test_semantic_search_public_collection_and_order(monkeypatch):
@@ -259,16 +264,18 @@ async def test_fine_search_fuses_semantic_and_bm25(monkeypatch):
 
 
 async def test_fine_search_chapter_filter_applied_both_ways(monkeypatch):
-    """chapter_ids 在语义侧（allowed 集合）与 BM25 侧（缓存语料打分）各自过滤。"""
+    """章节内不足时第二次全课程恢复；首次查询仍严格应用章节过滤。"""
     store = FakeVectorStore([{"id": "c2"}, {"id": "c1"}])
     monkeypatch.setattr(fine, "get_vector_store", lambda: store)
     session = FineSession(corpus_rows=_corpus(), chunks=_chunks("c1", "c2", "c3"))
     hits = await fine.fine_search(session, "分页存储", [0.0], "public", 7, None, chapter_ids=[1])
     ids = [h["chunk"].chunk_id for h in hits]
-    assert ids == ["c1", "c3"]  # c2 属第 2 章，被过滤
+    assert set(ids) == {"c1", "c2", "c3"}
+    assert hits.metrics["fallback"] == ["insufficient_chapter_hits"]
     assert store.queries[0]["where"] == {
         "$and": [{"course_id": 7}, {"chapter_id": {"$in": [1]}}]
     }
+    assert store.queries[1]["where"] == {"course_id": 7}
 
 
 async def test_fine_search_drops_chunks_missing_from_pg(monkeypatch):
@@ -305,3 +312,98 @@ async def test_bm25_cache_lru_eviction(monkeypatch):
     third = await fine._get_bm25_entry(session, 7, "public", None)
     assert third is not first
     assert session.corpus_calls == 3
+
+
+async def test_fallback_prefers_global_hits_over_weak_chapter_evidence(monkeypatch):
+    """章节内只有弱证据时，全局补充的强命中应排在章节命中之前（R3 实测回归）。"""
+
+    class RankedStore(FakeVectorStore):
+        def __init__(self):
+            super().__init__([])
+
+        async def query(self, collection, embedding, n_results=10, where=None):
+            self.queries.append({"where": where})
+            if where and "$and" in where:
+                return [{"id": "c_weak", "distance": 0.95}]
+            return [
+                {"id": "c_good", "distance": 0.2},
+                {"id": "c_weak", "distance": 0.95},
+            ]
+
+    monkeypatch.setattr(fine, "get_vector_store", lambda: RankedStore())
+    chunks = {
+        "c_weak": SimpleNamespace(chunk_id="c_weak", content="调度层次与实时调度"),
+        "c_good": SimpleNamespace(chunk_id="c_good", content="分页存储管理的页表与地址转换"),
+    }
+    session = FineSession(
+        corpus_rows=[("c_weak", 1, "调度层次与实时调度"), ("c_good", 1, "分页存储管理的页表")],
+        chunks=chunks,
+    )
+    hits = await fine.fine_search(
+        session, "分页存储管理", [0.0], "public", 7, None, chapter_ids=[1]
+    )
+    assert [hit["chunk"].chunk_id for hit in hits][0] == "c_good"
+    assert "insufficient_chapter_hits" in hits.metrics["fallback"]
+
+
+async def test_semantic_failure_degrades_to_bm25(monkeypatch):
+    class BrokenStore(FakeVectorStore):
+        async def query(self, *args, **kwargs):
+            raise RuntimeError("chroma down")
+
+    monkeypatch.setattr(fine, "get_vector_store", lambda: BrokenStore())
+    session = FineSession(corpus_rows=_corpus(), chunks=_chunks("c1", "c2", "c3"))
+    hits = await fine.fine_search(session, "分页存储", [0.0], "public", 7, None)
+    assert hits[0]["chunk"].chunk_id == "c1"
+    assert all(hit["sources"] == ["bm25"] for hit in hits)
+    assert hits.metrics["degraded"] == ["semantic"]
+
+
+async def test_bm25_failure_degrades_to_semantic_without_permission_relaxation(monkeypatch):
+    store = FakeVectorStore([{"id": "c_outside"}, {"id": "c1"}])
+    monkeypatch.setattr(fine, "get_vector_store", lambda: store)
+
+    def broken_bm25(*_args):
+        raise RuntimeError("bm25 down")
+
+    monkeypatch.setattr(fine, "_bm25_top_ids", broken_bm25)
+    session = FineSession(corpus_rows=_corpus(), chunks=_chunks("c1", "c_outside"))
+    hits = await fine.fine_search(session, "分页存储", [0.0], "public", 7, None)
+    assert [hit["chunk"].chunk_id for hit in hits] == ["c1"]
+    assert hits.metrics["degraded"] == ["bm25"]
+
+
+async def test_unmapped_chunks_trigger_one_global_supplement(monkeypatch):
+    store = FakeVectorStore([{"id": "c1"}, {"id": "c4"}])
+    monkeypatch.setattr(fine, "get_vector_store", lambda: store)
+    corpus = [*_corpus(), ("c4", None, "未分章的分页补充资料")]
+    session = FineSession(corpus_rows=corpus, chunks=_chunks("c1", "c2", "c3", "c4"))
+    hits = await fine.fine_search(
+        session, "分页存储", [0.0], "public", 7, None, chapter_ids=[1], min_hits=2
+    )
+    assert "unmapped_chunks" in hits.metrics["fallback"]
+    assert len(store.queries) == 2
+    assert "c4" in {hit["chunk"].chunk_id for hit in hits}
+
+
+async def test_sufficient_chapter_hits_do_not_query_globally(monkeypatch):
+    store = FakeVectorStore([{"id": "c1"}, {"id": "c3"}])
+    monkeypatch.setattr(fine, "get_vector_store", lambda: store)
+    session = FineSession(corpus_rows=_corpus(), chunks=_chunks("c1", "c2", "c3"))
+    hits = await fine.fine_search(
+        session, "分页存储", [0.0], "public", 7, None, chapter_ids=[1], min_hits=2
+    )
+    assert hits.metrics["fallback"] == []
+    assert len(store.queries) == 1
+
+
+async def test_unrelated_unmapped_chunk_does_not_force_global_query(monkeypatch):
+    store = FakeVectorStore([{"id": "c1"}, {"id": "c3"}])
+    monkeypatch.setattr(fine, "get_vector_store", lambda: store)
+    corpus = [*_corpus(), ("c4", None, "未分章的完全无关内容")]
+    session = FineSession(corpus_rows=corpus, chunks=_chunks("c1", "c2", "c3", "c4"))
+    hits = await fine.fine_search(
+        session, "分页存储", [0.0], "public", 7, None, chapter_ids=[1], min_hits=2
+    )
+    assert hits.metrics["fallback"] == []
+    assert len(store.queries) == 1

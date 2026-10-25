@@ -18,6 +18,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.context import prompt_text
 from app.core.llm.prompts import QUIZ_PROMPT, REVIEW_OUTLINE_PROMPT
 from app.core.llm.router import ModelTier, resolve_client
 from app.core.pipeline import check_course_access, retrieve
@@ -33,7 +34,8 @@ router = APIRouter(prefix="/review", tags=["review-tools"])
 _CHAPTER_CHUNK_LIMIT = 4  # 大纲：每章代表 chunks 上限
 _COURSE_CHUNK_LIMIT = 8  # 大纲：课程无章节树时全课程代表 chunks 上限
 _QUIZ_CHUNK_LIMIT = 6  # 习题：单章代表 chunks 上限
-_QUIZ_TYPES = ("single_choice", "short_answer", "calculation")
+_QUIZ_TYPES = ("single_choice", "short_answer")
+_REVIEW_CONTEXT_BUDGET = 12_000
 _QUIZ_RETRY_HINT = "上次输出不是合法 JSON，请仅输出符合上述格式的 JSON，不要输出任何其他文字。"
 
 
@@ -60,20 +62,36 @@ async def _load_course(db: AsyncSession, user: User, course_id: int) -> Course:
 async def _chapter_reps(
     db: AsyncSession, user: User, course: Course, chapter: Chapter, limit: int
 ) -> list[dict]:
-    """章节代表 chunks：以章节标题为 query 走 §5.3 检索链路，过滤回本章；
-    本章无命中时降级用全部命中（标题检索可能漏召回，代表块宁宽勿缺）。"""
+    """只返回本章代表块；本章漏召回时留空，绝不拿其他章节凑数。"""
     hits, _ = await retrieve(db, chapter.title, user, course.id, course.scope)
-    own = [h for h in hits if h["chunk"].chapter_id == chapter.id]
-    return (own or hits)[:limit]
+    return [hit for hit in hits if hit["chunk"].chapter_id == chapter.id][:limit]
 
 
 def _sections_text(sections: list[dict]) -> str:
-    """章节聚合文本：## 章节标题 + [chunk_id] 标注的内容块（供 Prompt {chapter_text}）。"""
     parts = []
     for sec in sections:
-        blocks = [f"[{h['chunk'].chunk_id}]\n{h['chunk'].content}" for h in sec["chunks"]]
+        blocks = [prompt_text(hit["chunk"], sec["title"]) for hit in sec["chunks"]]
         parts.append(f"## {sec['title']}\n\n" + "\n\n".join(blocks))
     return "\n\n".join(parts)
+
+
+def _budget_sections(sections: list[dict], max_chars: int = _REVIEW_CONTEXT_BUDGET) -> list[dict]:
+    """按原顺序纳入完整块，不用截断句子的方式挤占总上下文预算。"""
+    result = []
+    used = 0
+    for sec in sections:
+        selected = []
+        heading_len = len(sec["title"]) + 6
+        for hit in sec["chunks"]:
+            size = len(prompt_text(hit["chunk"], sec["title"])) + 2
+            if used + heading_len + size > max_chars:
+                continue
+            selected.append(hit)
+            used += heading_len + size
+            heading_len = 0
+        if selected:
+            result.append({**sec, "chunks": selected})
+    return result
 
 
 async def _log_and_consume(
@@ -163,7 +181,7 @@ async def generate_outline(
         logger.exception("复习大纲检索失败 course_id=%s", course.id)
         raise HTTPException(status_code=502, detail="检索服务暂时不可用，请稍后重试") from None
 
-    sections = [s for s in sections if s["chunks"]]  # 跳过无资料章节
+    sections = _budget_sections([s for s in sections if s["chunks"]])
     if not sections:
         raise HTTPException(status_code=422, detail="该课程暂无可用于生成大纲的资料")
 
@@ -203,9 +221,13 @@ async def generate_outline(
 # ---------------------------------------------------------------------------
 
 
-def _parse_quiz(raw: str, valid_chunk_ids: set[str]) -> list[dict] | None:
-    """解析习题 JSON：容错 markdown 代码块包裹；逐题规整字段，
-    chunk_id 仅保留上下文真实存在的（与 §A3 引用提取同一约定）。非法输出返回 None。"""
+def _parse_quiz(
+    raw: str,
+    valid_chunk_ids: set[str],
+    expected_count: int | None = None,
+    chunk_documents: dict[str, int] | None = None,
+) -> list[dict] | None:
+    """严格校验题数、题型、选项、答案和证据；任何一题非法则整批重试。"""
     text = raw.strip()
     if text.startswith("```"):
         text = re.sub(r"^```(?:json)?\s*", "", text)
@@ -217,23 +239,48 @@ def _parse_quiz(raw: str, valid_chunk_ids: set[str]) -> list[dict] | None:
     items = data.get("questions") if isinstance(data, dict) else None
     if not isinstance(items, list) or not items:
         return None
+    if expected_count is not None and len(items) != expected_count:
+        return None
     questions = []
     for item in items:
-        if not isinstance(item, dict) or not item.get("question"):
-            continue
-        options = item.get("options")
+        if not isinstance(item, dict):
+            return None
+        question = item.get("question")
+        answer = item.get("answer")
+        kind = item.get("type")
         chunk_id = item.get("chunk_id")
+        options = item.get("options", [])
+        if (
+            not isinstance(question, str) or not question.strip()
+            or not isinstance(answer, str) or not answer.strip()
+            or kind not in _QUIZ_TYPES
+            or chunk_id not in valid_chunk_ids
+            or not isinstance(options, list)
+        ):
+            return None
+        if kind == "single_choice":
+            if (
+                len(options) != 4
+                or any(not isinstance(option, str) or not option.strip() for option in options)
+                or len(set(options)) != 4
+                or answer.strip().upper() not in {"A", "B", "C", "D"}
+            ):
+                return None
+            answer = answer.strip().upper()
+        elif options:
+            return None
         questions.append(
             {
-                "type": item.get("type") if item.get("type") in _QUIZ_TYPES else "short_answer",
-                "question": str(item["question"]),
-                "options": [str(o) for o in options] if isinstance(options, list) else [],
-                "answer": str(item.get("answer") or ""),
+                "type": kind,
+                "question": question.strip(),
+                "options": options,
+                "answer": answer.strip(),
                 "explanation": str(item.get("explanation") or ""),
-                "chunk_id": chunk_id if chunk_id in valid_chunk_ids else None,
+                "chunk_id": chunk_id,
+                "document_id": (chunk_documents or {}).get(chunk_id),
             }
         )
-    return questions or None
+    return questions
 
 
 @router.post("/quiz")
@@ -268,17 +315,18 @@ async def generate_quiz(
         chapter_text=_sections_text([{"title": chapter.title, "chunks": chunks}]),
     )
     valid_chunk_ids = {h["chunk"].chunk_id for h in chunks}
+    chunk_documents = {h["chunk"].chunk_id: h["chunk"].document_id for h in chunks}
     try:
         messages = [{"role": "user", "content": prompt}]
         raw, usage = await client.chat(messages)
-        questions = _parse_quiz(raw, valid_chunk_ids)
+        questions = _parse_quiz(raw, valid_chunk_ids, body.count, chunk_documents)
         if questions is None:  # 非法 JSON：带提示重试一次
             messages += [
                 {"role": "assistant", "content": raw},
                 {"role": "user", "content": _QUIZ_RETRY_HINT},
             ]
             raw, usage = await client.chat(messages)
-            questions = _parse_quiz(raw, valid_chunk_ids)
+            questions = _parse_quiz(raw, valid_chunk_ids, body.count, chunk_documents)
     except Exception:
         logger.exception("习题 LLM 生成失败 course_id=%s chapter_id=%s", course.id, chapter.id)
         raise HTTPException(status_code=502, detail="AI 服务暂时不可用，请稍后重试") from None

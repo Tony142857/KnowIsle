@@ -78,6 +78,17 @@ class VectorStore:
         _collection_ids[cache_key] = collection_id
         return collection_id
 
+    async def get_collection_metadata(self, name: str) -> dict:
+        """读取当次真实索引版本/模型/状态，不使用应用配置冒充已建索引。
+
+        Chroma 1.0.15 的集合详情 GET 只接受集合名（按 id 访问返回 404），
+        count/get/delete 等子资源仍按 id 访问；此处固定用 name。
+        """
+        await self.get_or_create_collection(name)
+        resp = await self._client.get(f"{_COLLECTIONS_PATH}/{name}", timeout=10)
+        self._check(resp, "metadata", name)
+        return resp.json().get("metadata") or {}
+
     def _evict_cached_id(self, collection_id: str) -> str | None:
         """按 id 反查并清除本实例的 name→id 进程缓存，返回集合名（无缓存返回 None）。"""
         prefix = f"{self.base_url}:"

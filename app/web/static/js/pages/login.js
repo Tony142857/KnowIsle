@@ -18,6 +18,40 @@ document.addEventListener('alpine:init', function () {
       cooldown: 0, _timer: null,
       student_no: '', email: '', code: '',
       real_name: '', nickname: '', grade: '', major_id: '', majors: [],
+      next: (function () {
+        const value = new URLSearchParams(window.location.search).get('next') || '/';
+        return value.startsWith('/') && !value.startsWith('//') && !value.includes('\\') ? value : '/';
+      })(),
+
+      init() {
+        for (const key of ['student_no', 'email', 'real_name', 'nickname', 'grade', 'major_id']) {
+          this.$watch(key, () => this.saveDraft());
+        }
+        this.$watch('student_no', () => this.restoreDraft());
+      },
+      draftKey() { return 'login:' + this.student_no.trim(); },
+      saveDraft() {
+        if (!this.student_no.trim()) return;
+        ZY.drafts.save(this.draftKey(), {
+          email: this.email, real_name: this.real_name, nickname: this.nickname,
+          grade: this.grade, major_id: this.major_id,
+        }, 'anonymous');
+      },
+      restoreDraft() {
+        const draft = ZY.drafts.load(this.draftKey(), 'anonymous');
+        if (!draft) return;
+        for (const key of ['email', 'real_name', 'nickname', 'grade', 'major_id']) {
+          if (draft[key] !== undefined) this[key] = draft[key];
+        }
+      },
+
+      focusStep() {
+        this.$nextTick(() => {
+          const id = this.step === 1 ? 'login-student-no' : (this.step === 2 ? 'login-code' : 'login-real-name');
+          const el = document.getElementById(id);
+          if (el) el.focus();
+        });
+      },
 
       _startCooldown() {
         var self = this;
@@ -35,18 +69,24 @@ document.addEventListener('alpine:init', function () {
 
       async _post(url, body) {
         this.loading = true; this.error = ''; this.hint = '';
+        ZY.setBusy(this, true);
         try {
           return await ZY.api.post(url, body);
-        } finally { this.loading = false; }
+        } finally {
+          this.loading = false;
+          ZY.setBusy(this, false);
+        }
       },
 
       async sendCode() {
         if (this.loading || this.cooldown > 0) return;
         if (!this.student_no || !this.email) { this.error = '请填写学号与校园邮箱'; return; }
+        this.saveDraft();
         try {
           const data = await this._post('/api/auth/email/code',
             {student_no: this.student_no, email: this.email});
           this.step = Math.max(this.step, 2);
+          this.focusStep();
           this._startCooldown();
           // 开发期假通道：接口回显验证码便于联调（email_code_echo，生产关闭）
           this.hint = data.dev_code
@@ -56,6 +96,7 @@ document.addEventListener('alpine:init', function () {
       },
 
       async verify() {
+        if (this.loading) return;
         const body = {student_no: this.student_no, email: this.email, code: this.code};
         if (this.step === 3) {
           Object.assign(body, {
@@ -73,13 +114,20 @@ document.addEventListener('alpine:init', function () {
               const mj = await ZY.api.get('/api/majors');
               this.majors = mj.items || [];
             }
+            this.focusStep();
             return;
           }
-          window.location.href = '/';
-        } catch (e) { this.error = e.message; }
+          ZY.drafts.remove(this.draftKey(), 'anonymous');
+          window.location.href = this.next;
+        } catch (e) {
+          this.error = e.message || '登录失败，请检查输入后重试';
+        }
       },
 
-      reset() { this.step = 1; this.code = ''; this.error = ''; this.hint = ''; },
+      reset() {
+        this.step = 1; this.code = ''; this.error = ''; this.hint = '';
+        this.focusStep();
+      },
     };
   });
 });

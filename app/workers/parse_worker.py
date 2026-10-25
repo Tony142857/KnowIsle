@@ -14,37 +14,37 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.chunking import semantic_splitter
 from app.core.embeddings import get_embedding
+from app.core.indexing import EMBED_BATCH as _EMBED_BATCH
+from app.core.indexing import build_chunk_meta as _build_chunk_meta
+from app.core.indexing import index_document_chunks, invalidate_document_index
 from app.core.parser import parse_by_file_type
 from app.core.retrieval.fine import invalidate_bm25
 from app.core.structure import ai_verifier, tree_builder
 from app.storage import object_store
 from app.storage.db import SessionLocal
 from app.storage.models import Chunk, Document
-from app.storage.vector_store import (
-    COLLECTION_PERSONAL,
-    COLLECTION_PUBLIC,
-    get_vector_store,
-)
+from app.storage.vector_store import get_vector_store
 
 logger = logging.getLogger(__name__)
 
-_EMBED_BATCH = 64  # 向量化批大小
-
 
 def build_chunk_meta(doc: Document, chunk: dict) -> dict:
-    """Chroma metadata（值仅 str/int/float/bool；可空字段用 -1 哨兵）。"""
-    return {
-        "chunk_id": chunk["chunk_id"],
-        "document_id": doc.id,
-        "course_id": doc.course_id,
-        "owner_id": doc.owner_id,
-        "chapter_id": chunk["chapter_id"] if chunk["chapter_id"] is not None else -1,
-        "page_num": chunk["page_num"] if chunk["page_num"] is not None else -1,
-        "file_type": doc.file_type,
-    }
+    return _build_chunk_meta(doc, chunk)
+
+
+def public_parse_error(exc: Exception) -> str:
+    """把内部解析异常收敛为可公开、无堆栈和路径信息的用户文案。"""
+    if isinstance(exc, ValueError) and (
+        "解析结果为空" in str(exc) or "切块结果为空" in str(exc)
+    ):
+        return "文档中未提取到可用文本，请检查文件内容或更换格式后重试"
+    if isinstance(exc, (UnicodeError, ValueError)):
+        return "文档内容或格式无法解析，请确认文件未损坏后重试"
+    return "文档解析失败，请稍后重试；若持续失败，请更换文件格式"
 
 
 async def _run_pipeline(session: AsyncSession, doc: Document) -> list:
+    doc.parse_error = None
     data = await object_store.get_object(doc.storage_key)
     blocks = parse_by_file_type(doc.file_type, data)
     if not blocks:
@@ -55,20 +55,12 @@ async def _run_pipeline(session: AsyncSession, doc: Document) -> list:
     if not chunks:
         raise ValueError(f"文档切块结果为空: document_id={doc.id}")
 
-    embedding = get_embedding()
-    vectors: list[list[float]] = []
-    for i in range(0, len(chunks), _EMBED_BATCH):
-        vectors.extend(await embedding.embed([c["content"] for c in chunks[i : i + _EMBED_BATCH]]))
-
-    store = get_vector_store()
-    name = COLLECTION_PUBLIC if doc.scope == "public" else COLLECTION_PERSONAL
-    collection = await store.get_or_create_collection(name)
-    await store.upsert(
-        collection,
-        ids=[c["chunk_id"] for c in chunks],
-        embeddings=vectors,
-        metadatas=[build_chunk_meta(doc, c) for c in chunks],
-        documents=[c["content"] for c in chunks],
+    await index_document_chunks(
+        doc,
+        chunks,
+        embedding=get_embedding(),
+        store=get_vector_store(),
+        batch_size=_EMBED_BATCH,
     )
 
     # 幂等：先清旧切块再插入（重试/重解析不留半成品）
@@ -92,7 +84,7 @@ async def _run_pipeline(session: AsyncSession, doc: Document) -> list:
     doc.status = "parsed"
     await session.commit()
     # chunks 已落库：失效该课程 BM25 语料缓存（v0.9；v1.1 起含 Redis 版本戳跨进程失效）
-    await invalidate_bm25(doc.course_id, doc.scope, doc.owner_id)
+    await invalidate_document_index(doc, invalidate_bm25)
     return blocks
 
 
@@ -107,11 +99,12 @@ async def parse_document(ctx: dict, document_id: int) -> None:
             return
         try:
             blocks = await _run_pipeline(session, doc)
-        except Exception:
+        except Exception as exc:
             await session.rollback()
             if ctx.get("job_try", 1) >= 3:
-                # 最后一次重试仍失败：标记 failed 并提交后再抛出（交 arq 终结任务）
+                # 只暴露安全文案；原始异常仍由 ARQ/日志记录，不写入用户状态。
                 doc.status = "failed"
+                doc.parse_error = public_parse_error(exc)
                 await session.commit()
             raise
     # 章节树 AI 校验（模块 A1 附加层）：解析主流程成功后才执行；verify_tree_safe

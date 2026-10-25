@@ -3,6 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="zy-user-id" content="{{ user.id if user else 'anonymous' }}">
   <meta name="description" content="知屿 KnowIsle —— 智能课程知识社区：课程资料库、AI 问答溯源、知屿问答与经验长廊，让每门课程沉淀为一座知识岛屿。">
   <title>{% block title %}知屿 KnowIsle{% endblock %}</title>
   <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
@@ -26,9 +27,10 @@
   {% block head %}{% endblock %}
 </head>
 <body class="bg-gradient-to-b from-brand-50/40 via-slate-50 to-slate-50 bg-fixed text-slate-800 min-h-screen flex flex-col">
+  <a href="#main-content" class="skip-link">跳到正文</a>
   {# ===== 导航栏（§13 通用交互规范：含通知未读角标，30s 轮询） ===== #}
   <header class="bg-white/80 backdrop-blur border-b border-brand-100/80 sticky top-0 z-40 shadow-[0_1px_2px_0_rgb(2_44_34/0.05)]"
-          x-data="{ mobileOpen: false }" @keydown.escape.window="mobileOpen = false">
+          x-data="mobileNav()" @keydown.escape.window="close()">
     <nav class="max-w-6xl mx-auto px-4 h-14 flex items-center gap-6">
       <a href="/" class="flex items-center gap-1.5 text-lg font-bold text-brand-700 shrink-0">
         {# 岛屿意象：海浪上的灯塔（知识灯塔照亮岛屿） #}
@@ -52,7 +54,7 @@
       ] %}
       <div class="hidden md:flex items-center gap-1 text-sm">
         {% for key, href, label in nav_items %}
-        <a href="{{ href }}"
+        <a href="{{ href }}" aria-current="{{ 'page' if active == key else 'false' }}"
            class="px-3 py-1.5 rounded-full transition-colors duration-island ease-island
                   {{ 'bg-brand-600 text-white font-medium shadow-sm' if active == key
                      else 'text-slate-600 hover:text-brand-700 hover:bg-brand-50' }}">
@@ -84,15 +86,26 @@
         {% endif %}
       </div>
 
-      <div class="ml-auto flex items-center gap-4">
+      <div class="ml-auto flex items-center gap-2 md:gap-4">
+        {% if user %}
+        <nav aria-label="快捷学习操作" class="hidden lg:flex items-center gap-1 text-sm">
+          <a href="/library?upload=1" class="rounded-full px-2.5 py-1.5 text-brand-700 hover:bg-brand-50">上传资料</a>
+          <a href="/posts/new" class="rounded-full px-2.5 py-1.5 text-brand-700 hover:bg-brand-50">发帖</a>
+        </nav>
+        {% endif %}
         {# 全站搜索框（v0.8）：GET /search，未登录将被 303 引导至登录页 #}
-        <form action="/search" method="get" class="hidden md:block">
-          <input type="search" name="q" placeholder="搜索帖子 / 资料…" required
-                 class="w-40 rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-sm
-                        transition-all duration-island ease-island focus:w-56 focus:border-brand-400 focus:bg-white focus:outline-none">
+        <form action="/search" method="get" class="hidden md:block" role="search">
+          <label for="global-search" class="sr-only">搜索帖子或资料</label>
+          <input id="global-search" type="search" name="q" placeholder="搜索帖子 / 资料…" required
+                 class="w-32 rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-sm
+                        transition-all duration-island ease-island focus:w-48 focus:border-brand-400 focus:bg-white focus:outline-none">
         </form>
+        {% if user %}
+        <a href="/me#score-logs" class="shrink-0 rounded-full bg-brand-50 px-2 py-1 text-xs font-medium text-brand-700"
+           aria-label="贡献分 {{ user.score }}，查看积分明细"><span id="top-score">{{ user.score }}</span> 分</a>
+        {% endif %}
         {# 通知未读角标（模块 B5）：HTMX 加载时 + 每 30s 轮询；移动端保留在汉堡按钮左侧 #}
-        <a href="/me" class="relative text-slate-500 transition-colors hover:text-brand-700" title="站内通知"
+        <a href="/me#notifications" class="relative text-slate-500 transition-colors hover:text-brand-700" title="站内通知"
            hx-get="/api/notifications/unread-count" hx-trigger="load, every 30s" hx-swap="none">
           <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2"
                viewBox="0 0 24 24" aria-hidden="true">
@@ -129,7 +142,8 @@
           {% endif %}
         </div>
         {# 汉堡按钮：仅 md 以下显示，切换移动端导航面板 #}
-        <button @click="mobileOpen = !mobileOpen" :aria-expanded="mobileOpen" aria-label="打开导航菜单"
+        <button type="button" x-ref="menuButton" @click="toggle()" :aria-expanded="mobileOpen"
+                :aria-label="mobileOpen ? '关闭导航菜单' : '打开导航菜单'" aria-controls="mobile-navigation"
                 class="md:hidden -mr-1 rounded-md p-1.5 text-slate-600 transition-colors hover:bg-brand-50 hover:text-brand-700">
           <svg x-show="!mobileOpen" class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2"
                viewBox="0 0 24 24" aria-hidden="true">
@@ -144,15 +158,22 @@
     </nav>
 
     {# ===== 移动端导航面板（md 以下）：板块入口 + 搜索 + 协审/管理 + 登录态 ===== #}
-    <div x-show="mobileOpen" x-cloak class="md:hidden border-t border-brand-100/80 bg-white/95 backdrop-blur">
+    <div id="mobile-navigation" x-ref="mobilePanel" x-show="mobileOpen" x-cloak class="md:hidden border-t border-brand-100/80 bg-white/95 backdrop-blur">
       <div class="max-w-6xl mx-auto px-4 py-3 space-y-1">
-        <form action="/search" method="get" class="pb-2">
-          <input type="search" name="q" placeholder="搜索帖子 / 资料…" required
+        <form action="/search" method="get" class="pb-2" role="search">
+          <label for="mobile-search" class="sr-only">搜索帖子或资料</label>
+          <input id="mobile-search" type="search" name="q" placeholder="搜索帖子 / 资料…" required
                  class="w-full rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm
                         focus:border-brand-400 focus:bg-white focus:outline-none">
         </form>
+        {% if user %}
+        <div class="grid grid-cols-2 gap-2 pb-2" aria-label="快捷学习操作">
+          <a href="/library?upload=1" class="btn btn-secondary">上传资料</a>
+          <a href="/posts/new" class="btn btn-secondary">发帖</a>
+        </div>
+        {% endif %}
         {% for key, href, label in nav_items %}
-        <a href="{{ href }}" @click="mobileOpen = false"
+        <a href="{{ href }}" aria-current="{{ 'page' if active == key else 'false' }}" @click="mobileOpen = false"
            class="block rounded-md px-3 py-2 text-sm transition-colors
                   {{ 'bg-brand-50 text-brand-700 font-medium' if active == key
                      else 'text-slate-600 hover:text-brand-700 hover:bg-brand-50' }}">
@@ -215,7 +236,7 @@
     {% block flash %}{% endblock %}
   </div>
 
-  <main class="flex-1 max-w-6xl w-full mx-auto px-4 py-8">
+  <main id="main-content" tabindex="-1" class="flex-1 max-w-6xl w-full mx-auto px-4 py-8">
     {% block content %}{% endblock %}
   </main>
 
@@ -295,8 +316,31 @@
     </div>
   </div>
 
-  {# 全局轻提示容器（ZY.toast，components.js） #}
-  <div id="zy-toasts" class="pointer-events-none fixed right-4 top-16 z-[60] flex flex-col items-end gap-2"></div>
+  {# 资源 / 帖子 / 评论共用的举报理由对话框，调用 ZY.report(type, id) 打开。 #}
+  <div x-data="reportModal()" @zy-report.window="ask($event.detail)">
+    <div x-show="open" x-cloak role="dialog" aria-modal="true" aria-labelledby="zy-report-title"
+         class="fixed inset-0 z-50 flex items-center justify-center bg-brand-950/40 p-4">
+      <form @submit.prevent="submit()" class="w-full max-w-md rounded-card bg-white p-5 shadow-lift"
+            :aria-busy="loading">
+        <h2 id="zy-report-title" class="text-base font-semibold text-slate-800">举报内容</h2>
+        <p class="mt-1 text-sm text-slate-500">请说明需要管理员核查的问题，恶意举报可能影响信用分。</p>
+        <label for="zy-report-reason" class="mt-4 block text-sm font-medium text-slate-700">举报理由</label>
+        <textarea id="zy-report-reason" x-model="reason" rows="4" maxlength="500" required
+                  aria-describedby="zy-report-error" class="input-base mt-1"
+                  placeholder="例如：资料内容与标题不符、包含侵权或攻击性内容"></textarea>
+        <p id="zy-report-error" x-show="error" x-text="error" x-cloak role="alert"
+           class="mt-2 rounded bg-red-50 px-3 py-2 text-sm text-red-700"></p>
+        <div class="mt-4 flex justify-end gap-2">
+          <button type="button" @click="close()" :disabled="loading" class="btn btn-ghost">取消</button>
+          <button type="submit" :disabled="loading || !reason.trim()" :aria-busy="loading"
+                  :class="{'btn-loading': loading}" class="btn btn-primary">提交举报</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  {# 全局轻提示容器（ZY.toast，components.js）；错误提示驻留，需手动关闭。 #}
+  <div id="zy-toasts" aria-label="操作提示" class="pointer-events-none fixed right-4 top-16 z-[60] flex max-w-[calc(100vw-2rem)] flex-col items-end gap-2"></div>
 
   {# 未读角标更新逻辑已外置到 /static/js/base.js（CSP 兼容，v1.0） #}
 </body>
