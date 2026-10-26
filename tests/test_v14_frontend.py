@@ -46,7 +46,8 @@ def test_motion_one_is_local_pinned_and_reduced_motion_aware():
     vendor = WEB / "static/vendor/motion-10.18.0.min.js"
     assert vendor.exists()
     digest = hashlib.sha256(vendor.read_bytes()).hexdigest()
-    assert digest == "42afe559fafc09469d10a9d7df0978a98e345ed6066ef7fa87451cde0702b7ad"
+    # 与仓库中的 LF 标准文件一致；vendor 压缩 JS 由 .gitattributes 禁止换行转换。
+    assert digest == "31b6d1e7e3193bb7aa484a526be5633b19a36e835d8472ea4b9cffc961c7954d"
     assert (WEB / "static/vendor/motion-LICENSE.txt").exists()
     wrapper = read(JS / "motion.js")
     assert "prefers-reduced-motion: reduce" in wrapper
