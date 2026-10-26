@@ -5,8 +5,12 @@
 **/*.pyc
 .pytest_cache
 .ruff_cache
+.coverage
+.gunicorn
 .local
 .v13-work
+tests/artifacts
+docs
 client/dist
 client/build
 backups

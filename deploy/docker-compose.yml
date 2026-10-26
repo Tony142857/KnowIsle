@@ -1,4 +1,4 @@
-# 知屿 KnowIsle 单机一键部署（§15.2）
+﻿# 知屿 KnowIsle 单机一键部署（§15.2）
 # 用法（项目根目录）：docker compose -f deploy/docker-compose.yml up -d --build
 name: knowisle
 
@@ -7,13 +7,13 @@ services:
     build:
       context: ..
       dockerfile: Dockerfile
-    image: knowisle-app:1.3.0         # 自建镜像按版本号命名，禁止 latest（发版时手动递增）
+    image: knowisle-app:1.4.0         # 自建镜像按版本号命名，禁止 latest（发版时手动递增）
     env_file: ../.env
     environment:
       HF_HUB_OFFLINE: "1"               # Embedding 模型已烘焙进镜像，运行时离线加载
     command: >
       sh -c "alembic upgrade head &&
-             gunicorn app.main:app -k uvicorn.workers.UvicornWorker -w 4 -b 0.0.0.0:8000"
+             gunicorn app.main:app -k uvicorn.workers.UvicornWorker -w 4 -b 0.0.0.0:8000 --timeout 300"
     ports:
       - "127.0.0.1:8000:8000"         # 开发调试直连（生产仅经 nginx）
     depends_on:
@@ -31,7 +31,7 @@ services:
     build:
       context: ..
       dockerfile: Dockerfile
-    image: knowisle-app:1.3.0         # 同上：worker 与 app 共用同一版本化镜像
+    image: knowisle-app:1.4.0         # 同上：worker 与 app 共用同一版本化镜像
     env_file: ../.env
     environment:
       HF_HUB_OFFLINE: "1"               # 同上：worker 加载本地 Embedding 模型不联网
