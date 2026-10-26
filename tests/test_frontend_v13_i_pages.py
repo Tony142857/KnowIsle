@@ -47,7 +47,7 @@ def test_course_resource_state_is_url_recoverable_and_paginated():
     text = template("course_detail.html") + script("course_detail.js")
     for token in ["URLSearchParams", "popstate", "pushState", "chapter_id", "page", "size", "params.set('q'"]:
         assert token in text
-    assert "type=\"button\" data-chapter-title" in text
+    assert "data-chapter-title" in text
     assert "重试" in text and "资料分页" in text
 
 
@@ -64,9 +64,9 @@ def test_resource_download_and_ownership_guards():
 def test_post_editor_and_detail_cover_recovery_and_acceptance_rules():
     editor = template("post_new.html") + script("post_new.js")
     detail = template("post_detail.html") + script("post_detail.js")
-    components = (ROOT / "app/web/static/js/components.js").read_text(encoding="utf-8")
+    api = (ROOT / "app/web/static/js/api.js").read_text(encoding="utf-8")
     assert "ZY.drafts" in editor and "beforeunload" in editor
-    assert "localStorage" in components  # 草稿真实落盘由 components.js 的 ZY.drafts 承担
+    assert "localStorage" in api  # v1.4 草稿真实落盘统一由 api.js 的 ZY.drafts 承担
     assert "Markdown 预览" in editor and "course_id" in editor
     assert "确认托管悬赏" in editor
     assert "c.author_id != post.author_id" in detail

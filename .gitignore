@@ -11,6 +11,8 @@ venv/
 .coverage
 htmlcov/
 .local/
+.gunicorn/
+tests/artifacts/
 
 # 环境与密钥（绝不提交）
 .env

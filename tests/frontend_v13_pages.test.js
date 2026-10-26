@@ -101,11 +101,11 @@ test('download HTTP errors remain inline instead of navigating', async () => {
 
 test('post editor restores preselected draft and only clears it after success', async () => {
   const c = makeContext('/posts/new?board=qa&course_id=5');
-  loadShared('components.js', c);  // 草稿能力由共享 ZY.drafts 提供
-  c.localStorage.data['zhiyu:post-draft:v1'] = JSON.stringify({board: 'qa', title: '草稿', content: '**正文**', courseId: '5'});
+  loadShared('api.js', c);  // v1.4 草稿能力统一由 api.js 提供
+  c.localStorage.data['zhiyu:draft:v2:7:post-draft'] = JSON.stringify({savedAt: Date.now(), value: {board: 'qa', title: '草稿', content: '**正文**', courseId: '5'}});
   c.ZY.api.get = async url => url === '/api/users/me' ? {score: 100} : {items: url.includes('chapters') ? [] : [{id: 5, name: '操作系统', major_name: '计算机'}]};
   load('post_new.js', c);
-  const page = c.postNew('qa');
+  const page = c.postNew('qa', 7);
   page.$watch = () => {};
   await page.init();
   assert.equal(page.title, '草稿');
@@ -115,10 +115,10 @@ test('post editor restores preselected draft and only clears it after success', 
   assert.match(page.previewHtml, /正文/);
   c.ZY.api.post = async () => { throw new Error('发布失败'); };
   await page.doSubmit();
-  assert.ok(c.localStorage.data['zhiyu:post-draft:v1']);
+  assert.ok(c.localStorage.data['zhiyu:draft:v2:7:post-draft']);
   c.ZY.api.post = async () => ({post_id: 9});
   await page.doSubmit();
-  assert.equal(c.localStorage.data['zhiyu:post-draft:v1'], undefined);
+  assert.equal(c.localStorage.data['zhiyu:draft:v2:7:post-draft'], undefined);
 });
 
 test('comment acceptance supports QA reassignment and locks settled bounty', () => {
