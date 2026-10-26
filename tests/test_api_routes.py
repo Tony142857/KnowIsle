@@ -628,8 +628,10 @@ def test_document_status_and_chunks_permission():
         body = client.get("/api/documents/11/chunks").json()
     assert body["items"][0]["chapter_title"] == "第 1 章"
     public_doc = make_doc(12, owner_id=9, scope="public")
-    session = FakeSession(gets={(Document, 12): public_doc},
-                          results=[FakeResult(rows=[(chunk, None)])])
+    session = FakeSession(
+        gets={(Document, 12): public_doc, (Course, 5): make_course()},
+        results=[FakeResult(rows=[(chunk, None)])],
+    )
     with http_client(session, make_user(2)) as client:
         assert client.get("/api/documents/12/chunks").status_code == 200
 
@@ -749,6 +751,7 @@ def test_get_resource_visibility_and_preview_flag():
         (Resource, 21): make_resource(),
         (Document, 11): word_doc,
         (User, 9): uploader,
+        (Course, 5): make_course(),
     }
     session = FakeSession(gets=gets, results=[
         FakeResult(scalar=4),                       # my_rating
@@ -777,7 +780,7 @@ def test_preview_resource_permission_and_streams(monkeypatch):
     assert resp.content == "# 标题".encode()
     # 已上架 pdf：任何登录用户直接流式预览
     pdf_doc = make_doc(11, owner_id=9, file_type="pdf_textbook")
-    gets = {(Resource, 21): make_resource(), (Document, 11): pdf_doc}
+    gets = {(Resource, 21): make_resource(), (Course, 5): make_course(), (Document, 11): pdf_doc}
     with http_client(FakeSession(gets=gets), USER) as client:
         resp = client.get("/api/resources/21/preview")
     assert resp.status_code == 200
@@ -787,7 +790,7 @@ def test_preview_resource_permission_and_streams(monkeypatch):
 def test_preview_resource_office_transitional_states(monkeypatch):
     _patch_resources(monkeypatch, store=FakeObjectStore({"preview/12/m.pdf": b"pdf"}))
     word_doc = make_doc(11, owner_id=9, file_type="word")
-    gets = {(Resource, 21): make_resource(), (Document, 11): word_doc}
+    gets = {(Resource, 21): make_resource(), (Course, 5): make_course(), (Document, 11): word_doc}
     # 转换产物未就绪：409 预览生成中
     public_copy = make_doc(12, scope="public", preview_key=None)
     session = FakeSession(gets=gets, results=[FakeResult(rows=[public_copy])])
@@ -806,13 +809,19 @@ def test_download_resource_not_approved_and_paid(monkeypatch):
     _, store, grants = _patch_resources(monkeypatch,
                                         store=FakeObjectStore({"k/11": b"data"}))
     # 未上架：本人/admin 也不可下载
-    gets = {(Resource, 21): make_resource(review_status="pending", uploader_id=1)}
+    gets = {
+        (Resource, 21): make_resource(review_status="pending", uploader_id=1),
+        (Document, 11): make_doc(11, owner_id=1),
+    }
     with http_client(FakeSession(gets=gets), USER) as client:
         assert client.get("/api/resources/21/download").status_code == 404
     # 付费下载：扣分 + 80% 分成给上传者
     resource = make_resource(download_cost=10, uploader_id=9)
     doc = make_doc(11, owner_id=9)
-    gets = {(Resource, 21): resource, (Document, 11): doc, (User, 1): make_user(1, score=100)}
+    gets = {
+        (Resource, 21): resource, (Course, 5): make_course(),
+        (Document, 11): doc, (User, 1): make_user(1, score=100),
+    }
     session = FakeSession(gets=gets)
     with http_client(session, USER) as client:
         resp = client.get("/api/resources/21/download")
@@ -837,7 +846,7 @@ def test_download_resource_free_reward_and_redis_failure(monkeypatch):
                                         store=FakeObjectStore({"k/11": b"data"}))
     resource = make_resource(download_cost=0, uploader_id=9)
     doc = make_doc(11, owner_id=9)
-    gets = {(Resource, 21): resource, (Document, 11): doc}
+    gets = {(Resource, 21): resource, (Course, 5): make_course(), (Document, 11): doc}
     # 免费下载：首次下载给上传者 +1（Redis 去重 + 每日上限计数）
     with http_client(FakeSession(gets=gets), USER) as client:
         assert client.get("/api/resources/21/download").status_code == 200
@@ -864,11 +873,26 @@ def test_download_resource_free_reward_tolerates_redis_down(monkeypatch):
 
     monkeypatch.setattr(resources_api, "get_redis", _broken)
     resource = make_resource(download_cost=0, uploader_id=9)
-    gets = {(Resource, 21): resource, (Document, 11): make_doc(11, owner_id=9)}
+    gets = {(Resource, 21): resource, (Course, 5): make_course(), (Document, 11): make_doc(11, owner_id=9)}
     with http_client(FakeSession(gets=gets), USER) as client:
         resp = client.get("/api/resources/21/download")
     assert resp.status_code == 200  # Redis 故障跳过奖励不阻塞下载
     assert grants.calls == []
+
+
+def test_download_reward_database_error_is_not_misreported_as_redis_failure(monkeypatch):
+    _patch_resources(monkeypatch, store=FakeObjectStore({"k/11": b"data"}))
+    resource = make_resource(download_cost=0, uploader_id=9)
+    gets = {(Resource, 21): resource, (Course, 5): make_course(), (Document, 11): make_doc(11, owner_id=9)}
+
+    async def _fail(*_args, **_kwargs):
+        raise RuntimeError("database failure")
+
+    monkeypatch.setattr(resources_api, "grant_score", _fail)
+    with http_client(FakeSession(gets=gets), USER) as client, pytest.raises(
+        RuntimeError, match="database failure"
+    ):
+        client.get("/api/resources/21/download")
 
 
 def test_rate_resource_rules_and_upsert():
@@ -876,17 +900,23 @@ def test_rate_resource_rules_and_upsert():
     gets = {(Resource, 21): make_resource(review_status="pending")}
     with http_client(FakeSession(gets=gets), USER) as client:
         assert client.post("/api/resources/21/rating", json={"stars": 5}).status_code == 404
-    gets = {(Resource, 21): make_resource(uploader_id=1)}
+    gets = {
+        (Resource, 21): make_resource(uploader_id=1),
+        (Course, 5): make_course(),
+    }
     with http_client(FakeSession(gets=gets), USER) as client:
         resp = client.post("/api/resources/21/rating", json={"stars": 5})
         assert resp.status_code == 422 and "不能给自己的资源评分" in resp.json()["detail"]
         assert client.post("/api/resources/21/rating", json={"stars": 0}).status_code == 422
     # 首次评分：新增 ResourceRating 并回写平均分
     resource = make_resource()
-    session = FakeSession(gets={(Resource, 21): resource}, results=[
-        FakeResult(scalar=None),        # 无既有评分
-        FakeResult(rows=[(4.0, 1)]),    # avg / count
-    ])
+    session = FakeSession(
+        gets={(Resource, 21): resource, (Course, 5): make_course()},
+        results=[
+            FakeResult(scalar=None),        # 无既有评分
+            FakeResult(rows=[(4.0, 1)]),    # avg / count
+        ],
+    )
     with http_client(session, USER) as client:
         body = client.post("/api/resources/21/rating", json={"stars": 4}).json()
     assert body == {"rating": 4.0, "rating_count": 1, "my_rating": 4}
@@ -895,10 +925,13 @@ def test_rate_resource_rules_and_upsert():
     # 重复评分：覆盖原记录
     existing = SimpleNamespace(id=1, user_id=1, resource_id=21, stars=4)
     resource = make_resource(rating=4.0, rating_count=1)
-    session = FakeSession(gets={(Resource, 21): resource}, results=[
-        FakeResult(scalar=existing),
-        FakeResult(rows=[(3.0, 1)]),
-    ])
+    session = FakeSession(
+        gets={(Resource, 21): resource, (Course, 5): make_course()},
+        results=[
+            FakeResult(scalar=existing),
+            FakeResult(rows=[(3.0, 1)]),
+        ],
+    )
     with http_client(session, USER) as client:
         body = client.post("/api/resources/21/rating", json={"stars": 2}).json()
     assert existing.stars == 2
@@ -919,7 +952,9 @@ def test_rate_resource_integrity_race_falls_back_to_update():
     update 路径返回（幂等覆盖语义），不出 500。"""
     resource = make_resource()
     existing = SimpleNamespace(id=1, user_id=1, resource_id=21, stars=4)
-    session = _RaceFlushSession(gets={(Resource, 21): resource}, results=[
+    session = _RaceFlushSession(
+        gets={(Resource, 21): resource, (Course, 5): make_course()},
+        results=[
         FakeResult(scalar=None),        # 预查：无既有评分
         FakeResult(scalar=existing),    # 冲突 rollback 后重查：对方已插入
         FakeResult(rows=[(2.0, 1)]),    # avg / count
@@ -939,8 +974,8 @@ def test_clone_resource_guards():
         assert client.post("/api/resources/21/clone").status_code == 404
     src_doc = make_doc(11, owner_id=9, scope="public")
     for gets in (
-        {(Resource, 21): make_resource(), (Document, 11): src_doc},
-        {(Resource, 21): make_resource(), (Document, 11): src_doc,
+        {(Resource, 21): make_resource(), (Course, 5): make_course(), (Document, 11): src_doc},
+        {(Resource, 21): make_resource(), (Course, 5): make_course(), (Document, 11): src_doc,
          (Course, 7): make_course(7, scope="personal", owner_id=9)},
     ):
         with http_client(FakeSession(gets=gets), USER) as client:
@@ -951,7 +986,7 @@ def test_clone_resource_guards():
 def test_clone_resource_idempotent_hit():
     src_doc = make_doc(11, owner_id=9, scope="public")
     existing = make_doc(55, owner_id=1, course_id=7)
-    gets = {(Resource, 21): make_resource(), (Document, 11): src_doc}
+    gets = {(Resource, 21): make_resource(), (Course, 5): make_course(), (Document, 11): src_doc}
     session = FakeSession(gets=gets, results=[FakeResult(rows=[existing])])
     with http_client(session, USER) as client:
         body = client.post("/api/resources/21/clone").json()
@@ -968,7 +1003,10 @@ def test_clone_resource_success_with_explicit_course(monkeypatch):
                         recording_async(invalidated))
     src_doc = make_doc(11, owner_id=9, scope="public", preview_key="preview/11/m.pdf")
     target = make_course(7, scope="personal", owner_id=1)
-    gets = {(Resource, 21): make_resource(), (Document, 11): src_doc, (Course, 7): target}
+    gets = {
+        (Resource, 21): make_resource(), (Course, 5): make_course(),
+        (Document, 11): src_doc, (Course, 7): target,
+    }
     chunks = [make_chunk("pub_d11_00001", 11), make_chunk("pub_d11_00002", 11, id=2)]
     session = FakeSession(gets=gets, results=[
         FakeResult(rows=[]),       # 幂等检查：无同 storage_key 文档
@@ -999,7 +1037,7 @@ def test_clone_resource_default_course_and_preview_fallback(monkeypatch):
     # 原件无 preview_key：回退取终审派生 public 副本的预览键
     src_doc = make_doc(11, owner_id=9, scope="public", preview_key=None)
     public_copy = make_doc(12, scope="public", preview_key="preview/12/m.pdf")
-    gets = {(Resource, 21): make_resource(), (Document, 11): src_doc}
+    gets = {(Resource, 21): make_resource(), (Course, 5): make_course(), (Document, 11): src_doc}
     session = FakeSession(gets=gets, results=[
         FakeResult(rows=[]),               # 幂等检查
         FakeResult(rows=[]),               # 无既有「公共库克隆」课程
@@ -1028,7 +1066,10 @@ def test_clone_resource_empty_chunks_skips_embedding(monkeypatch):
                         recording_async(invalidated))
     src_doc = make_doc(11, owner_id=9, scope="public", preview_key="pk")
     target = make_course(7, scope="personal", owner_id=1)
-    gets = {(Resource, 21): make_resource(), (Document, 11): src_doc, (Course, 7): target}
+    gets = {
+        (Resource, 21): make_resource(), (Course, 5): make_course(),
+        (Document, 11): src_doc, (Course, 7): target,
+    }
     session = FakeSession(gets=gets, results=[
         FakeResult(rows=[]),  # 幂等检查
         FakeResult(rows=[]),  # 源 chunks 为空
@@ -1787,3 +1828,132 @@ def test_get_post_tolerates_redis_failure(monkeypatch):
         resp = client.get("/api/posts/8")
     assert resp.status_code == 200
     assert resp.json()["ai_summary_status"] == "none"
+
+
+# ---------------------------------------------------------------------------
+# v1.4：停用公共课程的公共内容不可见
+# ---------------------------------------------------------------------------
+
+
+class _VisibilitySession(FakeSession):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.statements = []
+
+    async def execute(self, statement, *args, **kwargs):
+        self.statements.append(str(statement))
+        return await super().execute(statement, *args, **kwargs)
+
+
+def test_search_resources_only_include_public_active_courses():
+    resource = make_resource()
+    session = _VisibilitySession(results=[
+        FakeResult(scalar=1),
+        FakeResult(rows=[(resource, "操作系统")]),
+    ])
+    with http_client(session, USER) as client:
+        resp = client.get("/api/search", params={"q": "操作系统", "type": "resource"})
+    assert resp.status_code == 200
+    assert resp.json()["resources"]["total"] == 1
+    assert len(session.statements) == 2
+    for statement in session.statements:
+        assert "courses.scope = " in statement
+        assert "courses.status = " in statement
+
+
+def test_vote_resource_requires_active_course_except_admin():
+    resource = make_resource()
+    gets = {(Resource, 21): resource, (Course, 5): make_course(status="disabled")}
+    with http_client(FakeSession(gets=gets), USER) as client:
+        resp = client.post(
+            "/api/votes",
+            json={"target_type": "resource", "target_id": 21, "value": 1},
+        )
+    assert resp.status_code == 404
+
+    gets[(Course, 5)] = make_course()
+    session = FakeSession(gets=gets, results=[
+        FakeResult(scalar=None),
+        FakeResult(scalar=1),
+    ])
+    with http_client(session, USER) as client:
+        resp = client.post(
+            "/api/votes",
+            json={"target_type": "resource", "target_id": 21, "value": 1},
+        )
+    assert resp.status_code == 200
+
+    gets[(Course, 5)] = make_course(status="disabled")
+    session = FakeSession(gets=gets, results=[
+        FakeResult(scalar=None),
+        FakeResult(scalar=1),
+    ])
+    with http_client(session, ADMIN) as client:
+        resp = client.post(
+            "/api/votes",
+            json={"target_type": "resource", "target_id": 21, "value": 1},
+        )
+    assert resp.status_code == 200
+
+
+def test_favorite_resource_visibility_and_active_filter():
+    resource = make_resource()
+    gets = {(Resource, 21): resource, (Course, 5): make_course(status="disabled")}
+    with http_client(FakeSession(gets=gets), USER) as client:
+        resp = client.post(
+            "/api/favorites",
+            json={"target_type": "resource", "target_id": 21},
+        )
+    assert resp.status_code == 404
+
+    session = _VisibilitySession(results=[FakeResult(scalar=0), FakeResult(rows=[])])
+    with http_client(session, USER) as client:
+        resp = client.get("/api/favorites", params={"target_type": "resource"})
+    assert resp.status_code == 200
+    assert resp.json() == {"total": 0, "items": []}
+    for statement in session.statements:
+        assert "courses.scope = " in statement
+        assert "courses.status = " in statement
+
+    favorite = SimpleNamespace(target_type="resource", target_id=21, created_at=NOW)
+    session = FakeSession(results=[
+        FakeResult(scalar=1),
+        FakeResult(rows=[favorite]),
+        FakeResult(rows=[(resource, "操作系统")]),
+    ])
+    with http_client(session, ADMIN) as client:
+        resp = client.get("/api/favorites", params={"target_type": "resource"})
+    assert resp.status_code == 200
+    assert resp.json()["total"] == 1
+    assert resp.json()["items"][0]["target"]["title"] == "操作系统笔记"
+
+
+def test_report_resource_requires_active_course_except_admin():
+    resource = make_resource()
+    gets = {(Resource, 21): resource, (Course, 5): make_course(status="disabled")}
+    payload = {"target_type": "resource", "target_id": 21, "reason": "内容有误"}
+    with http_client(FakeSession(gets=gets), USER) as client:
+        assert client.post("/api/reports", json=payload).status_code == 404
+
+    session = FakeSession(gets=gets, results=[FakeResult(rows=[])])
+    with http_client(session, ADMIN) as client:
+        resp = client.post("/api/reports", json=payload)
+    assert resp.status_code == 201
+    assert resp.json()["created"] is True
+
+
+def test_public_document_chunks_require_active_course_except_admin():
+    public_doc = make_doc(12, owner_id=9, scope="public")
+    gets = {
+        (Document, 12): public_doc,
+        (Course, 5): make_course(status="disabled"),
+    }
+    with http_client(FakeSession(gets=gets), USER) as client:
+        assert client.get("/api/documents/12/chunks").status_code == 404
+
+    chunk = make_chunk(document_id=12)
+    session = FakeSession(gets=gets, results=[FakeResult(rows=[(chunk, None)])])
+    with http_client(session, ADMIN) as client:
+        resp = client.get("/api/documents/12/chunks")
+    assert resp.status_code == 200
+    assert resp.json()["items"][0]["content"] == "进程与线程的区别"

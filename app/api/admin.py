@@ -580,7 +580,9 @@ async def adjust_credit(
     """
     if payload.delta == 0:
         raise HTTPException(status_code=422, detail="delta 不能为 0")
-    target = await db.get(User, user_id)
+    target = await db.get(
+        User, user_id, with_for_update=True, populate_existing=True
+    )
     if target is None:
         raise HTTPException(status_code=404, detail="Not Found")
     new_credit = await apply_credit_change(

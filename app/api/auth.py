@@ -10,6 +10,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel, EmailStr, Field
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
@@ -71,6 +72,31 @@ async def _issue_session(response: Response, user_id: int) -> None:
         samesite="lax",
         secure=settings.session_cookie_secure,  # 云端 https 部署置 true（v0.9）
     )
+
+
+async def _login_existing_user(
+    response: Response,
+    db: AsyncSession,
+    redis,
+    payload: EmailVerifyRequest,
+    user: User,
+    provider: str,
+    next_path: str | None,
+) -> dict:
+    identity = (
+        await db.execute(
+            select(AuthIdentity).where(
+                AuthIdentity.provider == provider,
+                AuthIdentity.external_id == payload.student_no,
+            )
+        )
+    ).scalar_one_or_none()
+    bound_email = (identity.raw_profile or {}).get("email") if identity else None
+    if bound_email and bound_email.lower() != payload.email.lower():
+        raise HTTPException(status_code=401, detail="学号与绑定邮箱不一致")
+    await email_fallback.verify_code(redis, payload.student_no, payload.code)
+    await _issue_session(response, user.id)
+    return {"need_profile": False, "user": _user_brief(user), "next": next_path}
 
 
 # ---------------------------------------------------------------------------
@@ -145,20 +171,9 @@ async def verify_email_code(
 
     provider = cas.current_provider()
     if user is not None:
-        identity = (
-            await db.execute(
-                select(AuthIdentity).where(
-                    AuthIdentity.provider == provider,
-                    AuthIdentity.external_id == payload.student_no,
-                )
-            )
-        ).scalar_one_or_none()
-        bound_email = (identity.raw_profile or {}).get("email") if identity else None
-        if bound_email and bound_email.lower() != payload.email.lower():
-            raise HTTPException(status_code=401, detail="学号与绑定邮箱不一致")
-        await email_fallback.verify_code(redis, payload.student_no, payload.code)
-        await _issue_session(response, user.id)
-        return {"need_profile": False, "user": _user_brief(user), "next": next_path}
+        return await _login_existing_user(
+            response, db, redis, payload, user, provider, next_path
+        )
 
     # 首次登录：需补全学籍资料后建档（社区内仅展示昵称，§3.1 隐私要求）
     if not (payload.real_name and payload.nickname):
@@ -179,21 +194,37 @@ async def verify_email_code(
         grade=payload.grade,
         major_id=payload.major_id,
     )
-    db.add(user)
-    await db.flush()
-    db.add(
-        AuthIdentity(
-            user_id=user.id,
-            provider=provider,
-            external_id=payload.student_no,
-            raw_profile={
-                "email": payload.email,
-                "grade": payload.grade,
-                "registered_via": provider,
-            },
+    try:
+        db.add(user)
+        await db.flush()
+        db.add(
+            AuthIdentity(
+                user_id=user.id,
+                provider=provider,
+                external_id=payload.student_no,
+                raw_profile={
+                    "email": payload.email,
+                    "grade": payload.grade,
+                    "registered_via": provider,
+                },
+            )
         )
-    )
-    await db.commit()
+        await db.commit()
+    except IntegrityError as exc:
+        await db.rollback()
+        user = (
+            await db.execute(select(User).where(User.student_no == payload.student_no))
+        ).scalar_one_or_none()
+        if user is not None:
+            return await _login_existing_user(
+                response, db, redis, payload, user, provider, next_path
+            )
+        nickname_taken = (
+            await db.execute(select(User.id).where(User.nickname == payload.nickname))
+        ).scalar_one_or_none()
+        if nickname_taken is not None:
+            raise HTTPException(status_code=422, detail="昵称已被使用") from exc
+        raise
     await email_fallback.verify_code(redis, payload.student_no, payload.code)
     logger.info("[email_fallback] 新用户建档 student_no=%s user_id=%s", payload.student_no, user.id)
     await _issue_session(response, user.id)

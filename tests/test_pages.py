@@ -241,6 +241,23 @@ def test_document_source_page():
     assert resp.status_code == 200 and "进程与线程的区别" in resp.text
 
 
+def test_public_document_source_requires_active_course_except_admin():
+    public_doc = make_doc(12, owner_id=9, scope="public")
+    gets = {
+        (Document, 12): public_doc,
+        (Course, 5): make_course(status="disabled"),
+    }
+    with http_client(FakeSession(gets=gets), USER) as client:
+        assert client.get("/documents/12/source").status_code == 404
+
+    chunk = make_chunk(document_id=12)
+    session = FakeSession(gets=gets, results=[FakeResult(rows=[chunk])])
+    with http_client(session, ADMIN) as client:
+        resp = client.get("/documents/12/source")
+    assert resp.status_code == 200
+    assert "进程与线程的区别" in resp.text
+
+
 # ---------------------------------------------------------------------------
 # 公共库板块：资源详情 / 协审工作台 / 管理员终审页
 # ---------------------------------------------------------------------------
@@ -279,6 +296,38 @@ def test_resource_detail_page_renders():
         FakeResult(scalar=None),
         FakeResult(rows=[public_copy]),
         FakeResult(scalar=1),  # 已收藏
+    ])
+    with http_client(session, USER) as client:
+        assert client.get("/resources/21").status_code == 200
+
+
+def test_resource_detail_disabled_course_visibility_and_owner_exception():
+    disabled = make_course(status="disabled")
+    approved = make_resource()
+    gets = {(Resource, 21): approved, (Course, 5): disabled}
+    with http_client(FakeSession(gets=gets), USER) as client:
+        assert client.get("/resources/21").status_code == 404
+
+    gets.update({
+        (Document, 11): make_doc(11, owner_id=9),
+        (User, 9): make_user(9),
+    })
+    session = FakeSession(gets=gets, results=[
+        FakeResult(scalar=None),
+        FakeResult(scalar=None),
+    ])
+    with http_client(session, ADMIN) as client:
+        assert client.get("/resources/21").status_code == 200
+
+    pending = make_resource(uploader_id=1, review_status="pending")
+    gets.update({
+        (Resource, 21): pending,
+        (Document, 11): make_doc(11, owner_id=1),
+        (User, 1): USER,
+    })
+    session = FakeSession(gets=gets, results=[
+        FakeResult(scalar=None),
+        FakeResult(scalar=None),
     ])
     with http_client(session, USER) as client:
         assert client.get("/resources/21").status_code == 200

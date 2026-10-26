@@ -1,7 +1,7 @@
 """全站搜索接口（§12.1，v0.8）：GET /api/search?q=&type=&board=&course_id=&major_id=。
 
-帖子：status ∈ (normal, featured)，ILIKE 匹配标题或正文；资源：仅 approved，
-ILIKE 匹配标题或描述。排序「标题命中优先于正文命中，再按时间」（纯 SQL case_when）。
+帖子：status ∈ (normal, featured)，ILIKE 匹配标题或正文；资源：仅 public+active
+课程的 approved，ILIKE 匹配标题或描述。排序「标题命中优先于正文命中，再按时间」（纯 SQL case_when）。
 type=all 时两类各取 size 条并各给 total，另一组空返回 {total:0, items:[]}。
 """
 
@@ -99,6 +99,8 @@ async def search(
         title_hit = case((Resource.title.ilike(like, escape="\\"), 0), else_=1)
         filters = [
             Resource.review_status == "approved",
+            Course.scope == "public",
+            Course.status == "active",
             or_(
                 Resource.title.ilike(like, escape="\\"),
                 Resource.description.ilike(like, escape="\\"),

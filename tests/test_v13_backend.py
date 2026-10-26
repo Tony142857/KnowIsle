@@ -285,7 +285,8 @@ class _UniqueConflictSession(FakeSession):
 def test_favorite_unique_conflict_is_idempotent_without_count_drift():
     resource = make_resource(fav_count=7)
     session = _UniqueConflictSession(
-        gets={(Resource, 21): resource}, results=[FakeResult(rows=[])]
+        gets={(Resource, 21): resource, (Course, 5): make_course()},
+        results=[FakeResult(rows=[])],
     )
     with http_client(session, USER) as client:
         resp = client.post(

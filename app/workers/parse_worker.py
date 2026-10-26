@@ -1,7 +1,7 @@
-"""解析与向量化任务（模块 A1）：解析 → 目录树 → 语义切块 → 向量化 → 落库 → 章节树 AI 校验（附加层）。
+"""解析与向量化任务（模块 A1）：解析 → 目录树 → 结构规则切块 → 向量化 → 落库 → AI 校验。
 
 上传即返回，页面轮询 /api/documents/{id}/status 更新进度；
-失败任务自动重试 3 次后标记 failed 并通知上传者（arq max_tries=3，见 workers/settings.py）。
+失败任务自动重试 3 次后标记 failed 并记录安全原因（arq max_tries=3，见 workers/settings.py）。
 chunk_id 与章节复用均幂等：重试/重解析先清旧切块再插入，不留半成品。
 
 Office→PDF 预览转换（soffice）与 preview_key 回填见 workers/preview_worker（v0.4）。

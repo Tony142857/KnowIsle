@@ -5,7 +5,7 @@
   先取最新 50 条候选，再按（投票分, 发布时间）倒序取前 10——即
   「近 7 天优先 + vote_score 倒序」的组合排序。
 - new_resources 仅登录用户有数据：本人关注课程（follows.target_type=course）
-  最新上架的资源（approved，按上架时间倒序，至多 10 条）；匿名或未关注任何课程
+  最新上架的资源（public+active 课程的 approved，按上架时间倒序，至多 10 条）；匿名或未关注任何课程
   时恒为空数组——首页据此渲染「登录引导卡 / 关注引导态」，两条路径共用同一
   响应结构，前端无需区分 401。
 """
@@ -54,6 +54,8 @@ async def _new_resources(db: AsyncSession, user: User) -> list[dict]:
             .where(
                 Resource.review_status == "approved",
                 Resource.course_id.in_(course_ids),
+                Course.scope == "public",
+                Course.status == "active",
             )
             # §20.5 B3（迁移⑧）：按上架时间倒序（存量数据 approved_at 为 NULL 排最后）
             .order_by(Resource.approved_at.desc().nulls_last(), Resource.id.desc())

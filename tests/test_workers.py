@@ -501,6 +501,23 @@ async def test_settle_rebuilds_major_and_course_boards(monkeypatch):
     assert redis.zsets["rank:course:6"] == {"9": 10}
 
 
+async def test_settle_removes_stale_and_empty_leaderboard_keys(monkeypatch):
+    session = FakeSession(results=[FakeResult(rows=[(3, 7, 60)])])
+    monkeypatch.setattr(settle_worker, "SessionLocal", session_local(session))
+    monkeypatch.setattr(settle_worker, "compute_course_scores", async_value({5: {7: 0}}))
+    redis = FakeRedis()
+    redis.zsets.update({
+        "rank:major:3": {"7": 60},
+        "rank:major:99": {"9": 100},
+        "rank:course:5": {"7": 20},
+        "rank:course:99": {"9": 100},
+    })
+    monkeypatch.setattr(settle_worker, "get_redis", lambda: redis)
+    summary = await settle_scores({})
+    assert summary == {"majors": 1, "courses": 0}
+    assert set(redis.zsets) == {"rank:major:3"}
+
+
 async def test_settle_tolerates_single_key_failure(monkeypatch):
     session = FakeSession(results=[FakeResult(rows=[(3, 7, 60), (4, 9, 40)])])
     monkeypatch.setattr(settle_worker, "SessionLocal", session_local(session))

@@ -139,6 +139,22 @@ test('comment acceptance supports QA reassignment and locks settled bounty', () 
   assert.equal(bounty.canAccept, false);
 });
 
+test('new QA self-answer is immediately acceptable but bounty self-response is not', () => {
+  const c = makeContext('/posts/3');
+  const script = fs.readFileSync(path.join(root, 'app/web/static/js/pages/post_detail.js'), 'utf8');
+  vm.runInContext(script.replace('window.aiPoll =', 'window.__newCommentCanAccept = newCommentCanAccept;\n  window.aiPoll ='), c);
+  c.document.getElementById = () => ({textContent: JSON.stringify({board: 'qa', is_author: true, user: {}})});
+  assert.equal(c.__newCommentCanAccept(), true);
+  c.document.getElementById = () => ({textContent: JSON.stringify({board: 'bounty', is_author: true, user: {}})});
+  assert.equal(c.__newCommentCanAccept(), false);
+  const template = readTemplate('post_detail.html');
+  assert.match(template, /post\.board == 'qa' or \(c\.author_id != post\.author_id and not post\.accepted_comment_id\)/);
+});
+
+function readTemplate(name) {
+  return fs.readFileSync(path.join(root, 'app/web/templates', name), 'utf8');
+}
+
 test('AI retry calls recovery endpoint and restarts bounded polling', async () => {
   const c = makeContext('/posts/3');
   load('post_detail.js', c);

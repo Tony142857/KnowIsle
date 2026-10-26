@@ -8,7 +8,7 @@ from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from pydantic import BaseModel
-from sqlalchemy import func, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -34,13 +34,20 @@ class FavoriteRequest(BaseModel):
     target_id: int
 
 
-async def _get_fav_target(db: AsyncSession, target_type: str, target_id: int):
+async def _get_fav_target(
+    db: AsyncSession, target_type: str, target_id: int, user: User
+):
     """校验收藏目标存在且可收藏，否则 404（不暴露资源存在性差异）。"""
     target = await db.get(_TARGET_MODELS[target_type], target_id)
     if target is None:
         raise HTTPException(status_code=404, detail="Not Found")
-    if target_type == "resource" and not resource_favoritable(target.review_status):
-        raise HTTPException(status_code=404, detail="Not Found")
+    if target_type == "resource":
+        if not resource_favoritable(target.review_status):
+            raise HTTPException(status_code=404, detail="Not Found")
+        if user.role != "admin":
+            course = await db.get(Course, target.course_id)
+            if course is None or course.scope != "public" or course.status != "active":
+                raise HTTPException(status_code=404, detail="Not Found")
     if target_type == "post" and not post_favoritable(target.status):
         raise HTTPException(status_code=404, detail="Not Found")
     return target
@@ -69,7 +76,7 @@ async def add_favorite(
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
     """收藏资源 / 帖子：重复收藏幂等返回 200（created=false）。"""
-    target = await _get_fav_target(db, payload.target_type, payload.target_id)
+    target = await _get_fav_target(db, payload.target_type, payload.target_id, user)
     if payload.target_type == "resource":
         target = await db.get(
             Resource, payload.target_id, with_for_update=True, populate_existing=True
@@ -135,6 +142,27 @@ async def list_favorites(
     base = select(Favorite).where(Favorite.user_id == user.id)
     if target_type is not None:
         base = base.where(Favorite.target_type == target_type)
+    if user.role != "admin":
+        base = (
+            base.outerjoin(
+                Resource,
+                and_(
+                    Favorite.target_type == "resource",
+                    Resource.id == Favorite.target_id,
+                ),
+            )
+            .outerjoin(Course, Course.id == Resource.course_id)
+            .where(
+                or_(
+                    Favorite.target_type == "post",
+                    and_(
+                        Resource.review_status == "approved",
+                        Course.scope == "public",
+                        Course.status == "active",
+                    ),
+                )
+            )
+        )
     total = (
         await db.execute(select(func.count()).select_from(base.subquery()))
     ).scalar_one()

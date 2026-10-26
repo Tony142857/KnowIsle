@@ -69,7 +69,9 @@ def test_post_editor_and_detail_cover_recovery_and_acceptance_rules():
     assert "localStorage" in api  # v1.4 草稿真实落盘统一由 api.js 的 ZY.drafts 承担
     assert "Markdown 预览" in editor and "course_id" in editor
     assert "确认托管悬赏" in editor
-    assert "c.author_id != post.author_id" in detail
+    assert "post.board == 'qa' or (c.author_id != post.author_id and not post.accepted_comment_id)" in detail
+    assert "post.board == 'qa' or c.author_id != post.author_id" in detail
+    assert "return !!pd.is_author && pd.board === 'qa'" in detail
     assert "handleAccepted" in detail and "initiallyAcceptable" in detail
     assert "/ai-retry" in detail and "deadline" in detail
     assert "ZY.report('post'" in detail and "ZY.report('comment'" in detail

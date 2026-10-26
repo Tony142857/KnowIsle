@@ -15,7 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.identity.rbac import get_current_user
 from app.storage.db import get_db
-from app.storage.models import Comment, Post, Report, Resource, User
+from app.storage.models import Comment, Course, Post, Report, Resource, User
 
 router = APIRouter(prefix="/reports", tags=["reports"])
 
@@ -33,17 +33,22 @@ class CreateReportRequest(BaseModel):
 
 
 async def _check_target(
-    db: AsyncSession, target_type: str, target_id: int
+    db: AsyncSession, target_type: str, target_id: int, user: User
 ) -> None:
     """举报目标可见性校验：不存在或当前状态下不可举报一律 404（不暴露存在性）。
 
-    resource 仅 approved 可举报；post 仅 normal/featured；comment 存在即可。
+    resource 仅 public+active 课程的 approved 可举报（admin 除外）；post 仅 normal/featured；
+    comment 存在即可。
     user 目标仅 active 可举报（冻结/禁言用户由管理侧处置，不再受理举报）。
     """
     if target_type == "resource":
         target = await db.get(Resource, target_id)
         if target is None or target.review_status != "approved":
             raise HTTPException(status_code=404, detail="Not Found")
+        if user.role != "admin":
+            course = await db.get(Course, target.course_id)
+            if course is None or course.scope != "public" or course.status != "active":
+                raise HTTPException(status_code=404, detail="Not Found")
     elif target_type == "post":
         target = await db.get(Post, target_id)
         if target is None or target.status not in ("normal", "featured"):
@@ -72,7 +77,7 @@ async def create_report(
         validate_self_report(payload.target_type, payload.target_id, user.id)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail="不能举报自己") from exc
-    await _check_target(db, payload.target_type, payload.target_id)
+    await _check_target(db, payload.target_type, payload.target_id, user)
 
     existing = (
         await db.execute(

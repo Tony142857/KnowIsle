@@ -228,12 +228,16 @@ async def get_document_chunks(
     user: Annotated[User, Depends(get_current_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
-    """文档切块列表（溯源视图用）：public 文档任何登录用户可见，个人文档仅本人/管理员。"""
+    """文档切块列表：active 课程的 public 文档登录可见，个人文档仅本人/管理员。"""
     doc = await db.get(Document, document_id)
     if doc is None or (
         doc.scope != "public" and doc.owner_id != user.id and user.role != "admin"
     ):
         raise HTTPException(status_code=404, detail="Not Found")
+    if doc.scope == "public" and user.role != "admin":
+        course = await db.get(Course, doc.course_id)
+        if course is None or course.scope != "public" or course.status != "active":
+            raise HTTPException(status_code=404, detail="Not Found")
     rows = (
         await db.execute(
             select(Chunk, Chapter.title)

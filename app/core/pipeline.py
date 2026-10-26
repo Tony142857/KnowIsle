@@ -3,7 +3,7 @@
 检索范围路由（§5.3）：
 - personal：仅个人库（owner_id 过滤，检索层与存储层双层执行）
 - public：仅公共库（scope='public' 过滤，课程须 active）
-- mixed：双库并行检索，个人库结果加权 1.2 后 RRF 融合
+- mixed：同一课程 ID 的双库串行检索，个人库结果加权 1.2 后 RRF 融合
 
 answer_question 产出 SSE 事件流：token → citations → done（异常时 error）。
 额度检查（429）与课程权限检查（404）由路由层在进入生成器前完成。

@@ -38,9 +38,10 @@
     return node;
   }
 
-  // 新评论可被采纳的条件与 SSR 宏一致：当前用户是帖主且板块为 qa/bounty
+  // 新评论由当前帖主发表：QA 自问自答可采纳但 0 分；求援禁止自响应采纳。
   function newCommentCanAccept() {
-    return false;
+    const pd = pageData();
+    return !!pd.is_author && pd.board === 'qa';
   }
 
   function bumpCommentCount() {

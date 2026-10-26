@@ -165,6 +165,7 @@ class FakeRedis:
     async def delete(self, *keys):
         for key in keys:
             self.kv.pop(key, None)
+            self.zsets.pop(key, None)
 
     async def mget(self, keys):
         return [self.kv.get(k) for k in keys]
@@ -194,6 +195,13 @@ class FakeRedis:
         zset = self.zsets.setdefault(key, {})
         zset[member] = zset.get(member, 0) + amount
         return zset[member]
+
+    async def scan_iter(self, match="*"):
+        from fnmatch import fnmatch
+
+        for key in list(self.zsets):
+            if fnmatch(key, match):
+                yield key
 
 
 class FakeArqPool:

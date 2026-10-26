@@ -48,17 +48,32 @@ async def settle_scores(ctx: dict) -> dict:
             logger.warning("专业榜对账重建失败 major_id=%s", major_id, exc_info=True)
 
     rebuilt_courses = 0
+    active_course_keys = set()
     for course_id, user_scores in course_scores.items():
         members = {str(uid): total for uid, total in user_scores.items() if total > 0}
         if not members:
             continue
         key = f"rank:course:{course_id}"
+        active_course_keys.add(key)
         try:
             await redis.delete(key)
             await redis.zadd(key, members)
             rebuilt_courses += 1
         except Exception:
             logger.warning("课程榜对账重建失败 course_id=%s", course_id, exc_info=True)
+
+    active_major_keys = {f"rank:major:{major_id}" for major_id in majors}
+    for prefix, active_keys in (
+        ("rank:major:", active_major_keys),
+        ("rank:course:", active_course_keys),
+    ):
+        try:
+            stale_keys = [key async for key in redis.scan_iter(match=f"{prefix}*")
+                          if key not in active_keys]
+            if stale_keys:
+                await redis.delete(*stale_keys)
+        except Exception:
+            logger.warning("榜单空键清理失败 prefix=%s", prefix, exc_info=True)
 
     summary = {"majors": rebuilt_majors, "courses": rebuilt_courses}
     logger.info("贡献榜每日对账完成 %s", summary)

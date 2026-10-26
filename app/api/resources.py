@@ -106,8 +106,12 @@ async def list_resources(
     page: Annotated[int, Query(ge=1)] = 1,
     size: Annotated[int, Query(ge=1, le=50)] = 20,
 ):
-    """公共库资源检索：仅已上架，按课程/章节过滤、标题模糊搜索，created_at 倒序分页。"""
-    conditions = [Resource.review_status == "approved"]
+    """公共库资源检索：仅 active 课程的已上架资源，支持过滤、搜索与分页。"""
+    conditions = [
+        Resource.review_status == "approved",
+        Course.scope == "public",
+        Course.status == "active",
+    ]
     if course_id is not None:
         conditions.append(Resource.course_id == course_id)
     if chapter_id is not None:
@@ -115,13 +119,19 @@ async def list_resources(
     if q:
         conditions.append(Resource.title.ilike(f"%{escape_like(q)}%", escape="\\"))
     total = (
-        await db.execute(select(func.count()).select_from(Resource).where(*conditions))
+        await db.execute(
+            select(func.count())
+            .select_from(Resource)
+            .join(Course, Course.id == Resource.course_id)
+            .where(*conditions)
+        )
     ).scalar_one()
     rows = (
         await db.execute(
             select(Resource, Document.file_type, User.nickname)
             .join(Document, Document.id == Resource.document_id)
             .join(User, User.id == Resource.uploader_id)
+            .join(Course, Course.id == Resource.course_id)
             .where(*conditions)
             .order_by(Resource.created_at.desc(), Resource.id.desc())
             .offset((page - 1) * size)
@@ -137,13 +147,22 @@ async def list_resources(
 async def _get_visible_resource(
     db: AsyncSession, resource_id: int, user: User
 ) -> Resource:
-    """资源可见性：approved 任何登录用户 / 本人投稿 / admin，其余 404（§3.2）。"""
+    """资源可见性：active 课程的 approved / 本人投稿 / admin，其余 404。"""
     resource = await db.get(Resource, resource_id)
-    if resource is None or (
-        resource.review_status != "approved"
-        and resource.uploader_id != user.id
-        and user.role != "admin"
-    ):
+    if resource is None:
+        raise HTTPException(status_code=404, detail="Not Found")
+    if resource.review_status == "approved":
+        course = await db.get(Course, resource.course_id)
+        if (
+            user.role != "admin"
+            and (
+                course is None
+                or course.scope != "public"
+                or course.status != "active"
+            )
+        ):
+            raise HTTPException(status_code=404, detail="Not Found")
+    elif resource.uploader_id != user.id and user.role != "admin":
         raise HTTPException(status_code=404, detail="Not Found")
     return resource
 
@@ -193,6 +212,10 @@ async def preview_resource(
     resource = await db.get(Resource, resource_id)
     if resource is None:
         raise HTTPException(status_code=404, detail="Not Found")
+    if resource.review_status == "approved" and user.role != "admin":
+        course = await db.get(Course, resource.course_id)
+        if course is None or course.scope != "public" or course.status != "active":
+            raise HTTPException(status_code=404, detail="Not Found")
     allowed = (
         resource.review_status == "approved"
         or resource.uploader_id == user.id
@@ -247,8 +270,8 @@ async def download_resource(
     download_cost==0：他人下载给上传者「被下载 +1」奖励，同一用户对同一资源
     仅首次计入（Redis 去重），上传者每日上限 20 分（Redis 故障跳过奖励不阻塞下载）。
     """
-    resource = await db.get(Resource, resource_id)
-    if resource is None or resource.review_status != "approved":
+    resource = await _get_visible_resource(db, resource_id, user)
+    if resource.review_status != "approved":
         raise HTTPException(status_code=404, detail="Not Found")
     if resource.download_cost > 0:
         # 行锁串行化并发下载的扣分判定，防并发透支（镜像 posts.py 悬赏托管写法）：
@@ -271,6 +294,7 @@ async def download_resource(
                     "resource", resource.id, course_id=resource.course_id,
                 )
     elif resource.uploader_id != user.id:
+        reward = 0
         try:
             redis = get_redis()
             first = await redis.sadd(f"knowisle:dled:{resource.id}", str(user.id))
@@ -280,14 +304,15 @@ async def download_resource(
                 count = await redis.incr(cap_key)
                 if count == 1:
                     await redis.expire(cap_key, 172800)  # 2 天，覆盖跨日边界
-                if count <= 20:
-                    await grant_score(
-                        db, resource.uploader_id, 1, "download_reward",
-                        "resource", resource.id, course_id=resource.course_id,
-                    )
+                reward = int(count <= 20)
         except Exception:
             logger.warning(
-                "免费下载奖励跳过（Redis 不可用）resource_id=%s", resource.id, exc_info=True
+                "免费下载奖励资格检查失败（Redis 不可用）resource_id=%s", resource.id, exc_info=True
+            )
+        if reward:
+            await grant_score(
+                db, resource.uploader_id, 1, "download_reward",
+                "resource", resource.id, course_id=resource.course_id,
             )
     # §20.5 B1：下载计数加行锁串行化并发自增；锁序与上方扣分一致（users 行 → resources 行），
     # populate_existing 强制发出 SELECT ... FOR UPDATE（不命中身份映射缓存）
@@ -318,8 +343,8 @@ async def rate_resource(
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
     """资源评分（1-5 星，一人一评，重复提交覆盖）；不能给自己的资源评分。"""
-    resource = await db.get(Resource, resource_id)
-    if resource is None or resource.review_status != "approved":
+    resource = await _get_visible_resource(db, resource_id, user)
+    if resource.review_status != "approved":
         raise HTTPException(status_code=404, detail="Not Found")
     if resource.uploader_id == user.id:
         raise HTTPException(status_code=422, detail="不能给自己的资源评分")
@@ -440,8 +465,8 @@ async def clone_resource(
       per_d{新id}_{seq:05d} → 批量重 embed 写 chunks_personal（metadata 复用
       parse_worker.build_chunk_meta），commit 后 201 cloned=true
     """
-    resource = await db.get(Resource, resource_id)
-    if resource is None or resource.review_status != "approved":
+    resource = await _get_visible_resource(db, resource_id, user)
+    if resource.review_status != "approved":
         raise HTTPException(status_code=404, detail="Not Found")
     src_doc = await db.get(Document, resource.document_id)
 

@@ -91,3 +91,25 @@ def test_feed_hot_posts_sorted_by_score_then_time():
     assert [p["id"] for p in posts] == [102, 103, 101]
     assert posts[0]["comment_count"] == 5
     assert posts[1]["comment_count"] == 0  # 无评论聚合行时回落 0
+
+
+def test_feed_resources_only_include_public_active_courses():
+    class _RecordingSession(FakeSession):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            self.statements = []
+
+        async def execute(self, statement, *args, **kwargs):
+            self.statements.append(str(statement))
+            return await super().execute(statement, *args, **kwargs)
+
+    session = _RecordingSession(results=[
+        FakeResult(rows=[5]),
+        FakeResult(rows=[]),
+        *_hot_results([]),
+    ])
+    with http_client(session, USER) as client:
+        assert client.get("/api/feed").status_code == 200
+    resource_query = session.statements[1]
+    assert "courses.scope = " in resource_query
+    assert "courses.status = " in resource_query

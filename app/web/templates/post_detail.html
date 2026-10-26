@@ -15,8 +15,8 @@
      id="comment-{{ c.id }}"
      x-data="commentBox({{ c.id }}, {{ node.score }}, {{ node.my_vote }},
                         {{ 'true' if logged_in else 'false' }},
-                        {{ 'true' if (is_author and post.board in ('qa', 'bounty') and not c.is_accepted and c.author_id != post.author_id and (post.board == 'qa' or not post.accepted_comment_id)) else 'false' }},
-                        {{ 'true' if (is_author and post.board in ('qa', 'bounty') and c.author_id != post.author_id) else 'false' }})"
+                        {{ 'true' if (is_author and post.board in ('qa', 'bounty') and not c.is_accepted and (post.board == 'qa' or (c.author_id != post.author_id and not post.accepted_comment_id))) else 'false' }},
+                        {{ 'true' if (is_author and post.board in ('qa', 'bounty') and (post.board == 'qa' or c.author_id != post.author_id)) else 'false' }})"
      @zy:accepted.window="handleAccepted($event.detail)">
   <div class="comment-head flex items-center gap-2 text-xs text-muted">
     {% if node.author.avatar_url %}

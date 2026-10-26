@@ -466,7 +466,7 @@ async def document_source(
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
     """原文溯源页：按 chunk 渲染解析文本，URL hash 定位高亮
-    （public 文档任何登录用户可见，个人文档仅本人/管理员）。"""
+    （active 课程的 public 文档登录可见，个人文档仅本人/管理员）。"""
     if (resp := _login_redirect(user, request)) is not None:
         return resp
     doc = await db.get(Document, document_id)
@@ -474,6 +474,10 @@ async def document_source(
         doc.scope != "public" and doc.owner_id != user.id and user.role != "admin"
     ):
         raise HTTPException(status_code=404)
+    if doc.scope == "public" and user.role != "admin":
+        course = await db.get(Course, doc.course_id)
+        if course is None or course.scope != "public" or course.status != "active":
+            raise HTTPException(status_code=404)
     chunks = (
         await db.execute(
             select(Chunk).where(Chunk.document_id == document_id).order_by(Chunk.id)
@@ -512,7 +516,7 @@ async def resource_detail(
 ):
     """资源详情页：评分 / 下载 / 在线预览 / 原文溯源入口。
 
-    可见性与 API 一致（§3.2）：approved 任何登录用户 / 本人投稿 / admin，其余 404。
+    可见性与 API 一致（§3.2）：active 课程的 approved / 本人投稿 / admin，其余 404。
     """
     if (resp := _login_redirect(user, request)) is not None:
         return resp
@@ -523,9 +527,14 @@ async def resource_detail(
         and user.role != "admin"
     ):
         raise HTTPException(status_code=404)
+    course = None
+    if resource.review_status == "approved" and user.role != "admin":
+        course = await db.get(Course, resource.course_id)
+        if course is None or course.scope != "public" or course.status != "active":
+            raise HTTPException(status_code=404)
     doc = await db.get(Document, resource.document_id)
     uploader = await db.get(User, resource.uploader_id)
-    course = await db.get(Course, resource.course_id)
+    course = course or await db.get(Course, resource.course_id)
     chapter = await db.get(Chapter, resource.chapter_id) if resource.chapter_id else None
     my_rating = (
         await db.execute(
