@@ -1,13 +1,14 @@
 # 知屿 KnowIsle · 智能课程知识社区
 
 > 以学生社区为驱动、以结构化 RAG-AI 为学习引擎的大学课程知识平台。
-> 详细设计见《知屿-智能课程知识社区-项目文档.md》（v3.10.0）。
+> 详细设计见《知屿-智能课程知识社区-项目文档.md》（v3.11.0）。
 > 进度跟踪见 [docs/开发进度与目标.md](docs/开发进度与目标.md)（每迭代更新）。
 
 技术栈：FastAPI + Jinja2/Alpine.js/HTMX/Tailwind · PostgreSQL 16 · Redis 7 · SeaweedFS（S3） · Chroma · ARQ · Docker Compose
 
 ## 当前状态
 
+**v1.4 现代知识平台前端全面升级**（2026-10-26，feature 分支，前端与质量门槛为主，业务 API 与 RAG 算法零变更）：**语义设计令牌 v4**（surface/text/border/status 与 CSS 变量统一映射，全站 slate/red 等色板工具类清零，正文/辅助文字/焦点达到 WCAG AA，翡翠绿 favicon）· **全站页面骨架**（19 个页面统一页头/内容宽度/Tab/筛选/空错态，资源/帖子/板块/搜索接入共享页头）· **组件体系与去重**（`_components.html` 8 个宏 + `render.js` 模板克隆渲染，课程卡/章节节点/评论节点/个人库课程卡消灭 JS 字符串 DOM，管理后台改为同一份响应式数据结构）· **内容优先排版**（display/title/card-title/body/caption/num/code 字级，46rem 阅读宽度、数字表格对齐、代码与长 URL 防溢出）· **Motion One 10.18.0 本地按需动效**（150~250ms，页头/卡片/Tab/弹窗/引用高亮，reduced-motion 全降级）· **按需加载与无障碍**（marked/DOMPurify/highlight 仅 5 个 Markdown 页面加载、ECharts 仅运营看板 Tab 动态加载、44px 目标、360~1440px、200% 缩放、forced-colors、键盘 Tab、axe 无 critical/serious）· **容器化浏览器质量门槛**（Playwright + axe-core 覆盖 19 页面 × 5 视口（匿名/学生/协审/共建/管理员 5 类角色），控制台/外联/CSP/截图）· 修复草稿双实现、聊天异常引用空数组、新课程共享卡片初始化、个人中心未配置 Key 空值、首次问答额度预检唯一键锁，以及 Gunicorn SSE 默认 30 秒超时问题；验收 Ruff 全绿 + pytest **644 passed + 1 skipped**（覆盖率 86%）+ Node 前端契约 12/12 + 浏览器测试 3/3；镜像 knowisle-app:1.4.0；git tag v1.4
 **v1.3 交互可用性与评测驱动 RAG 优化**（2026-10-25，feature 分支）：**全站交互可达性**（统一 idle/loading/success/empty/error 与 `aria-busy`/`role=alert`、可关闭 toast、跳正文与 `aria-current`；登录/发码原生 form + 安全站内 `next` 回跳；课程资源搜索分页与 URL 可恢复 Tab/章节、付费下载余额确认、原文返回/块内搜索；个人库拖拽上传 + 真实进度 + 轮询恢复 + 失败重传 + 投稿阶段/驳回理由；问答 SSE 停止/重试/保留问题/额度范围、复习防旧响应与证据跳转；发帖 Markdown 预览/计数/课程预选/`ZY.drafts` 本地草稿与离开保护、QA 改采/自响应禁采纳、资源/帖子/评论举报入口、通知锚点；个人中心中文原因与加载更多；协审 409 退避/裁决确认/改派保留、终审懒加载与管理 Tab URL 化）· **后端配套**（Office 投稿阶段预览 + 幂等重试、终审/直审副作用可恢复、审核/社交行锁与唯一冲突幂等、`documents.parse_error` 安全文案、个人库审核上下文、经验帖背景服务端校验、AI 首答/摘要重试、检索 trace）· **评测驱动 RAG**（72 条黄金集 3 课程/4 格式/三 scope/tune-frozen；`章节 > 小节 > 正文` 进入 embedding/Prompt、`TARGET_MIN` 生效、长文二级切分与硬上限；粗召回全局补充与可解释 fallback、单路降级；unigram/bigram 对照 + RRF 网格；低词面覆盖语义证据更高相似度门槛、无答案拒答、AI 首答证据快照、复习本章约束与习题校验；`retrieval_metrics` 观测与 Bad Case 分类）· 迁移⑨（解析错误/AI 证据/检索指标，正反向验证）· 容器内 Ruff 全绿 + pytest **630 passed**（覆盖率 86%）+ Node 前端契约 12 项；真实 PG 并发集成与 Chroma 全量重建（23 文档/82 chunks/58+24 向量）通过；离线评测 frozen Recall@5 0.8125、nDCG@5 0.811（基线 0.542/0.496），不可回答拒答率 1.0、权限泄漏 0；镜像 knowisle-app:1.3.0；git tag v1.3
 **v1.2 前端视觉精致化**（2026-10-11，feature 分支，纯模板/静态资源层、不动后端）：**设计体系 v3**（设计令牌 v3——text-title/text-card-title 字级阶梯 + gap-section 间距令牌；main.css 新增 .card-tinted 渐变重点卡 / .card-accent-left 精华边条 / .btn 按下压缩 / .btn-loading 内置 spinner / .d-80·150·300 延迟工具类）· **图标与插画体系**（`_icons.html` 图标字典宏 64 枚集中管理，▲▼★☆✓ Unicode 图标全站清零、投票/收藏/评分改 SVG pill；`_illustrations.html` 四个岛屿系空状态插画；`_page_header.html` 页头宏替换全站 9 处复制粘贴页头）· **全站 24 模板逐页精雕**（专业/课程卡图标徽标化、个人中心成长看板渐变头卡、帖子卡元信息图标化、评论树降噪、管理后台中文表头去 uppercase + 指标卡品牌色分层 + 窄屏卡片降级、搜索结果卡类型图标、个人库文件类型图标、登录页移动端品牌头条）· **微交互**（列表 stagger 入场、toast 进度条 + 滑出退场、confirmModal danger 变体）· **一致性清账**（emerald-/amber- 硬编码清零、内联 style 属性清零、评分星星 aria 语义修正、标签云频次 aria-label）· 容器内 ruff + pytest 538 例全绿，镜像 knowisle-app:1.2.0，git tag v1.2
 **v1.1 优化版本**（2026-10-10，feature 分支）：**前端全面升级「翡翠绿·海岛」设计语言**（设计令牌 v2：brand 翡翠绿十档 + accent 暖沙十档 + 卡片阴影/圆角/动效令牌；main.css 公共组件类 .btn/.badge/.card/.input-base/.empty-state/.skeleton；全站 24 模板改版——导航药丸高亮、首页 Hero 海浪 + 数字滚动、登录/404 重设计、列表卡片化 + 相对时间 ZY.relTime、消灭整页 reload 与"加载中…"文字态改骨架屏）· **交互统一与可访问性**（全站 fetch 收口 ZY.api 统一错误透传带状态码、confirmModal 替代原生 confirm/prompt、ZY.bindModalA11y 模态框焦点圈定/Esc/焦点还原、:focus-visible 品牌色焦点环、prefers-reduced-motion 降级）· **后端逻辑完善**（AI 额度原子扣减行锁、个人库上传 MD5 部分唯一索引幂等、投票/评分/下载计数竞态收口、RRF 显式权重 0.65/0.35 + mixed 双路粗召回 + BM25 Redis 版本戳跨进程失效、feed 按 approved_at 上架时间排序、AI 首答 HTTPException 早退、上传 chapter_id 显式 422）· 新增迁移⑦⑧（uq_documents_owner_md5_personal、resources.approved_at 回填）· 修复两处真实 bug（ZY.api 401 误跳登录页清空表单、时间炸弹测试）· 测试 519→538 例全绿，镜像 knowisle-app:1.1.0，git tag v1.1
@@ -93,6 +94,19 @@ docker compose -f deploy/docker-compose.yml exec app python scripts/rebuild_rag_
 docker compose -f deploy/docker-compose.yml exec app \
   python scripts/rebuild_rag_index.py --yes --backup backups/rag/latest.json
 
+# 13.5 v1.4 浏览器质量门槛（仅在测试容器安装依赖，不进生产镜像）
+# 预览仅挂载 app 源码，保留镜像内离线模型；复用 Compose 环境与 8001 端口
+MSYS_NO_PATHCONV=1 docker compose -f deploy/docker-compose.yml run -d \
+  --name knowisle-v14-preview --no-deps -p 127.0.0.1:8001:8000 \
+  -v "D:/desktop/ZhiYu/app:/srv/knowisle/app" app sh -c \
+  "alembic upgrade head && gunicorn app.main:app -k uvicorn.workers.UvicornWorker -w 2 -b 0.0.0.0:8000 --timeout 300"
+MSYS_NO_PATHCONV=1 docker run --rm --add-host=host.docker.internal:host-gateway \
+  -v "D:/desktop/ZhiYu:/srv/knowisle" -w /srv/knowisle \
+  mcr.microsoft.com/playwright/python@sha256:640d578aae63cfb632461d1b0aecb01414e4e020864ac3dd45a868dc0eff3078 \
+  sh -c "pip install -q -r requirements-dev.txt -r requirements-browser.txt && pytest -q tests/test_v14_browser.py"
+# 截图：tests/artifacts/v14/（临时全量）；docs/images/v14/（评审精选）
+docker rm -f knowisle-v14-preview                    # 验收后移除预览容器
+
 # 14. 停止 / 清理
 docker compose -f deploy/docker-compose.yml down          # 停止
 docker compose -f deploy/docker-compose.yml down -v       # 停止并删除数据卷（慎用）
@@ -107,7 +121,7 @@ alembic/        数据库迁移
 deploy/         docker-compose.yml / nginx.conf / backup.sh / seaweedfs-s3.json
 docs/           开发进度与目标.md（进度跟踪，每迭代更新）/ 接口契约.md / 演示剧本与检查清单.md
 scripts/        init_majors.py / create_admin.py / seed_demo.py / evaluate_rag.py / rebuild_rag_index.py
-tests/          pytest（纯函数 / API 契约 / 模板与内存替身 / 黄金集评测）+ frontend_v13_pages.test.js（Node 页面契约）
+tests/          pytest（纯函数 / API 契约 / 模板与内存替身 / 黄金集评测 / v1.4 浏览器门槛）+ frontend_v13_pages.test.js（Node 页面契约）
 ```
 
 ## 开发约定
@@ -115,9 +129,9 @@ tests/          pytest（纯函数 / API 契约 / 模板与内存替身 / 黄金
 - Git 工作流：`main` 保护分支 + `feature/xxx` + PR（≥1 人 review，CI 通过才可合并）
 - Commit 规范：Conventional Commits（`feat:` / `fix:` / `refactor:` / `test:` / `docs:`）
 - 本地检查：`pip install -r requirements-dev.txt && ruff check app tests scripts && pytest -q`；前端页面脚本：`node --test tests/frontend_v13_pages.test.js`（建议容器内运行）
-- 依赖分层：`requirements.txt` 为应用与 CI 共用；`requirements-ml.txt`（torch CPU + sentence-transformers）仅由 Dockerfile 装入镜像，应用代码对其一律惰性导入
-- 镜像引用固定：自建镜像按版本号命名（当前 `knowisle-app:1.3.0`，发版时手动递增，禁止 latest）；五个第三方镜像与 Dockerfile 基础镜像均以 `@sha256` digest 固定。pip/apt 依赖尚未完全锁定，不承诺异地重建逐字节一致
-- 前端 CDN 依赖全部本地化到 `app/web/static/vendor/`（tailwind/htmx/alpine/echarts/marked/purify/highlight.js 七库钉版本，静态资源可离线；实时 AI 仍需外部模型服务）；**页面 JS 一律外置为 `static/js/pages/*.js` 并在 `{% block head %}` 内同步加载**（defer 的 Alpine 启动早于 defer 页面脚本；模板内禁止内联脚本与内联事件处理器，Jinja 注入走 x-data 属性或 `<script type="application/json" id="page-data">` 惰性块）——CSP 启用的前提，新增页面必须遵守
+- 依赖分层：`requirements.txt` 为应用与 CI 共用；`requirements-ml.txt`（torch CPU + sentence-transformers）仅由 Dockerfile 装入镜像，应用代码对其一律惰性导入；`requirements-browser.txt`（Playwright 固定版本）仅供浏览器测试容器，不进生产镜像或 CI 默认依赖
+- 镜像引用固定：自建镜像按版本号命名（当前 `knowisle-app:1.4.0`，发版时手动递增，禁止 latest）；五个第三方镜像与 Dockerfile 基础镜像均以 `@sha256` digest 固定。pip/apt 依赖尚未完全锁定，不承诺异地重建逐字节一致
+- 前端 CDN 依赖全部本地化到 `app/web/static/vendor/`（tailwind/htmx/alpine/echarts/marked/purify/highlight.js/Motion One 八库钉版本，静态资源可离线；实时 AI 仍需外部模型服务）；marked/DOMPurify/highlight 仅 Markdown 页面加载，Motion One 按需加载；**页面 JS 一律外置为 `static/js/pages/*.js` 并在 `{% block head %}` 内同步加载**（defer 的 Alpine 启动早于 defer 页面脚本；模板内禁止内联脚本与内联事件处理器，Jinja 注入走 x-data 属性或 `<script type="application/json" id="page-data">` 惰性块）——CSP 启用的前提，新增页面必须遵守
 - 容器内跑测试务必以 root + 隔离 HOME 执行（`docker run --user root -e HOME=/root ...`），否则 pip 会落入镜像 HOME 的 user site 并污染工作区 `.local/`
 - Embedding 模型 bge-small-zh-v1.5 在镜像构建时预下载（经 hf-mirror），运行时 `HF_HUB_OFFLINE=1` 离线加载
 - 数据库迁移：`alembic revision --autogenerate -m "..."`，迁移随 app 容器启动自动执行
