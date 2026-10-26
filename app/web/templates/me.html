@@ -13,10 +13,10 @@
 <div x-data="mePage({{ user.score }})" x-init="loadAll()" class="animate-fade-up">
   {{ page_header('个人中心', subtitle='成长看板、AI 额度与收藏关注一站管理', icon='user') }}
 
-  <div class="grid gap-6 lg:grid-cols-2">
+  <div class="grid grid-cols-1 gap-6 lg:grid-cols-2">
     {# ===== 成长看板卡（card-tinted 渐变重点卡；SSR 注入等级进度，积分明细 fetch 渲染） ===== #}
-    <div class="card card-tinted p-4 sm:p-6 lg:col-span-2">
-      <div class="flex flex-wrap items-center gap-4 sm:gap-6">
+    <div class="card card-tinted min-w-0 p-4 sm:p-6 lg:col-span-2">
+      <div class="flex min-w-0 flex-wrap items-center gap-4 sm:gap-6">
         {% if user.avatar_url %}
         <img src="{{ user.avatar_url }}" alt="" class="h-20 w-20 rounded-full object-cover shadow-card ring-4 ring-white">
         {% else %}
@@ -25,7 +25,7 @@
         </span>
         {% endif %}
         <div>
-          <p class="flex flex-wrap items-center gap-2 text-lg font-semibold text-slate-800">
+          <p class="flex flex-wrap items-center gap-2 text-lg font-semibold text-primary">
             {{ user.nickname }}
             <span class="inline-flex items-center gap-1 rounded-full bg-brand-600 px-2 py-0.5 text-xs font-medium text-white">
               {{ icon('trophy', 'w-3 h-3') }} Lv{{ growth.level }}
@@ -34,33 +34,33 @@
             <span class="badge badge-accent">管理员</span>
             {% endif %}
           </p>
-          <p class="mt-0.5 text-sm text-slate-500">
+          <p class="mt-0.5 text-sm text-muted">
             {% if user.grade %}{{ user.grade }} · {% endif %}
             {% if major %}{{ major.name }}{% endif %}
           </p>
         </div>
         {# 成长看板数字卡：等级 / 贡献分 / 信用分（白底 + 图标 + 大号数字 + 小标签） #}
-        <dl class="ml-auto grid grid-cols-3 gap-3">
-          <div class="flex min-w-24 flex-col items-center rounded-card border border-brand-100 bg-white/80 px-4 py-3 text-center shadow-card">
-            <span class="text-brand-500">{{ icon('trophy', 'w-4 h-4') }}</span>
-            <dd class="mt-1 text-2xl font-bold text-brand-700">Lv{{ growth.level }}</dd>
-            <dt class="mt-0.5 text-xs text-slate-400">等级</dt>
+        <div class="ml-auto grid grid-cols-3 gap-2 sm:gap-3" role="group" aria-label="成长数据">
+          <div class="flex min-w-0 flex-col items-center rounded-card border border-brand-100 bg-white/80 px-2 py-3 text-center shadow-card sm:min-w-24 sm:px-4">
+            <span class="text-brand-500" aria-hidden="true">{{ icon('trophy', 'w-4 h-4') }}</span>
+            <p class="mt-1 text-2xl font-bold text-brand-700">Lv{{ growth.level }}</p>
+            <p class="mt-0.5 text-xs text-muted">等级</p>
           </div>
-          <div class="flex min-w-24 flex-col items-center rounded-card border border-brand-100 bg-white/80 px-4 py-3 text-center shadow-card">
-            <span class="text-accent-500">{{ icon('star', 'w-4 h-4') }}</span>
-            <dd class="mt-1 text-2xl font-bold text-slate-800" x-text="score">{{ user.score }}</dd>
-            <dt class="mt-0.5 text-xs text-slate-400">贡献分</dt>
+          <div class="flex min-w-0 flex-col items-center rounded-card border border-brand-100 bg-white/80 px-2 py-3 text-center shadow-card sm:min-w-24 sm:px-4">
+            <span class="text-accent-500" aria-hidden="true">{{ icon('star', 'w-4 h-4') }}</span>
+            <p class="mt-1 text-2xl font-bold text-primary" x-text="score">{{ user.score }}</p>
+            <p class="mt-0.5 text-xs text-muted">贡献分</p>
           </div>
-          <div class="flex min-w-24 flex-col items-center rounded-card border border-brand-100 bg-white/80 px-4 py-3 text-center shadow-card">
-            <span class="{{ 'text-brand-500' if user.credit >= 80 else 'text-red-500' }}">{{ icon('shield', 'w-4 h-4') }}</span>
-            <dd class="mt-1 text-2xl font-bold {{ 'text-brand-600' if user.credit >= 80 else 'text-red-600' }}">{{ user.credit }}</dd>
-            <dt class="mt-0.5 text-xs text-slate-400">信用分</dt>
+          <div class="flex min-w-0 flex-col items-center rounded-card border border-brand-100 bg-white/80 px-2 py-3 text-center shadow-card sm:min-w-24 sm:px-4">
+            <span class="{{ 'text-brand-500' if user.credit >= 80 else 'text-danger' }}" aria-hidden="true">{{ icon('shield', 'w-4 h-4') }}</span>
+            <p class="mt-1 text-2xl font-bold {{ 'text-brand-600' if user.credit >= 80 else 'text-danger' }}">{{ user.credit }}</p>
+            <p class="mt-0.5 text-xs text-muted">信用分</p>
           </div>
-        </dl>
+        </div>
       </div>
       {# 处罚状态提示（v0.8）：禁言中显示解除时间；信用偏低显示冷却限制提醒（语义色走 red / accent 令牌） #}
       {% if user.status == 'muted' and user.muted_until %}
-      <div class="mt-4 rounded-md border border-red-200 bg-red-50 px-4 py-2.5 text-sm text-red-700">
+      <div class="mt-4 rounded-md border border-danger-border bg-danger-soft px-4 py-2.5 text-sm text-danger">
         禁言中，至 {{ user.muted_until.strftime('%Y-%m-%d %H:%M') }} 解除。期间无法发帖、评论与上传资料。
       </div>
       {% elif user.status != 'muted' and user.credit < 80 %}
@@ -73,17 +73,17 @@
       {# 等级进度条（Alpine 挂载后从 0 动画到目标宽度；reduced-motion 由全局规则兜底） #}
       <div class="mt-4">
         {% if growth.next_threshold is not none %}
-        <div class="flex justify-between text-xs text-slate-400">
+        <div class="flex justify-between text-xs text-muted">
           <span>Lv{{ growth.level }}</span>
           <span>距 Lv{{ growth.level + 1 }} 还差 {{ growth.remaining }} 分（{{ growth.next_threshold }} 分升级）</span>
         </div>
-        <div class="mt-1 h-2 overflow-hidden rounded-full bg-slate-100"
+        <div class="mt-1 h-2 overflow-hidden rounded-full bg-surface-inset"
              x-data="{w: 0}" x-init="$nextTick(() => { w = {{ growth.progress }} })">
           <div class="h-full rounded-full bg-gradient-to-r from-brand-400 to-brand-600 transition-all duration-700 ease-island"
                :style="'width: ' + w + '%'"></div>
         </div>
         {% else %}
-        <p class="flex items-center gap-1.5 text-xs text-slate-400">
+        <p class="flex items-center gap-1.5 text-xs text-muted">
           <span class="text-accent-500">{{ icon('trophy', 'w-3.5 h-3.5') }}</span>
           已达最高等级 Lv{{ growth.level }}
         </p>
@@ -91,8 +91,8 @@
       </div>
 
       {# 积分明细（近 20 条，fetch 渲染，delta 正负着色） #}
-      <div id="score-logs" class="mt-6 scroll-mt-20 border-t border-slate-100 pt-4" :aria-busy="logsLoading">
-        <h2 class="flex items-center gap-2 text-card-title text-slate-800">
+      <div id="score-logs" class="mt-6 scroll-mt-20 border-t border-default pt-4" :aria-busy="logsLoading">
+        <h2 class="flex items-center gap-2 text-card-title text-primary">
           <span class="text-brand-600">{{ icon('list', 'w-4 h-4') }}</span>积分明细
         </h2>
         <div x-show="logsLoading" x-cloak class="mt-3 space-y-2" aria-hidden="true">
@@ -100,21 +100,21 @@
           <div class="skeleton h-8 rounded-md"></div>
           <div class="skeleton h-8 rounded-md"></div>
         </div>
-        <div x-show="logsError" x-cloak role="alert" class="mt-3 rounded bg-red-50 px-3 py-2 text-sm text-red-600">
+        <div x-show="logsError" x-cloak role="alert" class="mt-3 rounded bg-danger-soft px-3 py-2 text-sm text-danger">
           <span x-text="logsError"></span><button type="button" @click="loadLogs(logsLoaded)" class="ml-2 underline">重试</button>
         </div>
-        <p x-show="logsLoaded && !logs.length" x-cloak class="mt-3 text-sm text-slate-400">
+        <p x-show="logsLoaded && !logs.length" x-cloak class="mt-3 text-sm text-muted">
           暂无积分记录。上传资料过审、回答被采纳都能赚贡献分。
         </p>
-        <ul x-show="logs.length" x-cloak class="mt-3 divide-y divide-slate-100 text-sm">
+        <ul x-show="logs.length" x-cloak class="mt-3 divide-y divide-default text-sm">
           <template x-for="log in logs" :key="log.created_at + String(log.delta) + log.reason">
             <li class="flex items-center gap-3 py-2">
               <span class="w-14 shrink-0 text-right font-medium"
-                    :class="log.delta >= 0 ? 'text-brand-600' : 'text-red-600'"
+                    :class="log.delta >= 0 ? 'text-brand-600' : 'text-danger'"
                     x-text="(log.delta >= 0 ? '+' : '') + log.delta"></span>
-              <span class="min-w-0 flex-1 truncate text-slate-600"
+              <span class="min-w-0 flex-1 truncate text-secondary"
                     x-text="reasonLabel(log.reason)"></span>
-              <span class="shrink-0 text-xs text-slate-400"
+              <span class="shrink-0 text-xs text-muted"
                     x-text="ZY.relTime(log.created_at)"></span>
             </li>
           </template>
@@ -127,10 +127,10 @@
 
     {# ===== AI 额度卡 ===== #}
     <div class="card p-4 sm:p-6" :aria-busy="exchangeLoading">
-      <h2 class="flex items-center gap-2 text-card-title text-slate-800">
+      <h2 class="flex items-center gap-2 text-card-title text-primary">
         <span class="text-brand-600">{{ icon('sparkles', 'w-4 h-4') }}</span>AI 额度
       </h2>
-      <div x-show="quotaError" x-cloak role="alert" class="mt-3 rounded bg-red-50 px-3 py-2 text-sm text-red-600">
+      <div x-show="quotaError" x-cloak role="alert" class="mt-3 rounded bg-danger-soft px-3 py-2 text-sm text-danger">
         <span x-text="quotaError"></span><button type="button" x-show="!quota" @click="loadQuota()" class="ml-2 underline">重试</button>
       </div>
       <div x-show="!quota && !quotaError" class="mt-3 space-y-2" aria-hidden="true">
@@ -142,28 +142,28 @@
         <div>
           <dl class="mt-3 space-y-2 text-sm">
             <div class="flex justify-between">
-              <dt class="text-slate-500">今日已用</dt>
-              <dd class="text-slate-700"><span x-text="quota.used"></span> / <span x-text="quota.daily_limit"></span> 次</dd>
+              <dt class="text-muted">今日已用</dt>
+              <dd class="text-primary"><span x-text="quota.used"></span> / <span x-text="quota.daily_limit"></span> 次</dd>
             </div>
             <div class="flex justify-between">
-              <dt class="text-slate-500">免费剩余</dt>
-              <dd class="text-slate-700" x-text="quota.remaining_free + ' 次'"></dd>
+              <dt class="text-muted">免费剩余</dt>
+              <dd class="text-primary" x-text="quota.remaining_free + ' 次'"></dd>
             </div>
             <div class="flex justify-between">
-              <dt class="text-slate-500">兑换余额</dt>
-              <dd class="text-slate-700" x-text="quota.bonus_balance + ' 次'"></dd>
+              <dt class="text-muted">兑换余额</dt>
+              <dd class="text-primary" x-text="quota.bonus_balance + ' 次'"></dd>
             </div>
             <div class="flex justify-between">
-              <dt class="text-slate-500">兑换比例</dt>
-              <dd class="text-slate-700" x-text="quota.exchange_rate + ' 贡献分 = 1 次'"></dd>
+              <dt class="text-muted">兑换比例</dt>
+              <dd class="text-primary" x-text="quota.exchange_rate + ' 贡献分 = 1 次'"></dd>
             </div>
           </dl>
-          <div class="mt-4 flex flex-wrap items-center gap-2 border-t border-slate-100 pt-4">
+          <div class="mt-4 flex flex-wrap items-center gap-2 border-t border-default pt-4">
             <input type="number" x-model.number="exchangeCount" min="1" max="100"
                    aria-label="兑换次数"
                    class="input-base w-24">
             <button @click="exchange()" :disabled="exchangeLoading" :aria-busy="exchangeLoading" class="btn btn-primary">兑换额度</button>
-            <span class="text-xs text-slate-400"
+            <span class="text-xs text-muted"
                   x-text="'预计花费 ' + (exchangeCount > 0 ? exchangeCount * quota.exchange_rate : 0) + ' 贡献分'"></span>
           </div>
           <p x-show="exchangeMsg" x-text="exchangeMsg" x-cloak
@@ -174,11 +174,11 @@
 
     {# ===== 自定义 Key 卡（Key 加密存储，永不回显） ===== #}
     <div class="card p-4 sm:p-6" :aria-busy="keyLoading">
-      <h2 class="flex items-center gap-2 text-card-title text-slate-800">
+      <h2 class="flex items-center gap-2 text-card-title text-primary">
         <span class="text-brand-600">{{ icon('key', 'w-4 h-4') }}</span>自定义模型 Key
       </h2>
-      <p class="mt-1 text-xs text-slate-400">配置后 AI 问答走你自己的通道，不占用平台额度。Key 加密存储，永不回显。</p>
-      <div x-show="keyError" x-cloak role="alert" class="mt-3 rounded bg-red-50 px-3 py-2 text-sm text-red-600">
+      <p class="mt-1 text-xs text-muted">配置后 AI 问答走你自己的通道，不占用平台额度。Key 加密存储，永不回显。</p>
+      <div x-show="keyError" x-cloak role="alert" class="mt-3 rounded bg-danger-soft px-3 py-2 text-sm text-danger">
         <span x-text="keyError"></span><button type="button" x-show="!keyInfo" @click="loadKey()" class="ml-2 underline">重试</button>
       </div>
 
@@ -186,27 +186,27 @@
       <div x-show="keyInfo && keyInfo.configured && !keyEditing" x-cloak>
         <dl class="mt-3 space-y-2 text-sm">
           <div class="flex justify-between gap-4">
-            <dt class="shrink-0 text-slate-500">Base URL</dt>
-            <dd class="truncate text-slate-700" x-text="keyInfo.base_url"></dd>
+            <dt class="shrink-0 text-muted">Base URL</dt>
+            <dd class="truncate text-primary" x-text="keyInfo?.base_url"></dd>
           </div>
           <div class="flex justify-between">
-            <dt class="text-slate-500">短文本模型</dt>
-            <dd class="text-slate-700" x-text="keyInfo.model_short || '默认'"></dd>
+            <dt class="text-muted">短文本模型</dt>
+            <dd class="text-primary" x-text="keyInfo?.model_short || '默认'"></dd>
           </div>
           <div class="flex justify-between">
-            <dt class="text-slate-500">中文本模型</dt>
-            <dd class="text-slate-700" x-text="keyInfo.model_medium || '默认'"></dd>
+            <dt class="text-muted">中文本模型</dt>
+            <dd class="text-primary" x-text="keyInfo?.model_medium || '默认'"></dd>
           </div>
           <div class="flex justify-between">
-            <dt class="text-slate-500">长文本模型</dt>
-            <dd class="text-slate-700" x-text="keyInfo.model_long || '默认'"></dd>
+            <dt class="text-muted">长文本模型</dt>
+            <dd class="text-primary" x-text="keyInfo?.model_long || '默认'"></dd>
           </div>
           <div class="flex justify-between">
-            <dt class="text-slate-500">更新时间</dt>
-            <dd class="text-slate-700" x-text="ZY.relTime(keyInfo.updated_at)"></dd>
+            <dt class="text-muted">更新时间</dt>
+            <dd class="text-primary" x-text="ZY.relTime(keyInfo?.updated_at)"></dd>
           </div>
         </dl>
-        <div class="mt-4 flex gap-2 border-t border-slate-100 pt-4">
+        <div class="mt-4 flex gap-2 border-t border-default pt-4">
           <button @click="startEdit()" class="btn btn-ghost">修改</button>
           <button @click="deleteKey()" :disabled="keyLoading" class="btn btn-danger">删除</button>
         </div>
@@ -234,7 +234,7 @@
     {# ===== 通知卡 ===== #}
     <div id="notifications" class="card scroll-mt-20 p-4 sm:p-6 lg:col-span-2" :aria-busy="notifsLoading || notifActionLoading">
       <div class="flex items-center gap-3">
-        <h2 class="flex items-center gap-2 text-card-title text-slate-800">
+        <h2 class="flex items-center gap-2 text-card-title text-primary">
           <span class="text-brand-600">{{ icon('bell', 'w-4 h-4') }}</span>站内通知
         </h2>
         <button x-show="notifs.some(n => !n.is_read)" x-cloak @click="markAllRead()" :disabled="notifActionLoading"
@@ -247,31 +247,31 @@
         <div class="skeleton h-8 rounded-md"></div>
         <div class="skeleton h-8 rounded-md"></div>
       </div>
-      <div x-show="notifsError" x-cloak role="alert" class="mt-3 rounded bg-red-50 px-3 py-2 text-sm text-red-600">
+      <div x-show="notifsError" x-cloak role="alert" class="mt-3 rounded bg-danger-soft px-3 py-2 text-sm text-danger">
         <span x-text="notifsError"></span><button type="button" @click="loadNotifs(notifsLoaded)" class="ml-2 underline">重试</button>
       </div>
       {# 空状态：插画 + 引导文案 + CTA #}
       <div x-show="notifsLoaded && !notifs.length" x-cloak class="empty-state mt-4 flex flex-col items-center">
         {{ illo('inbox', 'w-24 h-24') }}
-        <p class="mt-3 text-sm text-slate-500">
+        <p class="mt-3 text-sm text-muted">
           暂无通知。去问答区互动，被回复、被采纳都会在这里提醒你。
         </p>
         <a href="/boards/qa" class="btn btn-secondary mt-3">去知屿问答逛逛</a>
       </div>
-      <ul x-show="notifs.length" x-cloak class="mt-3 divide-y divide-slate-100">
+      <ul x-show="notifs.length" x-cloak class="mt-3 divide-y divide-default">
         <template x-for="n in notifs" :key="n.id">
-          <li :id="'notification-' + n.id" tabindex="-1" class="flex items-start gap-2 py-2.5 hover:bg-slate-50">
+          <li :id="'notification-' + n.id" tabindex="-1" class="flex items-start gap-2 py-2.5 hover:bg-surface-inset">
             <span class="mt-1.5 h-2 w-2 shrink-0 rounded-full"
                   :class="n.is_read ? 'bg-transparent' : 'bg-brand-500'"></span>
             <a :href="n.link || ('/me#notification-' + n.id)" @click.prevent="openNotif(n)"
                class="min-w-0 flex-1 rounded focus:outline-none focus:ring-2 focus:ring-brand-500">
               <p class="text-sm truncate"
-                 :class="n.is_read ? 'text-slate-500' : 'font-medium text-slate-800'"
+                 :class="n.is_read ? 'text-muted' : 'font-medium text-primary'"
                  x-text="n.title"></p>
               <p x-show="n.body" x-text="n.body" x-cloak
-                 class="mt-0.5 line-clamp-2 text-xs text-slate-400"></p>
+                 class="mt-0.5 line-clamp-2 text-xs text-muted"></p>
             </a>
-            <span class="shrink-0 text-xs text-slate-400"
+            <span class="shrink-0 text-xs text-muted"
                   x-text="ZY.relTime(n.created_at)"></span>
           </li>
         </template>
@@ -283,40 +283,40 @@
 
     {# ===== 我的收藏卡（v0.6）：资源 / 帖子分组，可取消收藏 ===== #}
     <div class="card p-4 sm:p-6 lg:col-span-2" :aria-busy="favsLoading">
-      <h2 class="flex items-center gap-2 text-card-title text-slate-800">
+      <h2 class="flex items-center gap-2 text-card-title text-primary">
         <span class="text-brand-600">{{ icon('bookmark', 'w-4 h-4') }}</span>我的收藏
       </h2>
       <div x-show="favsLoading" x-cloak class="mt-3 space-y-2" aria-hidden="true">
         <div class="skeleton h-8 rounded-md"></div>
         <div class="skeleton h-8 rounded-md"></div>
       </div>
-      <div x-show="favsError" x-cloak role="alert" class="mt-3 rounded bg-red-50 px-3 py-2 text-sm text-red-600">
+      <div x-show="favsError" x-cloak role="alert" class="mt-3 rounded bg-danger-soft px-3 py-2 text-sm text-danger">
         <span x-text="favsError"></span><button type="button" @click="loadFavs(favsLoaded)" class="ml-2 underline">重试</button>
       </div>
       <div x-show="favsLoaded && !favs.length" x-cloak class="empty-state mt-4 flex flex-col items-center">
         {{ illo('shelf', 'w-24 h-24') }}
-        <p class="mt-3 text-sm text-slate-500">
+        <p class="mt-3 text-sm text-muted">
           暂无收藏。在资源详情页 / 帖子详情页点击「收藏」即可加入。
         </p>
         <a href="/majors" class="btn btn-primary mt-3">去课程空间逛逛</a>
       </div>
       <div x-show="favResources.length" x-cloak class="mt-3">
-        <h3 class="flex items-center gap-1.5 text-xs font-semibold text-slate-500">
+        <h3 class="flex items-center gap-1.5 text-xs font-semibold text-muted">
           <span class="h-3 w-0.5 rounded-full bg-brand-400"></span>资料
           <span class="badge badge-slate" x-text="favResources.length"></span>
         </h3>
-        <ul class="mt-1 divide-y divide-slate-100 text-sm">
+        <ul class="mt-1 divide-y divide-default text-sm">
           <template x-for="f in favResources" :key="'r' + f.target_id">
             <li class="flex items-center gap-3 py-2">
               <a :href="'/resources/' + f.target_id"
                  class="min-w-0 flex-1 truncate text-brand-700 hover:underline"
                  x-text="f.target ? f.target.title : '资源 #' + f.target_id"></a>
-              <span class="shrink-0 text-xs text-slate-400"
+              <span class="shrink-0 text-xs text-muted"
                     x-text="f.target ? (f.target.course_name || '') + ' · 下载 ' + f.target.download_count : ''"></span>
-              <span class="shrink-0 text-xs text-slate-400"
+              <span class="shrink-0 text-xs text-muted"
                     x-text="ZY.relTime(f.created_at)"></span>
               <button @click="unfavorite(f)" :disabled="busyFavorite === favoriteKey(f)" :aria-busy="busyFavorite === favoriteKey(f)"
-                      class="shrink-0 rounded border border-slate-300 px-2 py-0.5 text-xs text-slate-500 hover:bg-slate-100 disabled:opacity-50">
+                      class="shrink-0 rounded border border-strong px-2 py-0.5 text-xs text-muted hover:bg-surface-inset disabled:opacity-50">
                 取消收藏
               </button>
             </li>
@@ -324,22 +324,22 @@
         </ul>
       </div>
       <div x-show="favPosts.length" x-cloak class="mt-3">
-        <h3 class="flex items-center gap-1.5 text-xs font-semibold text-slate-500">
+        <h3 class="flex items-center gap-1.5 text-xs font-semibold text-muted">
           <span class="h-3 w-0.5 rounded-full bg-brand-400"></span>帖子
           <span class="badge badge-slate" x-text="favPosts.length"></span>
         </h3>
-        <ul class="mt-1 divide-y divide-slate-100 text-sm">
+        <ul class="mt-1 divide-y divide-default text-sm">
           <template x-for="f in favPosts" :key="'p' + f.target_id">
             <li class="flex items-center gap-3 py-2">
               <a :href="'/posts/' + f.target_id"
                  class="min-w-0 flex-1 truncate text-brand-700 hover:underline"
                  x-text="f.target ? f.target.title : '帖子 #' + f.target_id"></a>
-              <span class="shrink-0 text-xs text-slate-400"
+              <span class="shrink-0 text-xs text-muted"
                     x-text="f.target ? boardLabel(f.target.board) + ' · 浏览 ' + f.target.view_count : ''"></span>
-              <span class="shrink-0 text-xs text-slate-400"
+              <span class="shrink-0 text-xs text-muted"
                     x-text="ZY.relTime(f.created_at)"></span>
               <button @click="unfavorite(f)" :disabled="busyFavorite === favoriteKey(f)" :aria-busy="busyFavorite === favoriteKey(f)"
-                      class="shrink-0 rounded border border-slate-300 px-2 py-0.5 text-xs text-slate-500 hover:bg-slate-100 disabled:opacity-50">
+                      class="shrink-0 rounded border border-strong px-2 py-0.5 text-xs text-muted hover:bg-surface-inset disabled:opacity-50">
                 取消收藏
               </button>
             </li>
@@ -353,40 +353,40 @@
 
     {# ===== 我的关注卡（v0.6）：课程 / 用户分组，可取消关注 ===== #}
     <div class="card p-4 sm:p-6 lg:col-span-2" :aria-busy="followsLoading">
-      <h2 class="flex items-center gap-2 text-card-title text-slate-800">
+      <h2 class="flex items-center gap-2 text-card-title text-primary">
         <span class="text-brand-600">{{ icon('graduation-cap', 'w-4 h-4') }}</span>我的关注
       </h2>
       <div x-show="followsLoading" x-cloak class="mt-3 space-y-2" aria-hidden="true">
         <div class="skeleton h-8 rounded-md"></div>
         <div class="skeleton h-8 rounded-md"></div>
       </div>
-      <div x-show="followsError" x-cloak role="alert" class="mt-3 rounded bg-red-50 px-3 py-2 text-sm text-red-600">
+      <div x-show="followsError" x-cloak role="alert" class="mt-3 rounded bg-danger-soft px-3 py-2 text-sm text-danger">
         <span x-text="followsError"></span><button type="button" @click="loadFollows(followsLoaded)" class="ml-2 underline">重试</button>
       </div>
       <div x-show="followsLoaded && !follows.length" x-cloak class="empty-state mt-4 flex flex-col items-center">
         {{ illo('island', 'w-24 h-24') }}
-        <p class="mt-3 text-sm text-slate-500">
+        <p class="mt-3 text-sm text-muted">
           暂无关注。在课程空间页点击「关注课程」即可订阅动态。
         </p>
         <a href="/majors" class="btn btn-secondary mt-3">去找感兴趣的课程</a>
       </div>
       <div x-show="followCourses.length" x-cloak class="mt-3">
-        <h3 class="flex items-center gap-1.5 text-xs font-semibold text-slate-500">
+        <h3 class="flex items-center gap-1.5 text-xs font-semibold text-muted">
           <span class="h-3 w-0.5 rounded-full bg-brand-400"></span>课程
           <span class="badge badge-slate" x-text="followCourses.length"></span>
         </h3>
-        <ul class="mt-1 divide-y divide-slate-100 text-sm">
+        <ul class="mt-1 divide-y divide-default text-sm">
           <template x-for="f in followCourses" :key="'c' + f.target_id">
             <li class="flex items-center gap-3 py-2">
               <a :href="'/courses/' + f.target_id"
                  class="min-w-0 flex-1 truncate text-brand-700 hover:underline"
                  x-text="f.target ? f.target.name : '课程 #' + f.target_id"></a>
-              <span class="shrink-0 text-xs text-slate-400"
+              <span class="shrink-0 text-xs text-muted"
                     x-text="f.target ? (f.target.major_name || '') : ''"></span>
-              <span class="shrink-0 text-xs text-slate-400"
+              <span class="shrink-0 text-xs text-muted"
                     x-text="ZY.relTime(f.created_at)"></span>
               <button @click="unfollow(f)" :disabled="busyFollow === followKey(f)" :aria-busy="busyFollow === followKey(f)"
-                      class="shrink-0 rounded border border-slate-300 px-2 py-0.5 text-xs text-slate-500 hover:bg-slate-100 disabled:opacity-50">
+                      class="shrink-0 rounded border border-strong px-2 py-0.5 text-xs text-muted hover:bg-surface-inset disabled:opacity-50">
                 取消关注
               </button>
             </li>
@@ -394,21 +394,21 @@
         </ul>
       </div>
       <div x-show="followUsers.length" x-cloak class="mt-3">
-        <h3 class="flex items-center gap-1.5 text-xs font-semibold text-slate-500">
+        <h3 class="flex items-center gap-1.5 text-xs font-semibold text-muted">
           <span class="h-3 w-0.5 rounded-full bg-brand-400"></span>用户
           <span class="badge badge-slate" x-text="followUsers.length"></span>
         </h3>
-        <ul class="mt-1 divide-y divide-slate-100 text-sm">
+        <ul class="mt-1 divide-y divide-default text-sm">
           <template x-for="f in followUsers" :key="'u' + f.target_id">
             <li class="flex items-center gap-3 py-2">
-              <span class="min-w-0 flex-1 truncate text-slate-700"
+              <span class="min-w-0 flex-1 truncate text-primary"
                     x-text="f.target ? f.target.nickname : '用户 #' + f.target_id"></span>
-              <span class="shrink-0 text-xs text-slate-400"
+              <span class="shrink-0 text-xs text-muted"
                     x-text="f.target ? 'Lv' + f.target.level + ' · 贡献 ' + f.target.score : ''"></span>
-              <span class="shrink-0 text-xs text-slate-400"
+              <span class="shrink-0 text-xs text-muted"
                     x-text="ZY.relTime(f.created_at)"></span>
               <button @click="unfollow(f)" :disabled="busyFollow === followKey(f)" :aria-busy="busyFollow === followKey(f)"
-                      class="shrink-0 rounded border border-slate-300 px-2 py-0.5 text-xs text-slate-500 hover:bg-slate-100 disabled:opacity-50">
+                      class="shrink-0 rounded border border-strong px-2 py-0.5 text-xs text-muted hover:bg-surface-inset disabled:opacity-50">
                 取消关注
               </button>
             </li>

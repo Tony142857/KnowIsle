@@ -5,18 +5,18 @@
    徽章语义：通过= badge-brand（绿），疑似/注意 = badge-accent（琥珀），未通过/命中 = 红。 #}
 {% macro precheck_panel(p) %}
 <div class="card p-4">
-  <h3 class="text-sm font-semibold text-slate-700">自动预检结果</h3>
+  <h3 class="text-sm font-semibold text-primary">自动预检结果</h3>
   {% if not p %}
-  <p class="mt-2 text-xs text-slate-400">预检进行中，稍后刷新查看。</p>
+  <p class="mt-2 text-xs text-muted">预检进行中，稍后刷新查看。</p>
   {% else %}
   <ul class="mt-2 space-y-1.5 text-xs">
     <li class="flex items-center gap-2">
       {% if p.format_ok %}
       <span class="badge badge-brand">通过</span>
       {% else %}
-      <span class="rounded-full bg-red-50 px-1.5 py-0.5 text-red-600">未通过</span>
+      <span class="rounded-full bg-danger-soft px-1.5 py-0.5 text-danger">未通过</span>
       {% endif %}
-      <span class="text-slate-600">格式检查</span>
+      <span class="text-secondary">格式检查</span>
     </li>
     <li class="flex items-center gap-2">
       {% if p.duplicate %}
@@ -24,42 +24,42 @@
       {% else %}
       <span class="badge badge-brand">未发现重复</span>
       {% endif %}
-      <span class="text-slate-600">内容查重</span>
+      <span class="text-secondary">内容查重</span>
     </li>
     <li class="flex items-start gap-2">
       {% if p.sensitive_hits %}
-      <span class="rounded-full bg-red-50 px-1.5 py-0.5 text-red-600">
+      <span class="rounded-full bg-danger-soft px-1.5 py-0.5 text-danger">
         命中 {{ p.sensitive_hits|length }} 处
       </span>
       {% else %}
       <span class="badge badge-brand">未命中</span>
       {% endif %}
-      <span class="text-slate-600">
+      <span class="text-secondary">
         敏感词检测
         {% if p.sensitive_hits %}
-        <span class="mt-1 block text-red-500">{{ p.sensitive_hits|join('、') }}</span>
+        <span class="mt-1 block text-danger">{{ p.sensitive_hits|join('、') }}</span>
         {% endif %}
       </span>
     </li>
   </ul>
 
   {% if p.ai_review %}
-  <div class="mt-3 border-t border-slate-100 pt-3">
-    <p class="text-xs font-medium text-slate-500">AI 初评</p>
+  <div class="mt-3 border-t border-default pt-3">
+    <p class="text-xs font-medium text-muted">AI 初评</p>
     {% if p.ai_review.error %}
-    <p class="mt-1 text-xs text-slate-400">AI 初评暂不可用：{{ p.ai_review.error }}</p>
+    <p class="mt-1 text-xs text-muted">AI 初评暂不可用：{{ p.ai_review.error }}</p>
     {% else %}
     {# 三分数字卡：≥70 绿、<50 红、其余中性；质量分按同一阈值着色 #}
     <dl class="mt-2 grid grid-cols-3 gap-2 text-center">
       {% for label, score in [('相关性', p.ai_review.relevance),
                               ('完整性', p.ai_review.completeness),
                               ('质量', p.ai_review.quality)] %}
-      <div class="rounded-lg border border-slate-100 bg-slate-50 px-2 py-2">
+      <div class="rounded-lg border border-default bg-surface-inset px-2 py-2">
         <dd class="text-xl font-bold
-                   {{ 'text-brand-600' if score >= 70 else ('text-red-600' if score < 50 else 'text-slate-700') }}">
+                   {{ 'text-brand-600' if score >= 70 else ('text-danger' if score < 50 else 'text-primary') }}">
           {{ score }}
         </dd>
-        <dt class="mt-0.5 text-xs text-slate-400">{{ label }}</dt>
+        <dt class="mt-0.5 text-xs text-muted">{{ label }}</dt>
       </div>
       {% endfor %}
     </dl>
@@ -69,14 +69,14 @@
     </ul>
     {% endif %}
     {% if p.ai_review.suggested_chapter %}
-    <p class="mt-2 text-xs text-slate-400">建议挂载章节：{{ p.ai_review.suggested_chapter }}</p>
+    <p class="mt-2 text-xs text-muted">建议挂载章节：{{ p.ai_review.suggested_chapter }}</p>
     {% endif %}
     {% endif %}
   </div>
   {% endif %}
 
   {% if p.hard_fail %}
-  <p class="mt-3 rounded bg-red-50 px-2 py-1.5 text-xs text-red-600">
+  <p class="mt-3 rounded bg-danger-soft px-2 py-1.5 text-xs text-danger">
     预检硬性不通过：{{ p.reason or '未给出原因' }}
   </p>
   {% endif %}

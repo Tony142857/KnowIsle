@@ -74,7 +74,7 @@
     for (const t of p.tags || []) {
       const a = document.createElement('a');
       a.href = '/boards/' + board + '?tag=' + encodeURIComponent(t);
-      a.className = 'rounded bg-slate-100 px-1.5 py-0.5 text-slate-500 transition-colors hover:bg-brand-50 hover:text-brand-700';
+      a.className = 'rounded bg-surface-inset px-1.5 py-0.5 text-muted transition-colors hover:bg-brand-50 hover:text-brand-700';
       a.textContent = '#' + t;
       tagsHost.appendChild(a);
     }

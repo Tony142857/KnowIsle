@@ -14,19 +14,19 @@
 {% endfor %}
 
 <a id="source-back" href="/library" data-scope="{{ doc.scope }}" data-course-id="{{ course.id if course else '' }}"
-   class="mb-2 inline-flex items-center gap-1 text-sm text-slate-500 hover:text-brand-700"><span>返回个人知识库</span></a>
+   class="mb-2 inline-flex items-center gap-1 text-sm text-muted hover:text-brand-700"><span>返回个人知识库</span></a>
 {{ page_header(doc.file_name,
                subtitle=(course.name ~ ' · ' if course else '') ~ '共 ' ~ chunks|length ~ ' 个文本块 · '
                         ~ {'parsing': '解析中', 'parsed': '已完成', 'failed': '解析失败'}.get(doc.status, doc.status),
                icon='file-text') }}
 
 {% if doc.parse_error %}
-<p role="alert" class="mb-4 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">解析失败：{{ doc.parse_error }}</p>
+<p role="alert" class="mb-4 rounded-lg bg-danger-soft px-3 py-2 text-sm text-danger">解析失败：{{ doc.parse_error }}</p>
 {% endif %}
 
 {% if chunks %}
-<div class="mb-4 rounded-card border border-slate-200 bg-white p-3 shadow-card" role="search" aria-label="文档块内搜索">
-  <label for="source-search-input" class="text-xs font-medium text-slate-600">在原文中搜索</label>
+<div class="mb-4 rounded-card border border-default bg-white p-3 shadow-card" role="search" aria-label="文档块内搜索">
+  <label for="source-search-input" class="text-xs font-medium text-secondary">在原文中搜索</label>
   <div class="mt-1 flex flex-wrap items-center gap-2">
     <input id="source-search-input" type="search" placeholder="输入关键词；Enter 下一处，Shift+Enter 上一处"
            class="input-base min-w-0 flex-1 !py-2" autocomplete="off">
@@ -34,16 +34,16 @@
     <button id="source-search-next" type="button" disabled class="btn btn-ghost !px-3 !py-2" aria-label="下一处命中">下一处</button>
     <button id="source-search-clear" type="button" class="btn btn-ghost !px-3 !py-2">清空</button>
   </div>
-  <p id="source-search-status" role="status" aria-live="polite" class="mt-2 text-xs text-slate-500"></p>
+  <p id="source-search-status" role="status" aria-live="polite" class="mt-2 text-xs text-muted"></p>
 </div>
 {% endif %}
 
 {% if toc.items %}
 <nav aria-label="章节目录" class="sticky top-16 z-30 mb-4 flex items-center gap-1.5 overflow-x-auto rounded-full border border-brand-100/80 bg-white/90 p-1.5 shadow-card backdrop-blur">
-  <span class="shrink-0 px-2 text-xs font-medium text-slate-400">目录</span>
+  <span class="shrink-0 px-2 text-xs font-medium text-muted">目录</span>
   {% for item in toc.items %}
   <a href="#{{ item.anchor }}" data-sec-pill="{{ item.section }}" aria-current="false"
-     class="shrink-0 rounded-full px-3 py-1 text-xs text-slate-500 transition-colors duration-island ease-island hover:text-brand-700">{{ item.section }}</a>
+     class="shrink-0 rounded-full px-3 py-1 text-xs text-muted transition-colors duration-island ease-island hover:text-brand-700">{{ item.section }}</a>
   {% endfor %}
 </nav>
 {% endif %}
@@ -52,18 +52,18 @@
 <div class="space-y-3">
   {% for c in chunks %}
   <div id="{{ c.chunk_id }}" data-sec="{{ c.section or '' }}"
-       class="chunk-card scroll-mt-28 animate-fade-up rounded-card border border-slate-200 bg-white p-4 shadow-card transition-shadow">
-    <div class="flex flex-wrap items-center gap-2 text-xs text-slate-400">
-      <span class="rounded bg-slate-100 px-1.5 py-0.5 font-mono">{{ c.chunk_id }}</span>
+       class="chunk-card scroll-mt-28 animate-fade-up rounded-card border border-default bg-white p-4 shadow-card transition-shadow">
+    <div class="flex flex-wrap items-center gap-2 text-xs text-muted">
+      <span class="rounded bg-surface-inset px-1.5 py-0.5 font-mono">{{ c.chunk_id }}</span>
       {% if c.section %}<span class="badge badge-brand">{{ c.section }}</span>{% endif %}
       {% if c.page_num is not none %}<span>第 {{ c.page_num }} 页</span>{% endif %}
     </div>
-    <p class="chunk-content mt-2 whitespace-pre-wrap text-sm leading-6 text-slate-700">{{ c.content }}</p>
+    <p class="chunk-content mt-2 whitespace-pre-wrap text-sm leading-6 text-primary">{{ c.content }}</p>
   </div>
   {% endfor %}
 </div>
 {% else %}
-<div class="empty-state bg-white py-16 text-sm text-slate-400">
+<div class="empty-state bg-white py-16 text-sm text-muted">
   {{ illo('inbox', 'mx-auto mb-3 w-24 h-24') }}
   该文档暂无解析文本块{% if doc.status == 'parsing' %}，解析完成后请刷新查看{% endif %}。
 </div>

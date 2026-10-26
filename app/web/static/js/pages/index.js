@@ -24,6 +24,7 @@ document.addEventListener('alpine:init', function () {
           const data = await ZY.api.get('/api/feed');
           this.newResources = data.new_resources || [];
           this.hotPosts = data.hot_posts || [];
+          this.$nextTick(() => { if (window.ZY.motion) ZY.motion.update(this.$el); });
         } catch (e) { this.error = e.message || '动态加载失败'; }
         finally { this.loading = false; }
       },
@@ -59,7 +60,7 @@ document.addEventListener('alpine:init', function () {
         this._started = true;
         var self = this;
         var start = null;
-        var DURATION = 1200;
+        var DURATION = 250;
         function step(ts) {
           if (start === null) start = ts;
           var p = Math.min(1, (ts - start) / DURATION);

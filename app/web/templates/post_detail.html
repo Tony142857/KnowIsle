@@ -1,5 +1,7 @@
 {% extends "base.html" %}
+{% set needs_markdown = true %}
 {% from "_icons.html" import icon %}
+{% from "_page_header.html" import page_header %}
 {% block title %}{{ post.title }} · 知屿 KnowIsle{% endblock %}
 {% block head %}
 {# 页面交互外置（CSP）：同步加载，须先于 defer 的 Alpine 启动（x-data 引用全局函数） #}
@@ -16,7 +18,7 @@
                         {{ 'true' if (is_author and post.board in ('qa', 'bounty') and not c.is_accepted and c.author_id != post.author_id and (post.board == 'qa' or not post.accepted_comment_id)) else 'false' }},
                         {{ 'true' if (is_author and post.board in ('qa', 'bounty') and c.author_id != post.author_id) else 'false' }})"
      @zy:accepted.window="handleAccepted($event.detail)">
-  <div class="comment-head flex items-center gap-2 text-xs text-slate-400">
+  <div class="comment-head flex items-center gap-2 text-xs text-muted">
     {% if node.author.avatar_url %}
     <img src="{{ node.author.avatar_url }}" alt="" class="w-5 h-5 rounded-full object-cover">
     {% else %}
@@ -24,9 +26,9 @@
       {{ node.author.nickname[:1] }}
     </span>
     {% endif %}
-    <span class="text-slate-600">{{ node.author.nickname }}</span>
+    <span class="text-secondary">{{ node.author.nickname }}</span>
     {% if c.author_id == post.author_id %}
-    <span class="rounded bg-slate-100 px-1 py-0.5 text-[10px] text-slate-500">帖主</span>
+    <span class="rounded bg-surface-inset px-1 py-0.5 text-[10px] text-muted">帖主</span>
     {% endif %}
     <span class="badge badge-brand" data-slot="accepted-badge" {{ '' if c.is_accepted else 'hidden' }}>
       {{ icon('check', 'w-3 h-3') }} 已采纳
@@ -36,7 +38,7 @@
           title="{{ c.created_at.strftime('%Y-%m-%d %H:%M') }}">{{ c.created_at.strftime('%Y-%m-%d %H:%M') }}</span>
     {% endif %}
   </div>
-  <div class="md-body mt-2 text-sm text-slate-700"
+  <div class="md-body mt-2 text-sm text-primary"
        x-init='ZY.md.renderInto($el, {{ c.content|tojson }})'></div>
 
   <div class="mt-2 flex items-center gap-3 text-xs">
@@ -48,36 +50,36 @@
       <span x-text="score"></span>
     </button>
     <button @click="vote(-1)" :disabled="loading" aria-label="点踩评论"
-            :class="myVote === -1 ? 'bg-red-50 text-red-600 border-red-200' : ''"
+            :class="myVote === -1 ? 'bg-danger-soft text-danger border-danger-border' : ''"
             class="btn btn-ghost px-2.5 py-1 text-xs">
       {{ icon('thumb-down', 'w-3.5 h-3.5') }}
     </button>
     {% if logged_in %}
     <button @click="replyOpen = !replyOpen; replyError = ''"
-            class="text-slate-400 transition-colors hover:text-brand-700">回复</button>
+            class="text-muted transition-colors hover:text-brand-700">回复</button>
     <button type="button" @click="ZY.report('comment', {{ c.id }})"
-            class="text-slate-400 transition-colors hover:text-red-600">举报</button>
+            class="text-muted transition-colors hover:text-danger">举报</button>
     {% endif %}
     <button x-show="canAccept" x-cloak @click="accept()" :disabled="loading"
             class="inline-flex items-center gap-1 rounded bg-brand-600 px-2 py-1 text-white transition-colors hover:bg-brand-700 disabled:opacity-50">
       {{ icon('check', 'w-3.5 h-3.5') }} 采纳
     </button>
-    <span x-show="error" x-text="error" x-cloak class="text-red-600"></span>
+    <span x-show="error" x-text="error" x-cloak class="text-danger"></span>
   </div>
 
   {# 楼内回复框（parent_id = 本评论）：细分隔线代替灰盒降噪 #}
-  <div x-show="replyOpen" x-cloak class="mt-3 border-t border-slate-100 pt-3">
+  <div x-show="replyOpen" x-cloak class="mt-3 border-t border-default pt-3">
     <textarea x-model="replyContent" rows="2" placeholder="写下你的回复…" aria-label="回复内容"
               class="input-base"></textarea>
     <div class="mt-2 flex items-center gap-2">
       <button @click="reply()" :disabled="loading" class="btn btn-primary">发表回复</button>
-      <span x-show="replyError" x-text="replyError" x-cloak class="text-xs text-red-600"></span>
+      <span x-show="replyError" x-text="replyError" x-cloak class="text-xs text-danger"></span>
     </div>
   </div>
 
   {# 子评论层级线：左边框 + pl-4 缩进；depth>=4 起不再缩进（防深层嵌套崩版） #}
   {% if node.children %}
-  <div class="comment-children mt-3 space-y-3 {{ 'ml-4 border-l-2 border-slate-200 pl-4' if depth < 4 else '' }}">
+  <div class="comment-children mt-3 space-y-3 {{ 'ml-4 border-l-2 border-default pl-4' if depth < 4 else '' }}">
     {% for child in node.children %}{{ comment_node(child, post, is_author, logged_in, depth + 1) }}{% endfor %}
   </div>
   {% endif %}
@@ -92,67 +94,36 @@
     'user': {'nickname': user.nickname, 'avatar_url': user.avatar_url} if user else none} | tojson }}
 </script>
 
-<div class="mb-6 animate-fade-up">
-  <a href="/boards/{{ post.board }}"
-     class="inline-flex items-center gap-1 text-sm text-slate-500 transition-colors duration-island ease-island hover:text-brand-700">
-    {{ icon('arrow-left', 'w-4 h-4') }}
-    {{ {'qa': '知屿问答', 'discuss': '讨论区', 'experience': '经验长廊', 'bounty': '资料求援'}[post.board] }}
-  </a>
-  <div class="mt-2 flex flex-wrap items-center gap-2">
-    <h1 class="text-title text-slate-800">{{ post.title }}</h1>
-    {% if post.status == 'featured' %}
-    <span class="badge badge-accent">精华</span>
-    {% endif %}
-    {% if post.board == 'bounty' %}
-      {% if post.accepted_comment_id %}
-      <span class="badge badge-brand">已结算</span>
-      {% else %}
-      <span class="badge badge-accent">悬赏 {{ post.bounty_score }} 分</span>
-      {% endif %}
-    {% elif post.accepted_comment_id %}
-    <span class="badge badge-brand">已采纳</span>
-    {% endif %}
-    {% if not post.accepted_comment_id %}
-    {# 采纳成功后的局部标记（监听 commentBox 广播的 zy:accepted 事件），免整页刷新 #}
-    <span x-data="{accepted: false}" @zy:accepted.window="accepted = true" x-show="accepted" x-cloak
-          class="badge badge-brand">
-      {{ icon('check', 'w-3 h-3') }} {{ '已结算' if post.board == 'bounty' else '已采纳' }}
-    </span>
-    {% endif %}
-    {% if post.status == 'closed' %}
-    <span class="badge badge-slate">已关闭</span>
-    {% endif %}
-  </div>
-  <div class="mt-2 flex flex-wrap items-center gap-3 text-xs text-slate-400">
-    <span class="flex items-center gap-1 text-slate-500">
-      {% if author.avatar_url %}
-      <img src="{{ author.avatar_url }}" alt="" class="w-4 h-4 rounded-full object-cover">
-      {% endif %}
-      {{ author.nickname }}
-    </span>
-    {% if post.created_at %}
-    <span x-data x-init="$el.textContent = ZY.relTime('{{ post.created_at.isoformat() }}')"
-          title="{{ post.created_at.strftime('%Y-%m-%d %H:%M') }}">{{ post.created_at.strftime('%Y-%m-%d %H:%M') }}</span>
-    {% endif %}
-    <span>浏览 {{ post.view_count }}</span>
-    {% if course %}
-    <a href="/courses/{{ course.id }}" class="text-brand-600 hover:underline">{{ course.name }}</a>
-    {% endif %}
-    {% if chapter %}<span>{{ chapter.title }}</span>{% endif %}
-    {% for t in post.tags or [] %}
-    <a href="/boards/{{ post.board }}?tag={{ t|urlencode }}"
-       class="rounded bg-slate-100 px-1.5 py-0.5 text-slate-500 hover:bg-brand-50 hover:text-brand-700">#{{ t }}</a>
-    {% endfor %}
-  </div>
+{% call page_header(post.title, back_href='/boards/' ~ post.board,
+                    back_label={'qa': '知屿问答', 'discuss': '讨论区', 'experience': '经验长廊', 'bounty': '资料求援'}[post.board],
+                    eyebrow='社区讨论') %}
+  {% if post.status == 'featured' %}<span class="badge badge-accent">精华</span>{% endif %}
+  {% if post.board == 'bounty' %}
+    {% if post.accepted_comment_id %}<span class="badge badge-brand">已结算</span>
+    {% else %}<span class="badge badge-accent">悬赏 {{ post.bounty_score }} 分</span>{% endif %}
+  {% elif post.accepted_comment_id %}<span class="badge badge-brand">已采纳</span>{% endif %}
+  {% if not post.accepted_comment_id %}
+  <span x-data="{accepted: false}" @zy:accepted.window="accepted = true" x-show="accepted" x-cloak class="badge badge-brand">
+    {{ icon('check', 'w-3 h-3') }} {{ '已结算' if post.board == 'bounty' else '已采纳' }}
+  </span>
+  {% endif %}
+  {% if post.status == 'closed' %}<span class="badge badge-slate">已关闭</span>{% endif %}
+  <span class="text-xs text-muted">{{ author.nickname }} · 浏览 {{ post.view_count }}</span>
+{% endcall %}
+<div class="mb-6 flex flex-wrap items-center gap-3 text-xs text-muted">
+  {% if post.created_at %}<span x-data x-init="$el.textContent = ZY.relTime('{{ post.created_at.isoformat() }}')" title="{{ post.created_at.strftime('%Y-%m-%d %H:%M') }}">{{ post.created_at.strftime('%Y-%m-%d %H:%M') }}</span>{% endif %}
+  {% if course %}<a href="/courses/{{ course.id }}" class="text-brand-600 hover:underline">{{ course.name }}</a>{% endif %}
+  {% if chapter %}<span>{{ chapter.title }}</span>{% endif %}
+  {% for t in post.tags or [] %}<a href="/boards/{{ post.board }}?tag={{ t|urlencode }}" class="rounded bg-surface-inset px-1.5 py-0.5 text-secondary hover:bg-brand-50 hover:text-brand-700">#{{ t }}</a>{% endfor %}
 </div>
 
 {# 帖子正文 + 点赞组件（Markdown 客户端渲染：ZY.md.render，服务端转义 + DOMPurify 双保险） #}
 <div class="card p-6 animate-fade-up"
      x-data="voteBox('post', {{ post.id }}, {{ vote_score }}, {{ my_vote }},
                      {{ 'true' if user else 'false' }})">
-  <div class="md-body text-sm text-slate-700"
+  <div class="md-body text-sm text-primary"
        x-init='ZY.md.renderInto($el, {{ post.content|tojson }})'></div>
-  <div class="mt-4 flex items-center gap-3 border-t border-slate-100 pt-4 text-sm">
+  <div class="mt-4 flex items-center gap-3 border-t border-default pt-4 text-sm">
     <button @click="vote(1)" :disabled="loading" aria-label="点赞帖子"
             :class="myVote === 1 ? 'bg-brand-100 text-brand-700 border-transparent' : ''"
             class="btn btn-ghost">
@@ -160,7 +131,7 @@
       点赞 <span x-text="score"></span>
     </button>
     <button @click="vote(-1)" :disabled="loading" aria-label="点踩帖子"
-            :class="myVote === -1 ? 'bg-red-50 text-red-600 border-red-200' : ''"
+            :class="myVote === -1 ? 'bg-danger-soft text-danger border-danger-border' : ''"
             class="btn btn-ghost">
       {{ icon('thumb-down', 'w-4 h-4') }}
       点踩
@@ -175,7 +146,7 @@
         <span x-show="!favorited" x-cloak>{{ icon('star', 'w-4 h-4') }}</span>
         <span x-text="favorited ? '已收藏' : '收藏'"></span>
       </button>
-      <span x-show="error" x-text="error" x-cloak class="ml-2 text-xs text-red-600"></span>
+      <span x-show="error" x-text="error" x-cloak class="ml-2 text-xs text-danger"></span>
     </span>
     {# 精华标记（v0.7）：管理员/共建者可标记经验帖，作者 +30 #}
     {% if can_feature %}
@@ -187,13 +158,13 @@
         <span x-show="!featured" x-cloak>{{ icon('star', 'w-4 h-4') }}</span>
         <span x-text="featured ? '精华' : '设为精华'"></span>
       </button>
-      <span x-show="error" x-text="error" x-cloak class="ml-2 text-xs text-red-600"></span>
+      <span x-show="error" x-text="error" x-cloak class="ml-2 text-xs text-danger"></span>
     </span>
     {% endif %}
     {% if user %}
-    <button type="button" @click="ZY.report('post', {{ post.id }})" class="btn btn-ghost text-slate-400 hover:text-red-600">举报帖子</button>
+    <button type="button" @click="ZY.report('post', {{ post.id }})" class="btn btn-ghost text-muted hover:text-danger">举报帖子</button>
     {% endif %}
-    <span x-show="error" x-text="error" x-cloak class="text-xs text-red-600"></span>
+    <span x-show="error" x-text="error" x-cloak class="text-xs text-danger"></span>
   </div>
 </div>
 
@@ -215,22 +186,22 @@
       {% set md_ns.text = md_ns.text ~ '[\\[' ~ seg.cite ~ '\\]](/documents/' ~ seg.document_id ~ '/source#' ~ seg.cite ~ ')' %}
     {% endif %}
   {% endfor %}
-  <div class="md-body mt-3 text-sm text-slate-700"
+  <div class="md-body mt-3 text-sm text-primary"
        x-data x-init='ZY.md.renderInto($el, {{ md_ns.text|tojson }})'></div>
   {% if ai_citations %}
   <div class="mt-4 border-t border-brand-100 pt-3">
-    <p class="text-xs font-medium text-slate-500">引用来源</p>
+    <p class="text-xs font-medium text-muted">引用来源</p>
     <div class="mt-2 grid gap-2 sm:grid-cols-2">
       {% for c in ai_citations %}
       <a href="/documents/{{ c.document_id }}/source#{{ c.chunk_id }}"
          class="block rounded-lg border border-brand-100 bg-white/80 p-3 text-xs card-hover">
-        <span class="font-mono text-slate-400">{{ c.chunk_id }}</span>
-        <p class="mt-1 text-slate-600">
+        <span class="font-mono text-muted">{{ c.chunk_id }}</span>
+        <p class="mt-1 text-secondary">
           {% if c.chapter %}{{ c.chapter }}{% endif %}
           {% if c.section %} · {{ c.section }}{% endif %}
           {% if c.page_num is not none %} · 第 {{ c.page_num }} 页{% endif %}
         </p>
-        <p class="mt-0.5 text-slate-400">资料由 {{ c.uploader }} 上传</p>
+        <p class="mt-0.5 text-muted">资料由 {{ c.uploader }} 上传</p>
       </a>
       {% endfor %}
     </div>
@@ -245,12 +216,12 @@
     <h2 class="text-sm font-semibold text-brand-800">AI 助教首答</h2>
     <span class="rounded bg-accent-100 px-2 py-0.5 text-xs text-accent-700">AI 生成，仅供参考</span>
   </div>
-  <p x-show="status === 'pending'" class="mt-3 flex items-center gap-2 text-sm text-slate-500">
+  <p x-show="status === 'pending'" class="mt-3 flex items-center gap-2 text-sm text-muted">
     <span x-show="!timedOut" class="inline-block h-4 w-4 animate-spin rounded-full border-2 border-brand-300 border-t-brand-600"></span>
     <span x-text="timedOut ? '生成时间较长，自动检查已暂停，可手动刷新或重试。' : 'AI 助教正在思考，回答生成后自动上墙…'"></span>
   </p>
-  <p x-show="status === 'failed'" x-cloak class="mt-3 text-sm text-slate-500">AI 首答生成失败，可重试生成，也可以先等待同学回答。</p>
-  <p x-show="error" x-text="error" x-cloak role="alert" class="mt-2 text-xs text-red-600"></p>
+  <p x-show="status === 'failed'" x-cloak class="mt-3 text-sm text-muted">AI 首答生成失败，可重试生成，也可以先等待同学回答。</p>
+  <p x-show="error" x-text="error" x-cloak role="alert" class="mt-2 text-xs text-danger"></p>
   <div class="mt-3 flex gap-2">
     <button type="button" @click="refresh()" :disabled="refreshing" class="btn btn-ghost">手动刷新</button>
     <button type="button" @click="retry()" :disabled="refreshing" class="btn btn-secondary">重试生成</button>
@@ -268,7 +239,7 @@
     <h2 class="text-sm font-semibold text-accent-800">AI 摘要</h2>
     <span class="rounded bg-accent-100 px-2 py-0.5 text-xs text-accent-700">AI 生成，仅供参考</span>
   </div>
-  <div class="md-body mt-3 text-sm text-slate-700"
+  <div class="md-body mt-3 text-sm text-primary"
        x-data x-init='ZY.md.renderInto($el, {{ post.ai_summary|tojson }})'></div>
 </div>
 {% elif summary_status in ('pending', 'failed') %}
@@ -278,12 +249,12 @@
     <h2 class="text-sm font-semibold text-accent-800">AI 摘要</h2>
     <span class="rounded bg-accent-100 px-2 py-0.5 text-xs text-accent-700">AI 生成，仅供参考</span>
   </div>
-  <p x-show="status === 'pending'" class="mt-3 flex items-center gap-2 text-sm text-slate-500">
+  <p x-show="status === 'pending'" class="mt-3 flex items-center gap-2 text-sm text-muted">
     <span x-show="!timedOut" class="inline-block h-4 w-4 animate-spin rounded-full border-2 border-accent-300 border-t-accent-600"></span>
     <span x-text="timedOut ? '摘要生成超时，自动检查已暂停。' : 'AI 正在生成摘要，完成后自动上墙…'"></span>
   </p>
-  <p x-show="status === 'failed'" x-cloak class="mt-3 text-sm text-slate-500">AI 摘要生成失败，可直接阅读正文或重试生成。</p>
-  <p x-show="error" x-text="error" x-cloak role="alert" class="mt-2 text-xs text-red-600"></p>
+  <p x-show="status === 'failed'" x-cloak class="mt-3 text-sm text-muted">AI 摘要生成失败，可直接阅读正文或重试生成。</p>
+  <p x-show="error" x-text="error" x-cloak role="alert" class="mt-2 text-xs text-danger"></p>
   <div class="mt-3 flex gap-2">
     <button type="button" @click="refresh()" :disabled="refreshing" class="btn btn-ghost">手动刷新</button>
     <button type="button" @click="retry()" :disabled="refreshing" class="btn btn-secondary">重试生成</button>
@@ -294,10 +265,10 @@
 
 {# 评论区 #}
 <section class="mt-8">
-  <h2 class="text-lg font-semibold text-slate-700">
-    评论 <span class="text-sm font-normal text-slate-400" id="comment-count">{{ comment_count }}</span>
+  <h2 class="text-lg font-semibold text-primary">
+    评论 <span class="text-sm font-normal text-muted" id="comment-count">{{ comment_count }}</span>
   </h2>
-  <p class="mt-1 text-xs text-slate-400">评论内容支持 Markdown 与代码高亮。</p>
+  <p class="mt-1 text-xs text-muted">评论内容支持 Markdown 与代码高亮。</p>
 
   {% if user %}
   {% if post.status != 'closed' %}
@@ -306,17 +277,17 @@
               class="input-base"></textarea>
     <div class="mt-2 flex items-center gap-2">
       <button @click="submit()" :disabled="loading" class="btn btn-primary">发表评论</button>
-      <span x-show="error" x-text="error" x-cloak class="text-xs text-red-600"></span>
+      <span x-show="error" x-text="error" x-cloak class="text-xs text-danger"></span>
     </div>
   </div>
   {% else %}
-  <p class="card mt-4 p-4 text-sm text-slate-400">
+  <p class="card mt-4 p-4 text-sm text-muted">
     帖子已关闭，无法发表评论。
   </p>
   {% endif %}
   {% else %}
-  <p class="card mt-4 p-4 text-sm text-slate-500">
-    <a href="/login" class="text-brand-600 hover:underline">登录</a> 后参与评论与点赞。
+  <p class="card mt-4 p-4 text-sm text-muted">
+    <a href="/login" class="text-brand-600 underline">登录</a> 后参与评论与点赞。
   </p>
   {% endif %}
 
@@ -329,7 +300,7 @@
   {% else %}
   <div class="empty-state mt-4" id="comment-empty">
     {{ icon('message', 'mx-auto w-10 h-10 text-brand-200') }}
-    <p class="mt-2 text-sm text-slate-400">暂无评论，来抢沙发分享你的看法吧。</p>
+    <p class="mt-2 text-sm text-muted">暂无评论，来抢沙发分享你的看法吧。</p>
     {% if user and post.status != 'closed' %}
     <a href="#comment-composer" class="btn btn-primary mt-4">写下第一条评论</a>
     {% elif not user %}
@@ -343,16 +314,16 @@
 {# 新评论节点模板（发表/回复成功后局部插入，与 comment_node 宏逐节点同构；Alpine 自动初始化新节点 x-data） #}
 <template id="comment-node-tpl">
   <div class="comment-node card p-4" @zy:accepted.window="handleAccepted($event.detail)">
-    <div class="comment-head flex items-center gap-2 text-xs text-slate-400">
+    <div class="comment-head flex items-center gap-2 text-xs text-muted">
       <span data-slot="avatar"></span>
-      <span class="text-slate-600" data-slot="nickname"></span>
-      <span class="rounded bg-slate-100 px-1 py-0.5 text-[10px] text-slate-500" data-slot="op-badge" hidden>帖主</span>
+      <span class="text-secondary" data-slot="nickname"></span>
+      <span class="rounded bg-surface-inset px-1 py-0.5 text-[10px] text-muted" data-slot="op-badge" hidden>帖主</span>
       <span class="badge badge-brand" data-slot="accepted-badge" hidden>
         {{ icon('check', 'w-3 h-3') }} 已采纳
       </span>
       <span data-slot="time"></span>
     </div>
-    <div class="md-body mt-2 text-sm text-slate-700" data-slot="body"></div>
+    <div class="md-body mt-2 text-sm text-primary" data-slot="body"></div>
     <div class="mt-2 flex items-center gap-3 text-xs">
       <button @click="vote(1)" :disabled="loading" aria-label="点赞评论"
               :class="myVote === 1 ? 'bg-brand-100 text-brand-700 border-transparent' : ''"
@@ -361,25 +332,25 @@
         <span x-text="score"></span>
       </button>
       <button @click="vote(-1)" :disabled="loading" aria-label="点踩评论"
-              :class="myVote === -1 ? 'bg-red-50 text-red-600 border-red-200' : ''"
+              :class="myVote === -1 ? 'bg-danger-soft text-danger border-danger-border' : ''"
               class="btn btn-ghost px-2.5 py-1 text-xs">
         {{ icon('thumb-down', 'w-3.5 h-3.5') }}
       </button>
       <button @click="replyOpen = !replyOpen; replyError = ''"
-              class="text-slate-400 transition-colors hover:text-brand-700">回复</button>
-      <button type="button" @click="report(commentId)" class="text-slate-400 transition-colors hover:text-red-600">举报</button>
+              class="text-muted transition-colors hover:text-brand-700">回复</button>
+      <button type="button" @click="report(commentId)" class="text-muted transition-colors hover:text-danger">举报</button>
       <button x-show="canAccept" x-cloak @click="accept()" :disabled="loading"
               class="inline-flex items-center gap-1 rounded bg-brand-600 px-2 py-1 text-white transition-colors hover:bg-brand-700 disabled:opacity-50">
         {{ icon('check', 'w-3.5 h-3.5') }} 采纳
       </button>
-      <span x-show="error" x-text="error" x-cloak class="text-red-600"></span>
+      <span x-show="error" x-text="error" x-cloak class="text-danger"></span>
     </div>
-    <div x-show="replyOpen" x-cloak class="mt-3 border-t border-slate-100 pt-3">
+    <div x-show="replyOpen" x-cloak class="mt-3 border-t border-default pt-3">
       <textarea x-model="replyContent" rows="2" placeholder="写下你的回复…" aria-label="回复内容"
                 class="input-base"></textarea>
       <div class="mt-2 flex items-center gap-2">
         <button @click="reply()" :disabled="loading" class="btn btn-primary">发表回复</button>
-        <span x-show="replyError" x-text="replyError" x-cloak class="text-xs text-red-600"></span>
+        <span x-show="replyError" x-text="replyError" x-cloak class="text-xs text-danger"></span>
       </div>
     </div>
   </div>

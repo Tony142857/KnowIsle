@@ -45,13 +45,14 @@
     const el = document.getElementById(id);
     if (!el) return;
     el.classList.add.apply(el.classList, HIGHLIGHT_CLASSES);
+    if (window.ZY.motion) ZY.motion.highlight(el);
     scrollTo(el);
   }
   function initTocSpy() {
     const pills = document.querySelectorAll('[data-sec-pill]');
     if (!pills.length || typeof IntersectionObserver === 'undefined') return;
     var ACTIVE = ['bg-brand-600', 'text-white', 'shadow-sm'];
-    var IDLE = ['text-slate-500'];
+    var IDLE = ['text-muted'];
     function setActive(sec) {
       pills.forEach(function (pill) {
         const on = pill.getAttribute('data-sec-pill') === sec;

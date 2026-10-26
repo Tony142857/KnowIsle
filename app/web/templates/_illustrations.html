@@ -5,7 +5,7 @@
      inbox 空信箱 / shelf 空书架 / search 空搜索；
    - dict 值为 SVG 内部 markup，宏统一包 120×120 外壳（stroke 线条风 +
      圆角线帽），class 由宏参数注入；
-   - 配色仅走令牌类：线条 text-brand-300 / text-brand-600 / text-slate-300，
+   - 配色仅走令牌类：线条 text-brand-300 / text-brand-600 / text-disabled，
      填充 fill-brand-100 / fill-brand-200；海浪线复用 404.html 灯塔小岛插画的
      波浪 path，画风与全站一致；
    - 未知 name 输出醒目 HTML 注释占位（Jinja 环境无 raise 全局）。 #}
@@ -21,9 +21,9 @@
   'inbox': '<path d="M24 58h20l7 9h18l7-9h20v26a6 6 0 0 1-6 6H30a6 6 0 0 1-6-6z" class="fill-brand-100 stroke-brand-300"/>'
            '<rect x="38" y="22" width="44" height="30" rx="4" class="fill-brand-200 stroke-brand-300"/>'
            '<path d="M40 27l20 13 20-13" class="text-brand-600"/>'
-           '<path d="M52 15h16M56 9h8" class="text-slate-300"/>'
+           '<path d="M52 15h16M56 9h8" class="text-disabled"/>'
            '<path d="M18 104c4-3 8-3 12 0s8 3 12 0M60 104c4-3 8-3 12 0s8 3 12 0 8-3 12 0" class="text-brand-200"/>',
-  'shelf': '<path d="M22 56h76M22 90h76" class="text-slate-300"/>'
+  'shelf': '<path d="M22 56h76M22 90h76" class="text-disabled"/>'
            '<path d="M30 56V34h8v22z" class="fill-brand-100 stroke-brand-300"/>'
            '<path d="M40 56V30h9v26z" class="fill-brand-200 stroke-brand-300"/>'
            '<path d="M56 56l7-22 9 2-7 22z" class="fill-brand-100 stroke-brand-300"/>'

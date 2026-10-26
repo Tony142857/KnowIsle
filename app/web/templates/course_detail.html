@@ -16,7 +16,7 @@
     {% if node.children %}
     <button type="button" @click.stop="open = !open" :aria-expanded="open"
             aria-label="展开或折叠章节"
-            class="shrink-0 rounded p-0.5 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600">
+            class="shrink-0 rounded p-0.5 text-muted transition-colors hover:bg-surface-inset hover:text-secondary">
       <span class="block transition-transform duration-island ease-island" :class="open ? 'rotate-90' : ''">
         {{ icon('chevron-right', 'h-3 w-3') }}
       </span>
@@ -24,18 +24,18 @@
     {% else %}
     <span class="w-4 shrink-0"></span>
     {% endif %}
-    <button type="button" data-chapter-title="{{ node.chapter.title }}"
+    <button type="button" data-slot="title" data-chapter-title="{{ node.chapter.title }}"
           :aria-pressed="selectedChapter === {{ node.chapter.id }}"
           class="block min-w-0 flex-1 truncate rounded px-2 py-1 text-left text-sm transition-colors"
           :class="selectedChapter === {{ node.chapter.id }}
                   ? 'bg-brand-50 text-brand-700 font-medium ring-1 ring-brand-200'
-                  : 'text-slate-600 hover:bg-slate-100'"
+                  : 'text-secondary hover:bg-surface-inset'"
           @click="selectChapter({{ node.chapter.id }})">
       {{ node.chapter.title }}
     </button>
   </div>
   {% if node.children %}
-  <ul x-show="open" class="ml-3 border-l border-slate-200 pl-2">
+  <ul x-show="open" class="ml-3 border-l border-default pl-2">
     {% for child in node.children %}{{ chapter_node(child) }}{% endfor %}
   </ul>
   {% endif %}
@@ -60,15 +60,15 @@
                              {{ 'true' if is_following else 'false' }},
                              {{ follower_count }},
                              {{ 'true' if user else 'false' }})">
-    <span class="text-xs text-slate-400"><span x-text="count"></span> 人关注</span>
+    <span class="text-xs text-muted"><span x-text="count"></span> 人关注</span>
     <button @click="toggle()" :disabled="loading"
             :class="following
               ? 'border-brand-500 bg-brand-50 text-brand-700'
-              : 'border-slate-300 text-slate-500 hover:border-brand-400 hover:text-brand-700'"
+              : 'border-strong text-muted hover:border-brand-400 hover:text-brand-700'"
             class="rounded-md border px-3 py-1.5 text-sm transition-colors duration-island ease-island disabled:opacity-50">
       <span x-text="following ? '已关注' : '+ 关注课程'"></span>
     </button>
-    <span x-show="error" x-text="error" x-cloak class="text-xs text-red-600"></span>
+    <span x-show="error" x-text="error" x-cloak class="text-xs text-danger"></span>
   </span>
   {% endif %}
 {% endcall %}
@@ -79,30 +79,31 @@
   <aside class="shrink-0 lg:w-64" x-data="{ treeOpen: false }">
     <div class="card p-4">
       <button type="button" @click="treeOpen = !treeOpen" :aria-expanded="treeOpen"
-              class="flex w-full items-center justify-between text-sm font-semibold text-slate-700 lg:hidden">
+              class="flex w-full items-center justify-between text-sm font-semibold text-primary lg:hidden">
         章节知识树
         <span class="block transition-transform duration-island ease-island" :class="treeOpen ? 'rotate-180' : ''">
           {{ icon('chevron-down', 'h-4 w-4') }}
         </span>
       </button>
-      <h2 class="hidden text-sm font-semibold text-slate-700 lg:block">章节知识树</h2>
+      <h2 class="hidden text-sm font-semibold text-primary lg:block">章节知识树</h2>
       {# lg:!block 覆盖 x-show 的内联 display:none，桌面端恒展开 #}
       <div x-show="treeOpen" class="lg:!block">
       {# 根 ul 恒渲染（id 供 chapterAdder 客户端插入新节点）；空树时仅显示提示 #}
       <ul id="chapter-tree" class="mt-2 space-y-0.5">
         {% for node in chapter_tree %}{{ chapter_node(node) }}{% endfor %}
       </ul>
-      <p id="chapter-tree-empty" class="mt-2 text-xs text-slate-400 {% if chapter_tree %}hidden{% endif %}">
+      <p id="chapter-tree-empty" class="mt-2 text-xs text-muted {% if chapter_tree %}hidden{% endif %}">
         暂无章节。章节树随资料入库半自动构建（v0.3），也可由共建者/管理员人工维护。
       </p>
 
       {% if can_moderate %}
       {# 添加章节（共建者/管理员）：逻辑外置 pages/course_detail.js chapterAdder，
          成功客户端插入节点 + toast（消灭整页 reload） #}
-      <div class="mt-4 border-t border-slate-100 pt-3" x-data="chapterAdder({{ course.id }})">
-        <p class="text-xs font-medium text-slate-500">添加章节（共建者/管理员）</p>
+      <div class="mt-4 border-t border-default pt-3" x-data="chapterAdder({{ course.id }})">
+        <p class="text-xs font-medium text-muted">添加章节（共建者/管理员）</p>
         <input type="text" x-model="title" placeholder="章节标题"
                class="input-base mt-2 !px-2 !py-1.5">
+        <label for="chapter-parent-select" class="sr-only">上属章节（选填）</label>
         <select id="chapter-parent-select" x-model="parent_id"
                 class="input-base mt-2 !px-2 !py-1.5">
           <option value="">作为根章节</option>
@@ -113,7 +114,7 @@
         <button @click="submit()" :disabled="loading" class="btn btn-primary mt-2 w-full !py-1.5">
           <span x-text="loading ? '添加中…' : '添加'"></span>
         </button>
-        <p x-show="error" x-text="error" x-cloak class="mt-1 text-xs text-red-600"></p>
+        <p x-show="error" x-text="error" x-cloak class="mt-1 text-xs text-danger"></p>
       </div>
       {% endif %}
       </div>
@@ -122,15 +123,16 @@
 
   {# Tab 区：资料库 / AI 问答（链至 AI 问答页预选本课程）/ 讨论（链至板块按本课程过滤）/ 贡献榜 #}
   <section class="flex-1">
-    <div class="flex gap-1 overflow-x-auto border-b border-slate-200 text-sm">
+    <div class="page-tabs" role="tablist" aria-label="课程空间">
       {% for key, label in [('resources', '资料库'), ('chat', 'AI 问答'),
                             ('discuss', '讨论'), ('rank', '贡献榜')] %}
       <button @click="setTab('{{ key }}')" role="tab" :aria-selected="tab === '{{ key }}'"
-              :class="tab === '{{ key }}' ? 'border-brand-600 text-brand-700 font-medium' : 'border-transparent text-slate-500 hover:text-brand-700'"
-              class="-mb-px shrink-0 border-b-2 px-4 py-2 transition-colors duration-island ease-island">{{ label }}</button>
+              @keydown.right.prevent="nextTab(1)" @keydown.left.prevent="nextTab(-1)"
+              @keydown.home.prevent="firstTab()" @keydown.end.prevent="lastTab()"
+              class="page-tab">{{ label }}</button>
       {% endfor %}
     </div>
-    <div class="rounded-b-card border border-t-0 border-slate-200 bg-white p-4 shadow-card">
+    <div class="rounded-b-card border border-t-0 border-default bg-white p-4 shadow-card">
       {# 资料库：Tab 激活时懒加载本课程已上架资源；章节树点击后按 chapter_id 过滤 #}
       <div x-show="tab === 'resources'" :aria-busy="loading">
         <form @submit.prevent="searchResources()" class="flex flex-col gap-2 sm:flex-row" role="search">
@@ -139,36 +141,36 @@
                  @input="scheduleSearch()" placeholder="搜索资料标题" class="input-base min-w-0 flex-1">
           <button type="submit" :disabled="loading" class="btn btn-secondary">搜索</button>
         </form>
-        <div x-show="selectedChapter !== null" x-cloak class="mt-3 flex flex-wrap items-center gap-2 text-xs text-slate-500">
+        <div x-show="selectedChapter !== null" x-cloak class="mt-3 flex flex-wrap items-center gap-2 text-xs text-muted">
           <span>当前章节：<strong class="font-medium text-brand-700" x-text="selectedChapterTitle"></strong></span>
           <button type="button" @click="clearChapter()" class="text-brand-600 transition-colors hover:text-brand-700 hover:underline">清除章节筛选</button>
         </div>
         <div x-show="loading" x-cloak class="mt-4 grid gap-3 sm:grid-cols-2" aria-hidden="true">
-          <div class="rounded-card border border-slate-100 p-4">
+          <div class="rounded-card border border-default p-4">
             <div class="skeleton h-4 w-2/3 rounded-md"></div>
             <div class="skeleton mt-2 h-3 w-full rounded-md"></div>
             <div class="skeleton mt-2 h-3 w-1/2 rounded-md"></div>
           </div>
-          <div class="rounded-card border border-slate-100 p-4">
+          <div class="rounded-card border border-default p-4">
             <div class="skeleton h-4 w-1/2 rounded-md"></div>
             <div class="skeleton mt-2 h-3 w-full rounded-md"></div>
             <div class="skeleton mt-2 h-3 w-2/3 rounded-md"></div>
           </div>
         </div>
-        <div x-show="error" x-cloak role="alert" class="mt-4 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">
+        <div x-show="error" x-cloak role="alert" class="mt-4 rounded-lg bg-danger-soft px-3 py-2 text-sm text-danger">
           <span x-text="error"></span>
           <button type="button" @click="loadResources()" class="ml-2 font-medium underline">重试</button>
         </div>
         {# 匿名引导：资料列表接口需登录（ZY.api 对 401 跳登录页，此处前置拦截） #}
         <div x-show="needLogin" x-cloak class="empty-state py-10">
           {{ icon('lock', 'mx-auto h-10 w-10 text-brand-200') }}
-          <p class="mt-3 text-sm text-slate-600">登录后可查看课程资料库</p>
+          <p class="mt-3 text-sm text-secondary">登录后可查看课程资料库</p>
           <a href="/login" class="btn btn-primary mt-4">去登录</a>
         </div>
         <div x-show="loaded && !loading && !error && !needLogin && !resources.length" x-cloak class="empty-state py-10">
           {{ illo('shelf', 'mx-auto w-28 h-28') }}
-          <p class="mt-4 text-sm text-slate-600" x-text="query || selectedChapter !== null ? '没有匹配的资料，可调整关键词或章节筛选' : '本课程暂无上架资料'"></p>
-          <p x-show="selectedChapter === null && !query" class="mt-1 text-xs text-slate-400">在个人知识库上传资料后可「投稿到公共库」。</p>
+          <p class="mt-4 text-sm text-secondary" x-text="query || selectedChapter !== null ? '没有匹配的资料，可调整关键词或章节筛选' : '本课程暂无上架资料'"></p>
+          <p x-show="selectedChapter === null && !query" class="mt-1 text-xs text-muted">在个人知识库上传资料后可「投稿到公共库」。</p>
           <a href="/library" x-show="selectedChapter === null && !query" class="btn btn-secondary mt-4">前往个人知识库</a>
           <button type="button" x-show="selectedChapter !== null || query" x-cloak @click="clearResourceFilters()"
                   class="btn btn-secondary mt-4">清空筛选，查看全课程</button>
@@ -183,11 +185,11 @@
                 <span x-show="r.file_type === 'word'" x-cloak class="badge badge-slate shrink-0">{{ icon('file-word', 'w-3 h-3') }}Word</span>
                 <span x-show="r.file_type === 'ppt'" x-cloak class="badge badge-slate shrink-0">{{ icon('file-ppt', 'w-3 h-3') }}PPT</span>
                 <span x-show="r.file_type === 'markdown'" x-cloak class="badge badge-slate shrink-0">{{ icon('file-md', 'w-3 h-3') }}MD</span>
-                <p class="min-w-0 flex-1 truncate text-sm font-medium text-slate-700" x-text="r.title"></p>
+                <p class="min-w-0 flex-1 truncate text-sm font-medium text-primary" x-text="r.title"></p>
               </div>
-              <p class="mt-1 line-clamp-2 text-xs text-slate-500"
+              <p class="mt-1 line-clamp-2 text-xs text-muted"
                  x-text="r.description || '暂无简介'"></p>
-              <p class="mt-2 flex items-center gap-3 text-xs text-slate-400">
+              <p class="mt-2 flex items-center gap-3 text-xs text-muted">
                 <span x-show="r.rating != null" x-cloak class="inline-flex items-center gap-0.5 text-accent-600">
                   {{ icon('star-solid', 'w-3 h-3') }}
                   <span x-text="r.rating != null ? r.rating.toFixed(1) + '（' + r.rating_count + '）' : ''"></span>
@@ -201,7 +203,7 @@
         </div>
         <nav x-show="total > size" x-cloak class="mt-4 flex items-center justify-center gap-2 text-sm" aria-label="资料分页">
           <button type="button" @click="goPage(page - 1)" :disabled="loading || page <= 1" class="btn btn-ghost">上一页</button>
-          <span class="text-slate-500" x-text="page + ' / ' + Math.max(1, Math.ceil(total / size))"></span>
+          <span class="text-muted" x-text="page + ' / ' + Math.max(1, Math.ceil(total / size))"></span>
           <button type="button" @click="goPage(page + 1)" :disabled="loading || page * size >= total" class="btn btn-ghost">下一页</button>
         </nav>
       </div>
@@ -217,23 +219,23 @@
           </div>
           {% endfor %}
         </div>
-        <div x-show="rankError" x-cloak role="alert" class="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">
+        <div x-show="rankError" x-cloak role="alert" class="rounded-lg bg-danger-soft px-3 py-2 text-sm text-danger">
           <span x-text="rankError"></span><button type="button" @click="loadRank()" class="ml-2 font-medium underline">重试</button>
         </div>
         <div x-show="rankLoaded && !rankItems.length" x-cloak class="empty-state py-10">
           {{ icon('trophy', 'mx-auto h-10 w-10 text-brand-200') }}
-          <p class="mt-3 text-sm text-slate-600">暂无贡献记录</p>
-          <p class="mt-1 text-xs text-slate-400">投稿资料过审、回答被采纳即可上榜。</p>
+          <p class="mt-3 text-sm text-secondary">暂无贡献记录</p>
+          <p class="mt-1 text-xs text-muted">投稿资料过审、回答被采纳即可上榜。</p>
         </div>
-        <ol x-show="rankItems.length" class="divide-y divide-slate-100">
+        <ol x-show="rankItems.length" class="divide-y divide-default">
           <template x-for="item in rankItems" :key="item.user_id">
             <li class="flex items-center gap-3 py-2.5">
               {# 前三名奖牌色圆点：金 accent-400 / 银 slate-300 / 铜 accent-700 #}
               <span class="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-bold"
                     :class="item.rank === 1 ? 'bg-accent-400 text-white'
-                          : item.rank === 2 ? 'bg-slate-300 text-slate-700'
+                          : item.rank === 2 ? 'bg-default text-primary'
                           : item.rank === 3 ? 'bg-accent-700 text-white'
-                          : 'text-slate-400'"
+                          : 'text-muted'"
                     x-text="item.rank"></span>
               <template x-if="item.avatar_url">
                 <img :src="item.avatar_url" alt="" class="h-7 w-7 rounded-full object-cover">
@@ -242,7 +244,7 @@
                 <span class="flex h-7 w-7 items-center justify-center rounded-full bg-brand-100 text-xs font-medium text-brand-700"
                       x-text="(item.nickname || '?').slice(0, 1)"></span>
               </template>
-              <span class="min-w-0 flex-1 truncate text-sm text-slate-700"
+              <span class="min-w-0 flex-1 truncate text-sm text-primary"
                     x-text="item.nickname || '匿名用户'"></span>
               <span class="shrink-0 text-sm font-medium text-brand-700"
                     x-text="item.score + ' 分'"></span>
@@ -258,8 +260,8 @@
               {{ icon('sparkles', 'h-5 w-5') }}
             </span>
             <div class="min-w-0 flex-1">
-              <p class="text-sm font-semibold text-slate-800">AI 问答</p>
-              <p class="mt-1 text-sm leading-6 text-slate-500">
+              <p class="text-sm font-semibold text-primary">AI 问答</p>
+              <p class="mt-1 text-sm leading-6 text-muted">
                 基于本课程资料库向 AI 提问：SSE 流式回答 + 引用溯源，默认检索公共库，可切换混合检索。
               </p>
               <a href="/library/chat?course_id={{ course.id }}" class="btn btn-primary mt-3">开始提问</a>
@@ -274,8 +276,8 @@
               {{ icon('message', 'h-5 w-5') }}
             </span>
             <div class="min-w-0 flex-1">
-              <p class="text-sm font-semibold text-slate-800">课程讨论</p>
-              <p class="mt-1 text-sm leading-6 text-slate-500">
+              <p class="text-sm font-semibold text-primary">课程讨论</p>
+              <p class="mt-1 text-sm leading-6 text-muted">
                 前往知屿问答查看本课程相关帖子流：发帖提问由 AI 基于课程资料先答，同学补充纠错、提问者采纳沉淀。
               </p>
               <a href="/boards/qa?course_id={{ course.id }}" class="btn btn-secondary mt-3">查看本课程讨论</a>
@@ -286,5 +288,12 @@
     </div>
   </section>
 </div>
-
+<template id="chapter-node-tpl">
+  <li>
+    <div class="flex items-center gap-0.5">
+      <span class="w-4 shrink-0"></span>
+      <button type="button" data-slot="title" class="block min-w-0 flex-1 truncate rounded px-2 py-1 text-left text-sm transition-colors"></button>
+    </div>
+  </li>
+</template>
 {% endblock %}

@@ -63,8 +63,8 @@ window.ZY = window.ZY || {};
   'use strict';
   var TOAST_STYLE = {
     success: 'border-brand-200 bg-brand-50 text-brand-700',
-    error: 'border-red-200 bg-red-50 text-red-700',
-    info: 'border-slate-200 bg-white text-slate-700',
+    error: 'border-danger-border bg-danger-soft text-danger',
+    info: 'border-default bg-white text-primary',
   };
   var TOAST_ICON = {
     success: 'M20 6 9 17l-5-5',
@@ -141,49 +141,6 @@ window.ZY = window.ZY || {};
     return String(iso).slice(0, 10);
   };
 
-  /* 本地草稿（v1.3 I6）：仅存于浏览器 localStorage，按页面名 + 账号隔离。
-   * load 返回去掉内部字段的草稿；账号不匹配或超过 7 天视为无草稿。
-   * 写失败（隐私模式/配额）返回 false，由页面提示，不阻塞发布。 */
-  window.ZY.drafts = {
-    key: function (name) { return 'zhiyu:' + name + ':v1'; },
-    load: function (name, userKey) {
-      try {
-        var raw = window.localStorage.getItem(this.key(name));
-        if (!raw) return null;
-        var parsed = JSON.parse(raw);
-        if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null;
-        if (parsed._user && userKey && String(parsed._user) !== String(userKey)) return null;
-        if (parsed._savedAt && Date.now() - Number(parsed._savedAt) > 7 * 86400000) {
-          this.remove(name);
-          return null;
-        }
-        var payload = {};
-        for (var key in parsed) {
-          if (Object.prototype.hasOwnProperty.call(parsed, key) && key !== '_user' && key !== '_savedAt') {
-            payload[key] = parsed[key];
-          }
-        }
-        return payload;
-      } catch (e) { return null; }
-    },
-    save: function (name, data, userKey) {
-      try {
-        var payload = {};
-        for (var key in data) {
-          if (Object.prototype.hasOwnProperty.call(data, key)) payload[key] = data[key];
-        }
-        payload._user = userKey ? String(userKey) : '';
-        payload._savedAt = Date.now();
-        window.localStorage.setItem(this.key(name), JSON.stringify(payload));
-        return true;
-      } catch (e) { return false; }
-    },
-    remove: function (name) {
-      try { window.localStorage.removeItem(this.key(name)); return true; }
-      catch (e) { return false; }
-    },
-  };
-
   /* 弹窗可访问性辅助：焦点圈定 + Esc + 焦点还原。
    * 返回 {sync}：在 isOpen() 状态翻转后调用 sync() 完成进出焦点的迁移。 */
   window.ZY.bindModalA11y = function (el, opts) {
@@ -223,6 +180,7 @@ window.ZY = window.ZY || {};
         open = nowOpen;
         if (open) {
           prevFocus = document.activeElement;
+          if (window.ZY.motion) ZY.motion.enter(el.querySelector('.modal-panel') || el);
           el.addEventListener('keydown', onKeydown);
           // 等 x-show 完成渲染后再聚焦（input 优先，其次首个可聚焦元素）
           setTimeout(function () {

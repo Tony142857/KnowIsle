@@ -15,13 +15,14 @@
                  icon='gear') }}
 
   {# Tab 切换（下划线式，brand 主色） #}
-  <div class="flex gap-1 overflow-x-auto border-b border-slate-200 text-sm" role="tablist">
+  <div class="page-tabs" role="tablist" aria-label="管理后台">
     {% for key, label in [('review', '审核终审'), ('space', '空间管理'),
                           ('users', '用户治理'), ('config', '平台配置'),
                           ('reports', '举报处理'), ('dashboard', '运营看板')] %}
     <button @click="setTab('{{ key }}')" role="tab" :aria-selected="tab === '{{ key }}'"
-            :class="tab === '{{ key }}' ? 'border-brand-600 text-brand-700 font-medium' : 'border-transparent text-slate-500 hover:text-brand-700'"
-            class="shrink-0 border-b-2 px-4 py-2 -mb-px transition-colors">{{ label }}</button>
+            @keydown.right.prevent="nextTab(1)" @keydown.left.prevent="nextTab(-1)"
+            @keydown.home.prevent="firstTab()" @keydown.end.prevent="lastTab()"
+            class="page-tab">{{ label }}</button>
     {% endfor %}
   </div>
 
@@ -34,20 +35,20 @@
             <span class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-brand-50 text-brand-600">
               {{ icon('shield', 'w-5 h-5') }}
             </span>
-            <h2 class="text-card-title text-slate-800">管理员终审</h2>
-            <span class="ml-auto text-slate-300">{{ icon('chevron-right', 'w-5 h-5') }}</span>
+            <h2 class="text-card-title text-primary">管理员终审</h2>
+            <span class="ml-auto text-disabled">{{ icon('chevron-right', 'w-5 h-5') }}</span>
           </div>
-          <p class="mt-2 text-sm text-slate-500">终审队列裁决（通过上架 / 驳回）、等待协审任务改派与直审、最近完成记录。</p>
+          <p class="mt-2 text-sm text-muted">终审队列裁决（通过上架 / 驳回）、等待协审任务改派与直审、最近完成记录。</p>
         </a>
         <a href="/review" class="card card-hover block p-5">
           <div class="flex items-center gap-3">
             <span class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-brand-50 text-brand-600">
               {{ icon('clipboard', 'w-5 h-5') }}
             </span>
-            <h2 class="text-card-title text-slate-800">协审工作台</h2>
-            <span class="ml-auto text-slate-300">{{ icon('chevron-right', 'w-5 h-5') }}</span>
+            <h2 class="text-card-title text-primary">协审工作台</h2>
+            <span class="ml-auto text-disabled">{{ icon('chevron-right', 'w-5 h-5') }}</span>
           </div>
-          <p class="mt-2 text-sm text-slate-500">以协审员视角处理本人被指派的协审任务。</p>
+          <p class="mt-2 text-sm text-muted">以协审员视角处理本人被指派的协审任务。</p>
         </a>
       </div>
     </div>
@@ -56,8 +57,8 @@
     <div x-show="tab === 'space'" x-cloak class="space-y-6">
       {# 专业批量导入 #}
       <div class="card p-4" x-data="majorImport()">
-        <h2 class="text-sm font-semibold text-slate-700">专业批量导入</h2>
-        <p class="mt-1 text-xs text-slate-400">
+        <h2 class="text-sm font-semibold text-primary">专业批量导入</h2>
+        <p class="mt-1 text-xs text-muted">
           粘贴 JSON（如 [{"name":"计算机科学与技术","code":"080901"}]）或逐行「名称,代码」（代码可省略）。按名称幂等去重。
         </p>
         <textarea x-model="text" rows="4" placeholder='[{"name":"计算机科学与技术","code":"080901"}]'
@@ -68,14 +69,14 @@
           <span x-show="result" x-text="result" x-cloak class="text-sm text-brand-700"></span>
         </div>
         <p x-show="error" x-text="error" x-cloak
-           class="mt-2 rounded bg-red-50 px-3 py-2 text-sm text-red-600"></p>
+           class="mt-2 rounded bg-danger-soft px-3 py-2 text-sm text-danger"></p>
       </div>
 
       {# 公共课程列表（状态过滤 + 审批/停用） #}
       <div class="card p-4" x-data="adminCourses()" @admin:tab.window="onTab($event.detail)">
         <div class="flex flex-wrap items-center gap-2">
-          <h2 class="text-sm font-semibold text-slate-700">公共课程空间</h2>
-          <span class="text-xs text-slate-400" x-show="loaded" x-text="'共 ' + total + ' 门'"></span>
+          <h2 class="text-sm font-semibold text-primary">公共课程空间</h2>
+          <span class="text-xs text-muted" x-show="loaded" x-text="'共 ' + total + ' 门'"></span>
           <select x-model="status" @change="load()" aria-label="按状态过滤"
                   class="input-base ml-auto w-32">
             <option value="">全部状态</option>
@@ -90,13 +91,13 @@
           <div class="skeleton h-8 rounded-md"></div>
         </div>
         <p x-show="error" x-text="error" x-cloak
-           class="mt-3 rounded bg-red-50 px-3 py-2 text-sm text-red-600"></p>
-        <p x-show="loaded && !loading && !items.length" x-cloak class="mt-3 text-sm text-slate-400">暂无课程。</p>
-        {# md 以下降级为卡片列表；md 及以上保持表格 #}
-        <div x-show="items.length" x-cloak class="mt-3 hidden overflow-x-auto md:block">
-          <table class="w-full text-sm">
+           class="mt-3 rounded bg-danger-soft px-3 py-2 text-sm text-danger"></p>
+        <p x-show="loaded && !loading && !items.length" x-cloak class="mt-3 text-sm text-muted">暂无课程。</p>
+        {# 同一份响应式表格：桌面表格 / 移动卡片布局，避免双套 DOM 漂移 #}
+        <div x-show="items.length" x-cloak class="mt-3 block overflow-x-auto">
+          <table class="responsive-table w-full text-sm">
             <thead>
-              <tr class="border-b border-slate-200 text-left text-xs font-medium text-slate-500">
+              <tr class="border-b border-default text-left text-xs font-medium text-muted">
                 <th class="py-2 pr-3 font-medium">ID</th>
                 <th class="py-2 pr-3 font-medium">课程名</th>
                 <th class="py-2 pr-3 font-medium">所属专业</th>
@@ -105,14 +106,14 @@
                 <th class="py-2 font-medium">操作</th>
               </tr>
             </thead>
-            <tbody class="divide-y divide-slate-100">
+            <tbody class="divide-y divide-default">
               <template x-for="c in items" :key="c.id">
-                <tr class="transition-colors hover:bg-slate-50">
-                  <td class="py-2 pr-3 text-slate-400" x-text="c.id"></td>
+                <tr class="transition-colors hover:bg-surface-inset">
+                  <td class="py-2 pr-3 text-muted" x-text="c.id"></td>
                   <td class="py-2 pr-3">
                     <a :href="'/courses/' + c.id" class="text-brand-600 hover:underline" x-text="c.name"></a>
                   </td>
-                  <td class="py-2 pr-3 text-slate-500" x-text="c.major_name || '—'"></td>
+                  <td class="py-2 pr-3 text-muted" x-text="c.major_name || '—'"></td>
                   <td class="py-2 pr-3">
                     <span class="badge"
                           :class="{'badge-brand': c.status === 'active',
@@ -120,7 +121,7 @@
                                    'badge-slate': c.status === 'disabled'}"
                           x-text="statusLabel(c.status)"></span>
                   </td>
-                  <td class="py-2 pr-3 text-xs text-slate-400"
+                  <td class="py-2 pr-3 text-xs text-muted"
                       x-text="ZY.relTime(c.created_at)"></td>
                   <td class="py-2">
                     <div class="flex flex-wrap gap-2">
@@ -129,7 +130,7 @@
                         审批通过
                       </button>
                       <button x-show="c.status !== 'disabled'" @click="setStatus(c, 'disabled')" :disabled="loading"
-                              class="rounded-md border border-red-300 px-2 py-1 text-xs text-red-600 hover:bg-red-50 disabled:opacity-50">
+                              class="rounded-md border border-danger-border px-2 py-1 text-xs text-danger hover:bg-danger-soft disabled:opacity-50">
                         停用
                       </button>
                     </div>
@@ -139,49 +140,17 @@
             </tbody>
           </table>
         </div>
-        {# 窄屏卡片列表（与表格同一 x-data 作用域，操作按钮契约一致） #}
-        <div x-show="items.length" x-cloak class="mt-3 space-y-3 md:hidden">
-          <template x-for="c in items" :key="c.id">
-            <div class="card p-3">
-              <div class="flex items-center gap-2">
-                <a :href="'/courses/' + c.id"
-                   class="min-w-0 flex-1 truncate text-sm font-medium text-brand-600 hover:underline"
-                   x-text="c.name"></a>
-                <span class="badge shrink-0"
-                      :class="{'badge-brand': c.status === 'active',
-                               'badge-accent': c.status === 'pending',
-                               'badge-slate': c.status === 'disabled'}"
-                      x-text="statusLabel(c.status)"></span>
-              </div>
-              <p class="mt-1 text-xs text-slate-400">
-                <span x-text="'#' + c.id"></span> ·
-                <span x-text="c.major_name || '—'"></span> ·
-                <span x-text="ZY.relTime(c.created_at)"></span>
-              </p>
-              <div class="mt-2 flex flex-wrap gap-2">
-                <button x-show="c.status !== 'active'" @click="setStatus(c, 'active')" :disabled="loading"
-                        class="rounded-md bg-brand-600 px-2 py-1 text-xs text-white hover:bg-brand-700 disabled:opacity-50">
-                  审批通过
-                </button>
-                <button x-show="c.status !== 'disabled'" @click="setStatus(c, 'disabled')" :disabled="loading"
-                        class="rounded-md border border-red-300 px-2 py-1 text-xs text-red-600 hover:bg-red-50 disabled:opacity-50">
-                  停用
-                </button>
-              </div>
-            </div>
-          </template>
-        </div>
         <nav x-show="total > size" x-cloak class="mt-3 flex items-center justify-center gap-2 text-sm" aria-label="课程分页">
           <button type="button" @click="load(page - 1)" :disabled="loading || page <= 1" class="btn btn-ghost">上一页</button>
-          <span x-text="page + ' / ' + Math.max(1, Math.ceil(total / size))" class="text-slate-500"></span>
+          <span x-text="page + ' / ' + Math.max(1, Math.ceil(total / size))" class="text-muted"></span>
           <button type="button" @click="load(page + 1)" :disabled="loading || page * size >= total" class="btn btn-ghost">下一页</button>
         </nav>
       </div>
 
       {# 创建课程（管理员创建直接 active） #}
       <div class="card p-4" x-data="createCourse()" @admin:tab.window="onTab($event.detail)">
-        <h2 class="text-sm font-semibold text-slate-700">创建课程</h2>
-        <p class="mt-1 text-xs text-slate-400">管理员创建的课程直接开通（active），无需审批。</p>
+        <h2 class="text-sm font-semibold text-primary">创建课程</h2>
+        <p class="mt-1 text-xs text-muted">管理员创建的课程直接开通（active），无需审批。</p>
         <div class="mt-3 grid gap-2 sm:grid-cols-2">
           <input type="text" x-model="form.name" placeholder="课程名（必填）" aria-label="课程名"
                  class="input-base">
@@ -199,7 +168,7 @@
           <span x-show="result" x-text="result" x-cloak class="text-sm text-brand-700"></span>
         </div>
         <p x-show="error" x-text="error" x-cloak
-           class="mt-2 rounded bg-red-50 px-3 py-2 text-sm text-red-600"></p>
+           class="mt-2 rounded bg-danger-soft px-3 py-2 text-sm text-danger"></p>
       </div>
     </div>
 
@@ -207,8 +176,8 @@
     <div x-show="tab === 'users'" x-cloak>
       <div class="card p-4" x-data="adminUsers()" @admin:tab.window="onTab($event.detail)">
         <div class="flex flex-wrap items-center gap-2">
-          <h2 class="text-sm font-semibold text-slate-700">用户治理</h2>
-          <span class="text-xs text-slate-400" x-show="loaded" x-text="'共 ' + total + ' 人'"></span>
+          <h2 class="text-sm font-semibold text-primary">用户治理</h2>
+          <span class="text-xs text-muted" x-show="loaded" x-text="'共 ' + total + ' 人'"></span>
           <div class="ml-auto flex gap-2">
             <input type="text" x-model="q" @keydown.enter="load()" placeholder="学号 / 昵称"
                    aria-label="搜索用户"
@@ -222,13 +191,13 @@
           <div class="skeleton h-8 rounded-md"></div>
         </div>
         <p x-show="error" x-text="error" x-cloak
-           class="mt-3 rounded bg-red-50 px-3 py-2 text-sm text-red-600"></p>
-        <p x-show="loaded && !loading && !items.length" x-cloak class="mt-3 text-sm text-slate-400">无匹配用户。</p>
-        {# md 以下降级为卡片列表；md 及以上保持表格 #}
-        <div x-show="items.length" x-cloak class="mt-3 hidden overflow-x-auto md:block">
-          <table class="w-full text-sm">
+           class="mt-3 rounded bg-danger-soft px-3 py-2 text-sm text-danger"></p>
+        <p x-show="loaded && !loading && !items.length" x-cloak class="mt-3 text-sm text-muted">无匹配用户。</p>
+        {# 同一份响应式表格：桌面表格 / 移动卡片布局，避免双套 DOM 漂移 #}
+        <div x-show="items.length" x-cloak class="mt-3 block overflow-x-auto">
+          <table class="responsive-table w-full text-sm">
             <thead>
-              <tr class="border-b border-slate-200 text-left text-xs font-medium text-slate-500">
+              <tr class="border-b border-default text-left text-xs font-medium text-muted">
                 <th class="py-2 pr-3 font-medium">学号</th>
                 <th class="py-2 pr-3 font-medium">昵称</th>
                 <th class="py-2 pr-3 font-medium">角色</th>
@@ -240,37 +209,37 @@
               </tr>
             </thead>
             <template x-for="u in items" :key="u.id">
-              <tbody class="divide-y divide-slate-100" x-data="userRow(u)">
-                <tr class="transition-colors hover:bg-slate-50">
-                  <td class="py-2 pr-3 text-slate-500" x-text="u.student_no"></td>
-                  <td class="py-2 pr-3 text-slate-700" x-text="u.nickname"></td>
+              <tbody class="divide-y divide-default" x-data="userRow(u)">
+                <tr class="transition-colors hover:bg-surface-inset">
+                  <td class="py-2 pr-3 text-muted" x-text="u.student_no"></td>
+                  <td class="py-2 pr-3 text-primary" x-text="u.nickname"></td>
                   <td class="py-2 pr-3">
                     <span class="badge" :class="u.role === 'admin' ? 'badge-accent' : 'badge-slate'"
                           x-text="roleLabel(u.role)"></span>
                   </td>
-                  <td class="py-2 pr-3 text-slate-500" x-text="'Lv' + u.level"></td>
-                  <td class="py-2 pr-3 text-slate-500" x-text="u.score"></td>
+                  <td class="py-2 pr-3 text-muted" x-text="'Lv' + u.level"></td>
+                  <td class="py-2 pr-3 text-muted" x-text="u.score"></td>
                   <td class="py-2 pr-3 font-medium"
-                      :class="u.credit >= 60 ? 'text-slate-700' : 'text-red-600'"
+                      :class="u.credit >= 60 ? 'text-primary' : 'text-danger'"
                       x-text="u.credit"></td>
-                  <td class="py-2 pr-3 text-slate-500" x-text="statusLabel(u.status)"></td>
+                  <td class="py-2 pr-3 text-muted" x-text="statusLabel(u.status)"></td>
                   <td class="py-2">
                     <button @click="open = !open" :aria-expanded="open"
-                            class="rounded-md border border-slate-300 px-2 py-1 text-xs text-slate-600 hover:bg-slate-50">
+                            class="rounded-md border border-strong px-2 py-1 text-xs text-secondary hover:bg-surface-inset">
                       <span x-text="open ? '收起' : '管理'"></span>
                     </button>
                   </td>
                 </tr>
                 {# 展开行：角色任命 / 信用裁决 / 信用明细 #}
                 <tr x-show="open" x-cloak x-transition>
-                  <td colspan="8" class="bg-slate-50 px-3 py-3">
+                  <td colspan="8" class="bg-surface-inset px-3 py-3">
                     <p x-show="error" x-text="error" x-cloak
-                       class="mb-2 rounded bg-red-50 px-3 py-2 text-sm text-red-600"></p>
+                       class="mb-2 rounded bg-danger-soft px-3 py-2 text-sm text-danger"></p>
                     <p x-show="msg" x-text="msg" x-cloak
                        class="mb-2 rounded bg-brand-50 px-3 py-2 text-sm text-brand-700"></p>
                     <div class="grid gap-4 lg:grid-cols-2">
                       <div>
-                        <p class="text-xs font-medium text-slate-500">角色任命</p>
+                        <p class="text-xs font-medium text-muted">角色任命</p>
                         <div class="mt-1 flex gap-2">
                           <select x-model="role" aria-label="选择角色" class="input-base w-32">
                             <option value="student">学生</option>
@@ -280,7 +249,7 @@
                           </select>
                           <button @click="setRole()" :disabled="loading" class="btn btn-primary">任命</button>
                         </div>
-                        <p class="mt-4 text-xs font-medium text-slate-500">信用裁决（±1~100，必填理由）</p>
+                        <p class="mt-4 text-xs font-medium text-muted">信用裁决（±1~100，必填理由）</p>
                         <div class="mt-1 flex flex-wrap gap-2">
                           <input type="number" x-model.number="delta" min="-100" max="100" placeholder="±分值"
                                  aria-label="信用分值"
@@ -292,7 +261,7 @@
                       </div>
                       <div>
                         <div class="flex items-center gap-2">
-                          <p class="text-xs font-medium text-slate-500">信用明细</p>
+                          <p class="text-xs font-medium text-muted">信用明细</p>
                           <button x-show="logs === null" @click="loadLogs()"
                                   class="text-xs text-brand-600 hover:underline">加载明细</button>
                         </div>
@@ -300,17 +269,17 @@
                           <div class="skeleton h-5 rounded-md"></div>
                           <div class="skeleton h-5 rounded-md"></div>
                         </div>
-                        <p x-show="logs && !logs.length" x-cloak class="mt-1 text-xs text-slate-400">暂无信用记录。</p>
+                        <p x-show="logs && !logs.length" x-cloak class="mt-1 text-xs text-muted">暂无信用记录。</p>
                         <ul x-show="logs && logs.length" x-cloak
                             class="mt-1 max-h-40 space-y-1 overflow-y-auto text-xs">
                           <template x-for="log in (logs || [])" :key="log.created_at + String(log.delta)">
                             <li class="flex items-center gap-2">
                               <span class="w-10 shrink-0 text-right font-medium"
-                                    :class="log.delta >= 0 ? 'text-brand-600' : 'text-red-600'"
+                                    :class="log.delta >= 0 ? 'text-brand-600' : 'text-danger'"
                                     x-text="(log.delta >= 0 ? '+' : '') + log.delta"></span>
-                              <span class="min-w-0 flex-1 truncate text-slate-600" x-text="log.reason"></span>
-                              <span class="shrink-0 text-slate-400" x-text="log.admin_nickname"></span>
-                              <span class="shrink-0 text-slate-400"
+                              <span class="min-w-0 flex-1 truncate text-secondary" x-text="log.reason"></span>
+                              <span class="shrink-0 text-muted" x-text="log.admin_nickname"></span>
+                              <span class="shrink-0 text-muted"
                                     x-text="ZY.relTime(log.created_at)"></span>
                             </li>
                           </template>
@@ -323,89 +292,9 @@
             </template>
           </table>
         </div>
-        {# 窄屏卡片列表：关键列 + 管理展开（与表格行同一 userRow 契约） #}
-        <div x-show="items.length" x-cloak class="mt-3 space-y-3 md:hidden">
-          <template x-for="u in items" :key="u.id">
-            <div class="card p-3" x-data="userRow(u)">
-              <div class="flex items-center gap-2">
-                <span class="min-w-0 flex-1 truncate text-sm font-medium text-slate-700"
-                      x-text="u.nickname"></span>
-                <span class="badge shrink-0" :class="u.role === 'admin' ? 'badge-accent' : 'badge-slate'"
-                      x-text="roleLabel(u.role)"></span>
-                <button @click="open = !open" :aria-expanded="open"
-                        class="shrink-0 rounded-md border border-slate-300 px-2 py-1 text-xs text-slate-600 hover:bg-slate-50">
-                  <span x-text="open ? '收起' : '管理'"></span>
-                </button>
-              </div>
-              <p class="mt-1 text-xs text-slate-400">
-                <span x-text="u.student_no"></span> ·
-                Lv<span x-text="u.level"></span> ·
-                贡献 <span x-text="u.score"></span> ·
-                信用 <span class="font-medium" :class="u.credit >= 60 ? 'text-slate-500' : 'text-red-600'"
-                           x-text="u.credit"></span> ·
-                <span x-text="statusLabel(u.status)"></span>
-              </p>
-              <div x-show="open" x-cloak x-transition class="mt-3 border-t border-slate-100 pt-3">
-                <p x-show="error" x-text="error" x-cloak
-                   class="mb-2 rounded bg-red-50 px-3 py-2 text-sm text-red-600"></p>
-                <p x-show="msg" x-text="msg" x-cloak
-                   class="mb-2 rounded bg-brand-50 px-3 py-2 text-sm text-brand-700"></p>
-                <div class="grid gap-4">
-                  <div>
-                    <p class="text-xs font-medium text-slate-500">角色任命</p>
-                    <div class="mt-1 flex gap-2">
-                      <select x-model="role" aria-label="选择角色" class="input-base w-32">
-                        <option value="student">学生</option>
-                        <option value="reviewer">协审员</option>
-                        <option value="builder">共建者</option>
-                        <option value="admin">管理员</option>
-                      </select>
-                      <button @click="setRole()" :disabled="loading" class="btn btn-primary">任命</button>
-                    </div>
-                    <p class="mt-4 text-xs font-medium text-slate-500">信用裁决（±1~100，必填理由）</p>
-                    <div class="mt-1 flex flex-wrap gap-2">
-                      <input type="number" x-model.number="delta" min="-100" max="100" placeholder="±分值"
-                             aria-label="信用分值"
-                             class="input-base w-24">
-                      <input type="text" x-model="reason" placeholder="裁决理由（必填）" aria-label="裁决理由"
-                             class="input-base min-w-0 flex-1">
-                      <button @click="submitCredit()" :disabled="loading" class="btn btn-primary">提交</button>
-                    </div>
-                  </div>
-                  <div>
-                    <div class="flex items-center gap-2">
-                      <p class="text-xs font-medium text-slate-500">信用明细</p>
-                      <button x-show="logs === null" @click="loadLogs()"
-                              class="text-xs text-brand-600 hover:underline">加载明细</button>
-                    </div>
-                    <div x-show="logsLoading" x-cloak class="mt-1 space-y-1" aria-hidden="true">
-                      <div class="skeleton h-5 rounded-md"></div>
-                      <div class="skeleton h-5 rounded-md"></div>
-                    </div>
-                    <p x-show="logs && !logs.length" x-cloak class="mt-1 text-xs text-slate-400">暂无信用记录。</p>
-                    <ul x-show="logs && logs.length" x-cloak
-                        class="mt-1 max-h-40 space-y-1 overflow-y-auto text-xs">
-                      <template x-for="log in (logs || [])" :key="log.created_at + String(log.delta)">
-                        <li class="flex items-center gap-2">
-                          <span class="w-10 shrink-0 text-right font-medium"
-                                :class="log.delta >= 0 ? 'text-brand-600' : 'text-red-600'"
-                                x-text="(log.delta >= 0 ? '+' : '') + log.delta"></span>
-                          <span class="min-w-0 flex-1 truncate text-slate-600" x-text="log.reason"></span>
-                          <span class="shrink-0 text-slate-400" x-text="log.admin_nickname"></span>
-                          <span class="shrink-0 text-slate-400"
-                                x-text="ZY.relTime(log.created_at)"></span>
-                        </li>
-                      </template>
-                    </ul>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </template>
-        </div>
         <nav x-show="total > size" x-cloak class="mt-3 flex items-center justify-center gap-2 text-sm" aria-label="用户分页">
           <button type="button" @click="load(page - 1)" :disabled="loading || page <= 1" class="btn btn-ghost">上一页</button>
-          <span x-text="page + ' / ' + Math.max(1, Math.ceil(total / size))" class="text-slate-500"></span>
+          <span x-text="page + ' / ' + Math.max(1, Math.ceil(total / size))" class="text-muted"></span>
           <button type="button" @click="load(page + 1)" :disabled="loading || page * size >= total" class="btn btn-ghost">下一页</button>
         </nav>
       </div>
@@ -414,22 +303,22 @@
     {# ===== 平台配置：生效值可编辑保存（越界 422 展示 detail） ===== #}
     <div x-show="tab === 'config'" x-cloak>
       <div class="card p-4" x-data="adminConfig()" @admin:tab.window="onTab($event.detail)">
-        <h2 class="text-sm font-semibold text-slate-700">平台配置</h2>
-        <p class="mt-1 text-xs text-slate-400">仅注册键可调；修改写审计日志，即时生效。</p>
+        <h2 class="text-sm font-semibold text-primary">平台配置</h2>
+        <p class="mt-1 text-xs text-muted">仅注册键可调；修改写审计日志，即时生效。</p>
         <div x-show="loading" x-cloak class="mt-3 space-y-2" aria-hidden="true">
           <div class="skeleton h-8 rounded-md"></div>
           <div class="skeleton h-8 rounded-md"></div>
         </div>
         <p x-show="error" x-text="error" x-cloak
-           class="mt-3 rounded bg-red-50 px-3 py-2 text-sm text-red-600"></p>
-        <p x-show="!loading && !error && !items.length" x-cloak class="mt-3 text-sm text-slate-400">
+           class="mt-3 rounded bg-danger-soft px-3 py-2 text-sm text-danger"></p>
+        <p x-show="!loading && !error && !items.length" x-cloak class="mt-3 text-sm text-muted">
           暂无注册配置项。
         </p>
-        {# md 以下降级为卡片列表；md 及以上保持表格 #}
-        <div x-show="items.length" x-cloak class="mt-3 hidden overflow-x-auto md:block">
-          <table class="w-full text-sm">
+        {# 同一份响应式表格：桌面表格 / 移动卡片布局，避免双套 DOM 漂移 #}
+        <div x-show="items.length" x-cloak class="mt-3 block overflow-x-auto">
+          <table class="responsive-table w-full text-sm">
             <thead>
-              <tr class="border-b border-slate-200 text-left text-xs font-medium text-slate-500">
+              <tr class="border-b border-default text-left text-xs font-medium text-muted">
                 <th class="py-2 pr-3 font-medium">配置键</th>
                 <th class="py-2 pr-3 font-medium">描述</th>
                 <th class="py-2 pr-3 font-medium">生效值</th>
@@ -439,25 +328,25 @@
                 <th class="py-2 font-medium">操作</th>
               </tr>
             </thead>
-            <tbody class="divide-y divide-slate-100">
+            <tbody class="divide-y divide-default">
               <template x-for="item in items" :key="item.key">
-                <tr class="transition-colors hover:bg-slate-50">
-                  <td class="py-2 pr-3 font-mono text-xs text-slate-600" x-text="item.key"></td>
-                  <td class="py-2 pr-3 text-xs text-slate-500" x-text="item.description"></td>
+                <tr class="transition-colors hover:bg-surface-inset">
+                  <td class="py-2 pr-3 font-mono text-xs text-secondary" x-text="item.key"></td>
+                  <td class="py-2 pr-3 text-xs text-muted" x-text="item.description"></td>
                   <td class="py-2 pr-3">
                     <input type="number" x-model.number="drafts[item.key]"
                            :min="item.min_value" :max="item.max_value"
                            :aria-label="item.key + ' 生效值'"
                            class="input-base w-24">
-                    <p class="mt-0.5 text-[10px] text-slate-400"
+                    <p class="mt-0.5 text-[10px] text-muted"
                        x-text="'范围 ' + item.min_value + ' ~ ' + item.max_value"></p>
                   </td>
-                  <td class="py-2 pr-3 text-slate-500" x-text="item.default"></td>
+                  <td class="py-2 pr-3 text-muted" x-text="item.default"></td>
                   <td class="py-2 pr-3">
                     <span class="badge" :class="item.overridden ? 'badge-accent' : 'badge-slate'"
                           x-text="item.overridden ? '是' : '否'"></span>
                   </td>
-                  <td class="py-2 pr-3 text-xs text-slate-400">
+                  <td class="py-2 pr-3 text-xs text-muted">
                     <span x-text="item.updated_by || '—'"></span>
                     <span x-show="item.updated_at"
                           x-text="' · ' + ZY.relTime(item.updated_at)"></span>
@@ -468,7 +357,7 @@
                       保存
                     </button>
                     <p x-show="rowErrors[item.key]" x-text="rowErrors[item.key]" x-cloak
-                       class="mt-1 max-w-48 text-xs text-red-600"></p>
+                       class="mt-1 max-w-48 text-xs text-danger"></p>
                     <p x-show="rowMsgs[item.key]" x-text="rowMsgs[item.key]" x-cloak
                        class="mt-1 text-xs text-brand-700"></p>
                   </td>
@@ -477,33 +366,6 @@
             </tbody>
           </table>
         </div>
-        {# 窄屏卡片列表：键 + 描述 + 行内编辑保存（与表格同一 adminConfig 契约） #}
-        <div x-show="items.length" x-cloak class="mt-3 space-y-3 md:hidden">
-          <template x-for="item in items" :key="item.key">
-            <div class="card p-3">
-              <div class="flex items-center gap-2">
-                <span class="min-w-0 flex-1 truncate font-mono text-xs text-slate-600"
-                      x-text="item.key"></span>
-                <span class="badge shrink-0" :class="item.overridden ? 'badge-accent' : 'badge-slate'"
-                      x-text="item.overridden ? '已覆盖' : '默认'"></span>
-              </div>
-              <p class="mt-1 text-xs text-slate-500" x-text="item.description"></p>
-              <div class="mt-2 flex items-center gap-2">
-                <input type="number" x-model.number="drafts[item.key]"
-                       :min="item.min_value" :max="item.max_value"
-                       :aria-label="item.key + ' 生效值'"
-                       class="input-base w-24">
-                <button @click="save(item)" :disabled="loading" class="btn btn-primary">保存</button>
-              </div>
-              <p class="mt-1 text-[10px] text-slate-400"
-                 x-text="'默认 ' + item.default + ' · 范围 ' + item.min_value + ' ~ ' + item.max_value"></p>
-              <p x-show="rowErrors[item.key]" x-text="rowErrors[item.key]" x-cloak
-                 class="mt-1 text-xs text-red-600"></p>
-              <p x-show="rowMsgs[item.key]" x-text="rowMsgs[item.key]" x-cloak
-                 class="mt-1 text-xs text-brand-700"></p>
-            </div>
-          </template>
-        </div>
       </div>
     </div>
 
@@ -511,8 +373,8 @@
     <div x-show="tab === 'reports'" x-cloak>
       <div class="card p-4" x-data="adminReports()" @admin:tab.window="onTab($event.detail)">
         <div class="flex flex-wrap items-center gap-2">
-          <h2 class="text-sm font-semibold text-slate-700">举报处理</h2>
-          <span class="text-xs text-slate-400" x-show="loaded" x-text="'共 ' + total + ' 条'"></span>
+          <h2 class="text-sm font-semibold text-primary">举报处理</h2>
+          <span class="text-xs text-muted" x-show="loaded" x-text="'共 ' + total + ' 条'"></span>
           <select x-model="status" @change="load(1)" aria-label="按状态过滤"
                   class="input-base ml-auto w-32">
             <option value="">全部状态</option>
@@ -528,15 +390,15 @@
           <div class="skeleton h-8 rounded-md"></div>
         </div>
         <p x-show="error" x-text="error" x-cloak
-           class="mt-3 rounded bg-red-50 px-3 py-2 text-sm text-red-600"></p>
+           class="mt-3 rounded bg-danger-soft px-3 py-2 text-sm text-danger"></p>
         <p x-show="msg" x-text="msg" x-cloak
            class="mt-3 rounded bg-brand-50 px-3 py-2 text-sm text-brand-700"></p>
-        <p x-show="loaded && !loading && !items.length" x-cloak class="mt-3 text-sm text-slate-400">暂无举报。</p>
-        {# md 以下降级为卡片列表；md 及以上保持表格 #}
-        <div x-show="items.length" x-cloak class="mt-3 hidden overflow-x-auto md:block">
-          <table class="w-full text-sm">
+        <p x-show="loaded && !loading && !items.length" x-cloak class="mt-3 text-sm text-muted">暂无举报。</p>
+        {# 同一份响应式表格：桌面表格 / 移动卡片布局，避免双套 DOM 漂移 #}
+        <div x-show="items.length" x-cloak class="mt-3 block overflow-x-auto">
+          <table class="responsive-table w-full text-sm">
             <thead>
-              <tr class="border-b border-slate-200 text-left text-xs font-medium text-slate-500">
+              <tr class="border-b border-default text-left text-xs font-medium text-muted">
                 <th class="py-2 pr-3 font-medium">举报人</th>
                 <th class="py-2 pr-3 font-medium">举报对象</th>
                 <th class="py-2 pr-3 font-medium">理由</th>
@@ -546,10 +408,10 @@
                 <th class="py-2 font-medium">操作</th>
               </tr>
             </thead>
-            <tbody class="divide-y divide-slate-100">
+            <tbody class="divide-y divide-default">
               <template x-for="r in items" :key="r.id">
-                <tr class="transition-colors hover:bg-slate-50">
-                  <td class="py-2 pr-3 text-slate-700" x-text="r.reporter ? r.reporter.nickname : '—'"></td>
+                <tr class="transition-colors hover:bg-surface-inset">
+                  <td class="py-2 pr-3 text-primary" x-text="r.reporter ? r.reporter.nickname : '—'"></td>
                   <td class="py-2 pr-3">
                     <span class="badge badge-slate" x-text="targetLabel(r.target_type)"></span>
                     {# 有服务端安全上下文链接时直达目标，否则仅显示摘要。 #}
@@ -558,10 +420,10 @@
                          x-text="r.target_summary || ('#' + r.target_id)"></a>
                     </template>
                     <template x-if="!targetLink(r)">
-                      <span class="ml-1 text-slate-600" x-text="r.target_summary || ('#' + r.target_id)"></span>
+                      <span class="ml-1 text-secondary" x-text="r.target_summary || ('#' + r.target_id)"></span>
                     </template>
                   </td>
-                  <td class="max-w-48 truncate py-2 pr-3 text-slate-600" :title="r.reason"
+                  <td class="max-w-48 truncate py-2 pr-3 text-secondary" :title="r.reason"
                       x-text="r.reason"></td>
                   <td class="py-2 pr-3">
                     <span class="badge"
@@ -571,14 +433,14 @@
                                    'badge-slate': r.status === 'dismissed'}"
                           x-text="statusLabel(r.status)"></span>
                   </td>
-                  <td class="py-2 pr-3 text-slate-500"
+                  <td class="py-2 pr-3 text-muted"
                       x-text="r.handler ? r.handler.nickname : '—'"></td>
-                  <td class="py-2 pr-3 text-xs text-slate-400"
+                  <td class="py-2 pr-3 text-xs text-muted"
                       x-text="ZY.relTime(r.created_at)"></td>
                   <td class="py-2">
                     <div class="flex flex-wrap gap-2">
                       <button x-show="r.status === 'open'" @click="handle(r, 'processing')" :disabled="loading"
-                              class="rounded-md border border-slate-300 px-2 py-1 text-xs text-slate-600 hover:bg-slate-50 disabled:opacity-50">
+                              class="rounded-md border border-strong px-2 py-1 text-xs text-secondary hover:bg-surface-inset disabled:opacity-50">
                         开始处理
                       </button>
                       <button x-show="r.status === 'open' || r.status === 'processing'"
@@ -588,11 +450,11 @@
                       </button>
                       <button x-show="r.status === 'open' || r.status === 'processing'"
                               @click="handle(r, 'dismiss')" :disabled="loading"
-                              class="rounded-md border border-red-300 px-2 py-1 text-xs text-red-600 hover:bg-red-50 disabled:opacity-50">
+                              class="rounded-md border border-danger-border px-2 py-1 text-xs text-danger hover:bg-danger-soft disabled:opacity-50">
                         驳回
                       </button>
                       <span x-show="r.status === 'resolved' || r.status === 'dismissed'"
-                            class="text-xs text-slate-300">已结案</span>
+                            class="text-xs text-disabled">已结案</span>
                     </div>
                   </td>
                 </tr>
@@ -600,80 +462,27 @@
             </tbody>
           </table>
         </div>
-        {# 窄屏卡片列表：举报对象 + 理由 + 状态 + 处理流转按钮（与表格同一 adminReports 契约） #}
-        <div x-show="items.length" x-cloak class="mt-3 space-y-3 md:hidden">
-          <template x-for="r in items" :key="r.id">
-            <div class="card p-3">
-              <div class="flex items-center gap-2">
-                <span class="badge badge-slate shrink-0" x-text="targetLabel(r.target_type)"></span>
-                {# 有服务端安全上下文链接时直达目标，否则仅显示摘要。 #}
-                <template x-if="targetLink(r)">
-                  <a :href="targetLink(r)"
-                     class="min-w-0 flex-1 truncate text-sm text-brand-600 hover:underline"
-                     x-text="r.target_summary || ('#' + r.target_id)"></a>
-                </template>
-                <template x-if="!targetLink(r)">
-                  <span class="min-w-0 flex-1 truncate text-sm text-slate-600"
-                        x-text="r.target_summary || ('#' + r.target_id)"></span>
-                </template>
-                <span class="badge shrink-0"
-                      :class="{'badge-accent': r.status === 'open',
-                               'badge-slate': r.status === 'processing',
-                               'badge-brand': r.status === 'resolved',
-                               'badge-slate': r.status === 'dismissed'}"
-                      x-text="statusLabel(r.status)"></span>
-              </div>
-              <p class="mt-1 text-xs text-slate-600" x-text="r.reason"></p>
-              <p class="mt-1 text-xs text-slate-400">
-                举报人 <span x-text="r.reporter ? r.reporter.nickname : '—'"></span>
-                <span x-show="r.handler"
-                      x-text="' · 处理人 ' + (r.handler ? r.handler.nickname : '')"></span>
-                · <span x-text="ZY.relTime(r.created_at)"></span>
-              </p>
-              <div class="mt-2 flex flex-wrap gap-2">
-                <button x-show="r.status === 'open'" @click="handle(r, 'processing')" :disabled="loading"
-                        class="rounded-md border border-slate-300 px-2 py-1 text-xs text-slate-600 hover:bg-slate-50 disabled:opacity-50">
-                  开始处理
-                </button>
-                <button x-show="r.status === 'open' || r.status === 'processing'"
-                        @click="handle(r, 'resolve')" :disabled="loading"
-                        class="rounded-md bg-brand-600 px-2 py-1 text-xs text-white hover:bg-brand-700 disabled:opacity-50">
-                  解决
-                </button>
-                <button x-show="r.status === 'open' || r.status === 'processing'"
-                        @click="handle(r, 'dismiss')" :disabled="loading"
-                        class="rounded-md border border-red-300 px-2 py-1 text-xs text-red-600 hover:bg-red-50 disabled:opacity-50">
-                  驳回
-                </button>
-                <span x-show="r.status === 'resolved' || r.status === 'dismissed'"
-                      class="text-xs text-slate-300">已结案</span>
-              </div>
-            </div>
-          </template>
-        </div>
         <div x-show="total > size" x-cloak class="mt-3 flex items-center justify-center gap-2 text-sm">
           <button @click="load(page - 1)" :disabled="loading || page <= 1"
                   class="btn btn-ghost">上一页</button>
-          <span class="px-2 text-slate-400" x-text="page + ' / ' + Math.max(1, Math.ceil(total / size))"></span>
+          <span class="px-2 text-muted" x-text="page + ' / ' + Math.max(1, Math.ceil(total / size))"></span>
           <button @click="load(page + 1)" :disabled="loading || page * size >= total"
                   class="btn btn-ghost">下一页</button>
         </div>
       </div>
     </div>
 
-    {# ===== 运营看板（v0.8）：指标卡组 + 近 7 天趋势折线图（ECharts，切 Tab 后才初始化） ===== #}
-    {# ECharts 5 本地化：与 base.html 其余依赖同置于 static/vendor #}
-    <script src="/static/vendor/echarts-5.6.0.min.js"></script>
+    {# ===== 运营看板（v0.8）：指标卡组 + 近 7 天趋势折线图（ECharts 由 admin.js 切 Tab 时按需加载） ===== #}
     <div x-show="tab === 'dashboard'" x-cloak>
       <div class="card p-4" x-data="adminDashboard()" @admin:tab.window="onTab($event.detail)">
-        <h2 class="text-sm font-semibold text-slate-700">运营看板</h2>
+        <h2 class="text-sm font-semibold text-primary">运营看板</h2>
         <div x-show="loading" x-cloak class="mt-3 grid gap-3 sm:grid-cols-3" aria-hidden="true">
           <div class="skeleton h-24 rounded-card"></div>
           <div class="skeleton h-24 rounded-card"></div>
           <div class="skeleton h-24 rounded-card"></div>
         </div>
         <p x-show="error" x-text="error" x-cloak
-           class="mt-3 rounded bg-red-50 px-3 py-2 text-sm text-red-600"></p>
+           class="mt-3 rounded bg-danger-soft px-3 py-2 text-sm text-danger"></p>
         <template x-if="data">
           <div class="mt-4 space-y-6">
             {# 指标卡组：用户 / 内容 / AI 两行三列，card-tinted 浅品牌渐变 + 图标分层 #}
@@ -683,10 +492,10 @@
                   <span class="flex h-8 w-8 items-center justify-center rounded-lg bg-brand-100 text-brand-600">
                     {{ icon('users', 'w-4 h-4') }}
                   </span>
-                  <p class="text-xs text-slate-500">用户总数</p>
+                  <p class="text-xs text-muted">用户总数</p>
                 </div>
-                <p class="mt-2 text-2xl font-bold text-slate-800" x-text="data.users.total"></p>
-                <p class="mt-1 text-xs text-slate-500"
+                <p class="mt-2 text-2xl font-bold text-primary" x-text="data.users.total"></p>
+                <p class="mt-1 text-xs text-muted"
                    x-text="'今日新增 ' + data.users.new_today + ' · 今日活跃 ' + data.users.active_today"></p>
               </div>
               <div class="card-tinted p-4">
@@ -694,11 +503,11 @@
                   <span class="flex h-8 w-8 items-center justify-center rounded-lg bg-brand-100 text-brand-600">
                     {{ icon('book-open', 'w-4 h-4') }}
                   </span>
-                  <p class="text-xs text-slate-500">资源总数</p>
+                  <p class="text-xs text-muted">资源总数</p>
                 </div>
-                <p class="mt-2 text-2xl font-bold text-slate-800" x-text="data.content.resources_total"></p>
+                <p class="mt-2 text-2xl font-bold text-primary" x-text="data.content.resources_total"></p>
                 <p class="mt-1 text-xs"
-                   :class="data.content.resources_pending > 0 ? 'text-accent-600' : 'text-slate-500'"
+                   :class="data.content.resources_pending > 0 ? 'text-accent-600' : 'text-muted'"
                    x-text="'审核积压 ' + data.content.resources_pending"></p>
               </div>
               <div class="card-tinted p-4">
@@ -706,10 +515,10 @@
                   <span class="flex h-8 w-8 items-center justify-center rounded-lg bg-brand-100 text-brand-600">
                     {{ icon('chat', 'w-4 h-4') }}
                   </span>
-                  <p class="text-xs text-slate-500">帖子总数</p>
+                  <p class="text-xs text-muted">帖子总数</p>
                 </div>
-                <p class="mt-2 text-2xl font-bold text-slate-800" x-text="data.content.posts_total"></p>
-                <p class="mt-1 text-xs text-slate-500"
+                <p class="mt-2 text-2xl font-bold text-primary" x-text="data.content.posts_total"></p>
+                <p class="mt-1 text-xs text-muted"
                    x-text="'评论 ' + data.content.comments_total + ' · 待处理举报 ' + data.content.reports_open"></p>
               </div>
               <div class="card-tinted p-4">
@@ -717,44 +526,44 @@
                   <span class="flex h-8 w-8 items-center justify-center rounded-lg bg-brand-100 text-brand-600">
                     {{ icon('sparkles', 'w-4 h-4') }}
                   </span>
-                  <p class="text-xs text-slate-500">今日 AI 问答</p>
+                  <p class="text-xs text-muted">今日 AI 问答</p>
                 </div>
-                <p class="mt-2 text-2xl font-bold text-slate-800" x-text="data.ai.qa_today"></p>
-                <p class="mt-1 text-xs text-slate-500" x-text="'累计问答 ' + data.ai.qa_total"></p>
+                <p class="mt-2 text-2xl font-bold text-primary" x-text="data.ai.qa_today"></p>
+                <p class="mt-1 text-xs text-muted" x-text="'累计问答 ' + data.ai.qa_total"></p>
               </div>
               <div class="card-tinted p-4">
                 <div class="flex items-center gap-2">
                   <span class="flex h-8 w-8 items-center justify-center rounded-lg bg-brand-100 text-brand-600">
                     {{ icon('chart', 'w-4 h-4') }}
                   </span>
-                  <p class="text-xs text-slate-500">今日 Token 消耗</p>
+                  <p class="text-xs text-muted">今日 Token 消耗</p>
                 </div>
-                <p class="mt-2 text-2xl font-bold text-slate-800" x-text="data.ai.tokens_today"></p>
+                <p class="mt-2 text-2xl font-bold text-primary" x-text="data.ai.tokens_today"></p>
               </div>
               <div class="card-tinted p-4">
                 <div class="flex items-center gap-2">
                   <span class="flex h-8 w-8 items-center justify-center rounded-lg bg-brand-100 text-brand-600">
                     {{ icon('clock', 'w-4 h-4') }}
                   </span>
-                  <p class="text-xs text-slate-500">今日平均延迟</p>
+                  <p class="text-xs text-muted">今日平均延迟</p>
                 </div>
-                <p class="mt-2 text-2xl font-bold text-slate-800"
+                <p class="mt-2 text-2xl font-bold text-primary"
                    x-text="(data.ai.avg_latency_ms_today / 1000).toFixed(1) + ' s'"></p>
-                <p class="mt-1 text-xs text-slate-500"
+                <p class="mt-1 text-xs text-muted"
                    x-text="data.ai.avg_latency_ms_today + ' ms'"></p>
               </div>
             </div>
             {# 近 7 天趋势：问答 / 发帖 / 上传 三条折线 #}
-            <div class="rounded-card border border-slate-100 p-4">
-              <h3 class="text-xs font-medium text-slate-500">近 7 天趋势</h3>
+            <div class="rounded-card border border-default p-4">
+              <h3 class="text-xs font-medium text-muted">近 7 天趋势</h3>
               <div x-ref="trendChart" class="mt-2 h-64 w-full" role="img" aria-label="近 7 天问答、发帖、上传趋势图"></div>
               <details class="mt-3">
                 <summary class="cursor-pointer text-xs font-medium text-brand-700">查看趋势数据表</summary>
                 <div class="mt-2 overflow-x-auto">
                   <table class="w-full text-xs">
                     <caption class="sr-only">近 7 天问答、发帖、上传数据</caption>
-                    <thead><tr class="border-b border-slate-200 text-left text-slate-500"><th class="py-2 pr-3">日期</th><th class="py-2 pr-3">问答</th><th class="py-2 pr-3">发帖</th><th class="py-2">上传</th></tr></thead>
-                    <tbody class="divide-y divide-slate-100">
+                    <thead><tr class="border-b border-default text-left text-muted"><th class="py-2 pr-3">日期</th><th class="py-2 pr-3">问答</th><th class="py-2 pr-3">发帖</th><th class="py-2">上传</th></tr></thead>
+                    <tbody class="divide-y divide-default">
                       <template x-for="(day, index) in (data.trend.days || [])" :key="day">
                         <tr><td class="py-2 pr-3" x-text="day"></td><td class="py-2 pr-3" x-text="data.trend.qa[index] || 0"></td><td class="py-2 pr-3" x-text="data.trend.posts[index] || 0"></td><td class="py-2" x-text="data.trend.uploads[index] || 0"></td></tr>
                       </template>

@@ -27,10 +27,10 @@
       section.className = 'mb-8 animate-fade-up';
       section.id = 'sem-section-' + s.id;
       const h2 = document.createElement('h2');
-      h2.className = 'mb-3 flex items-center gap-2 text-lg font-semibold text-slate-700';
+      h2.className = 'mb-3 flex items-center gap-2 text-lg font-semibold text-primary';
       h2.textContent = s.name;
       const count = document.createElement('span');
-      count.className = 'text-xs font-normal text-slate-400';
+      count.className = 'text-xs font-normal text-muted';
       count.textContent = '0 门课程';
       h2.appendChild(count);
       const grid = document.createElement('div');
@@ -55,59 +55,48 @@
     if (!grid) return;
     const uncat = document.getElementById('sem-section-none');
     if (!c.semester_id && uncat) uncat.classList.remove('hidden');
-    const card = document.createElement('div');
-    card.className = 'card card-hover animate-fade-up p-4';
-    card.innerHTML =
-      '<div class="flex flex-wrap items-center gap-3">' +
-        '<h3 class="text-card-title text-slate-800" data-role="name"></h3>' +
-        '<span class="text-xs text-slate-400">0 份资料</span>' +
-        '<div class="ml-auto flex flex-wrap items-center gap-2 text-sm">' +
-          '<a href="/library/chat?course_id=' + c.id + '" class="text-brand-600 hover:underline">AI 问答</a>' +
-          '<a href="/library/review?course_id=' + c.id + '" class="text-brand-600 hover:underline">复习工具</a>' +
-          '<button type="button" @click="chapterFormFor = chapterFormFor === ' + c.id + ' ? null : ' + c.id + '; chapterTitle = \'\'" class="btn btn-ghost !px-3 !py-1.5 text-xs">添加章节</button>' +
-          '<button type="button" data-upload-course="' + c.id + '" @click="openUpload(' + c.id + ')" class="btn btn-ghost !px-3 !py-1.5 text-xs">上传资料</button>' +
-        '</div>' +
-      '</div>' +
-      '<div id="chapter-list-' + c.id + '" class="mt-2 flex flex-wrap items-center gap-1.5"></div>' +
-      '<div x-show="chapterFormFor === ' + c.id + '" x-cloak class="mt-3 flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 p-3">' +
-        '<label for="new-chapter-' + c.id + '" class="sr-only">章节标题</label>' +
-        '<input id="new-chapter-' + c.id + '" type="text" x-model="chapterTitle" placeholder="章节标题" class="input-base flex-1 !py-1.5">' +
-        '<button type="button" @click="createChapter(' + c.id + ')" :disabled="loading" class="btn btn-primary !px-3 !py-1.5">添加</button>' +
-      '</div>' +
-      '<div x-show="uploadFormFor === ' + c.id + '" x-cloak class="upload-dropzone mt-3 p-4" :class="{\'is-dragging\': draggingCourse === ' + c.id + '}"' +
-           ' @dragenter.prevent="draggingCourse = ' + c.id + '" @dragover.prevent @dragleave.prevent="draggingCourse = null" @drop.prevent="selectDropped(' + c.id + ', $event)">' +
-        '<label for="upload-file-' + c.id + '" class="block cursor-pointer text-sm font-medium text-brand-700">拖拽文件到这里，或选择文件</label>' +
-        '<input id="upload-file-' + c.id + '" type="file" accept=".pdf,.pptx,.docx,.md,.markdown" @change="selectFile(' + c.id + ', $event.target.files[0] || null)" class="mt-2 block w-full text-sm">' +
-        '<p class="mt-2 text-xs text-slate-500">支持 PDF、PPTX、DOCX、Markdown，单文件不超过 50MB；旧 .doc/.ppt 请先另存为新格式。</p>' +
-        '<button type="button" @click="upload(' + c.id + ')" :disabled="uploading || !uploadFile || uploadCourseId !== ' + c.id + '" class="btn btn-primary mt-3 !px-3 !py-1.5">上传</button>' +
-        '<span x-show="uploading" class="ml-2 text-xs" x-text="\'上传 \' + uploadProgress + \'%\'"></span>' +
-        '<progress x-show="uploading" max="100" :value="uploadProgress" class="mt-3 h-2 w-full accent-brand-600"></progress>' +
-      '</div>' +
-      '<ul class="mt-3"><template x-for="d in (pending[' + c.id + '] || [])" :key="d.id">' +
-        '<li :id="\'document-\' + d.id" class="py-2 text-sm">' +
-          '<span x-text="d.file_name"></span>' +
-          '<span class="badge ml-2" :class="statusClass(d.status)" x-text="statusLabel(d.status)"></span>' +
-          '<a x-show="d.status === \'parsed\'" :href="\'/documents/\' + d.id + \'/source\'" class="ml-2 text-xs text-brand-600">原文溯源</a>' +
-          '<button type="button" x-show="d.status === \'parsed\' && !submitted[d.id]" @click="openSubmit(d.id, d.file_name)" class="ml-2 text-xs text-brand-600">投稿到公共库</button>' +
-          '<button type="button" x-show="submitted[d.id]" @click="retrySubmission(d.id)" class="ml-2 text-xs text-brand-700">重试预检</button>' +
-          '<button type="button" x-show="d.status === \'failed\'" @click="prepareReupload(' + c.id + ', d.id)" class="ml-2 text-xs text-red-700">选择同文件重传</button>' +
-          '<button type="button" x-show="d.poll_error" @click="resumePolling(d.id)" class="ml-2 text-xs text-brand-700">继续检查</button>' +
-          '<p x-show="d.status === \'failed\'" x-text="d.parse_error || \'解析失败，请选择同文件重传\'" role="alert" class="mt-1 text-xs text-red-700"></p>' +
-          '<p x-show="d.poll_error" x-text="d.poll_error" role="alert" class="mt-1 text-xs text-accent-700"></p>' +
-        '</li>' +
-      '</template></ul>';
+    const card = ZY.ui.fromTemplate('library-course-tpl');
     card.querySelector('[data-role="name"]').textContent = c.name;
+    card.querySelector('[data-slot="chat"]').href = '/library/chat?course_id=' + c.id;
+    card.querySelector('[data-slot="review"]').href = '/library/review?course_id=' + c.id;
+    card.querySelector('[data-slot="chapter-toggle"]').setAttribute('x-on:click',
+      'chapterFormFor = chapterFormFor === ' + c.id + ' ? null : ' + c.id + '; chapterTitle = \'\'');
+    card.querySelector('[data-slot="upload-toggle"]').setAttribute('data-upload-course', c.id);
+    card.querySelector('[data-slot="upload-toggle"]').setAttribute('x-on:click', 'openUpload(' + c.id + ')');
+    card.querySelector('[data-slot="chapter-list"]').id = 'chapter-list-' + c.id;
+    const chapterForm = card.querySelector('[data-slot="chapter-form"]');
+    chapterForm.setAttribute('x-show', 'chapterFormFor === ' + c.id);
+    const title = card.querySelector('[data-slot="chapter-title"]');
+    title.id = 'new-chapter-' + c.id;
+    title.previousElementSibling.htmlFor = title.id;
+    card.querySelector('[data-slot="chapter-add"]').setAttribute('x-on:click', 'createChapter(' + c.id + ')');
+    const uploadForm = card.querySelector('[data-slot="upload-form"]');
+    uploadForm.setAttribute('x-show', 'uploadFormFor === ' + c.id);
+    uploadForm.setAttribute('x-bind:class', "{'is-dragging': draggingCourse === " + c.id + '}');
+    uploadForm.setAttribute('x-on:dragenter.prevent', 'draggingCourse = ' + c.id);
+    uploadForm.setAttribute('x-on:drop.prevent', 'selectDropped(' + c.id + ', $event)');
+    const input = card.querySelector('[data-slot="file-input"]');
+    input.id = 'upload-file-' + c.id;
+    input.previousElementSibling.htmlFor = input.id;
+    input.setAttribute('x-on:change', 'selectFile(' + c.id + ', $event.target.files[0] || null)');
+    card.querySelector('[data-slot="upload-button"]').setAttribute('x-on:click', 'upload(' + c.id + ')');
+    card.querySelector('[data-slot="upload-button"]').setAttribute('x-bind:disabled',
+      'uploading || !uploadFile || uploadCourseId !== ' + c.id);
+    const pendingTemplate = card.querySelector('[data-slot="pending-list"]');
+    pendingTemplate.setAttribute('x-for', 'd in (pending[' + c.id + '] || [])');
+    pendingTemplate.content.querySelector('[data-slot="reupload"]').setAttribute(
+      'x-on:click', 'prepareReupload(' + c.id + ', d.id)');
     grid.appendChild(card);
+    if (window.ZY.motion) ZY.motion.enter(card);
   }
 
-  var CHEVRON_SVG = '<svg class="w-3 h-3 text-slate-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>';
   function appendChapterBadge(courseId, ch) {
     const list = document.getElementById('chapter-list-' + courseId);
     if (!list) return;
     const badge = document.createElement('span');
     badge.className = 'badge badge-slate animate-fade-up';
     badge.textContent = ch.title;
-    badge.insertAdjacentHTML('beforeend', CHEVRON_SVG);
+    badge.appendChild(ZY.ui.iconSvg('chevron-right', 'w-3 h-3 text-muted'));
     list.appendChild(badge);
   }
 
@@ -204,7 +193,7 @@
         return doc.parse_error || fallback || (doc.status === 'failed' ? '解析失败，请选择同文件重传' : '');
       },
       statusLabel(s) { return s === 'parsed' ? '已完成' : (s === 'failed' ? '解析失败' : '解析中'); },
-      statusClass(s) { return s === 'parsed' ? 'badge-brand' : (s === 'failed' ? 'bg-red-50 text-red-700' : 'badge-slate'); },
+      statusClass(s) { return s === 'parsed' ? 'badge-brand' : (s === 'failed' ? 'bg-danger-soft text-danger' : 'badge-slate'); },
       canSubmit(id, initiallyAllowed) {
         return initiallyAllowed && this.documentStatus(id, '') === 'parsed' && !this.submitted[id];
       },

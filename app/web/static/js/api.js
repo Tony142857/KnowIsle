@@ -112,13 +112,23 @@ window.ZY = window.ZY || {};
       return 'zhiyu:draft:v2:' + user + ':' + name;
     },
     save: function (name, value, scope) {
-      try { localStorage.setItem(this.key(name, scope), JSON.stringify(value)); return true; }
-      catch (e) { return false; }
+      try {
+        localStorage.setItem(this.key(name, scope), JSON.stringify({
+          value: value, savedAt: Date.now(),
+        }));
+        return true;
+      } catch (e) { return false; }
     },
     load: function (name, scope) {
       try {
         var raw = localStorage.getItem(this.key(name, scope));
-        return raw ? JSON.parse(raw) : null;
+        if (!raw) return null;
+        var draft = JSON.parse(raw);
+        if (!draft || Date.now() - Number(draft.savedAt) > 7 * 86400000) {
+          this.remove(name, scope);
+          return null;
+        }
+        return draft.value;
       } catch (e) { return null; }
     },
     remove: function (name, scope) {

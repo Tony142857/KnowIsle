@@ -7,6 +7,26 @@
 (function () {
   'use strict';
 
+  // ECharts 只在运营看板首次打开时加载（约 1MB），不在后台首屏阻塞其他 Tab。
+  let echartsLoading = null;
+  function ensureEcharts() {
+    if (window.echarts) return Promise.resolve(true);
+    if (!echartsLoading) {
+      echartsLoading = new Promise(function (resolve, reject) {
+        const script = document.createElement('script');
+        script.src = '/static/vendor/echarts-5.6.0.min.js';
+        script.async = true;
+        script.onload = function () { resolve(true); };
+        script.onerror = function () { reject(new Error('图表组件加载失败')); };
+        document.head.appendChild(script);
+      }).catch(function () {
+        echartsLoading = null;
+        return false;
+      });
+    }
+    return echartsLoading;
+  }
+
   function adminTabs() {
     const allowed = ['review', 'space', 'users', 'config', 'reports', 'dashboard'];
     return {
@@ -28,7 +48,14 @@
         if (tab === 'review') params.delete('tab'); else params.set('tab', tab);
         window.history.pushState({}, '', window.location.pathname + (params.toString() ? '?' + params : ''));
         this.notify();
+        if (window.ZY.motion) ZY.motion.tabs(this.$el);
       },
+      nextTab(direction) {
+        const index = allowed.indexOf(this.tab);
+        this.setTab(allowed[(index + direction + allowed.length) % allowed.length]);
+      },
+      firstTab() { this.setTab(allowed[0]); },
+      lastTab() { this.setTab(allowed[allowed.length - 1]); },
       notify() { this.$nextTick(() => window.dispatchEvent(new CustomEvent('admin:tab', {detail: this.tab}))); },
     };
   }
@@ -329,7 +356,12 @@
           return;
         }
         this.inited = true;
-        this.$nextTick(() => this.load());
+        this.$nextTick(() => {
+          ensureEcharts().then((ready) => {
+            if (!ready) { this.error = '图表组件加载失败，请刷新后重试'; return; }
+            this.load();
+          });
+        });
       },
       async load() {
         this.loading = true; this.error = '';

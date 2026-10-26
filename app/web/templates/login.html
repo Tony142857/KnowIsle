@@ -7,7 +7,7 @@
 {% endblock %}
 {% block content %}
 <div class="mx-auto max-w-4xl py-4 md:py-10 animate-fade-up" x-data="loginForm()">
-  <div class="grid overflow-hidden rounded-card border border-slate-200 bg-white shadow-card md:grid-cols-2">
+  <div class="grid overflow-hidden rounded-card border border-default bg-white shadow-card md:grid-cols-2">
 
     {# ===== 品牌视觉面板（≥md 显示，移动端自动单栏）：翡翠绿渐变 + 岛屿意象 ===== #}
     <div class="relative hidden overflow-hidden md:flex flex-col justify-center bg-gradient-to-br from-brand-600 via-brand-700 to-brand-900 p-10 text-white">
@@ -20,34 +20,19 @@
           学生社区驱动 · 结构化 RAG-AI 学习引擎，让资料、问答与经验沉淀为可检索的知识。
         </p>
         <ul class="mt-8 space-y-4 text-sm text-brand-50">
+          {% for name, title, description in [
+            ('list', '结构化解析', '上传资料自动切分章节大纲，沉淀为可检索的知识切片。'),
+            ('link', '引用溯源', 'AI 回答逐条标注出处，一键跳回资料原文位置核验。'),
+            ('star', '社区激励', '贡献资料与答案获得成长值，优质内容被采纳沉淀。'),
+          ] %}
           <li class="flex items-start gap-3">
             <span class="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white/10 text-brand-100">
-              <svg class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24" aria-hidden="true">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 12h10M4 18h7"/>
-              </svg>
+              {{ icon(name, 'h-5 w-5') }}
             </span>
-            <span><strong class="font-medium text-white">结构化解析</strong><br>
-              <span class="text-brand-100/80">上传资料自动切分章节大纲，沉淀为可检索的知识切片。</span></span>
+            <span><strong class="font-medium text-white">{{ title }}</strong><br>
+              <span class="text-brand-100/80">{{ description }}</span></span>
           </li>
-          <li class="flex items-start gap-3">
-            <span class="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white/10 text-brand-100">
-              <svg class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24" aria-hidden="true">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M10 14a5 5 0 0 0 7.1 0l3-3a5 5 0 0 0-7.1-7.1l-1.7 1.7"/>
-                <path stroke-linecap="round" stroke-linejoin="round" d="M14 10a5 5 0 0 0-7.1 0l-3 3a5 5 0 0 0 7.1 7.1l1.7-1.7"/>
-              </svg>
-            </span>
-            <span><strong class="font-medium text-white">引用溯源</strong><br>
-              <span class="text-brand-100/80">AI 回答逐条标注出处，一键跳回资料原文位置核验。</span></span>
-          </li>
-          <li class="flex items-start gap-3">
-            <span class="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white/10 text-brand-100">
-              <svg class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24" aria-hidden="true">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M12 2l2.9 6.3 6.9.8-5.1 4.7 1.4 6.8L12 17.3 5.9 20.6l1.4-6.8L2.2 9.1l6.9-.8L12 2z"/>
-              </svg>
-            </span>
-            <span><strong class="font-medium text-white">社区激励</strong><br>
-              <span class="text-brand-100/80">贡献资料与答案获得成长值，优质内容被采纳沉淀。</span></span>
-          </li>
+          {% endfor %}
         </ul>
       </div>
       {# 海浪装饰（面板底部，纯 SVG） #}
@@ -65,7 +50,7 @@
         </span>
         <div>
           <p class="text-xs font-medium tracking-widest text-brand-600">知屿 KnowIsle</p>
-          <p class="mt-0.5 text-sm font-semibold text-slate-700">每门课程是一座知识岛屿</p>
+          <p class="mt-0.5 text-sm font-semibold text-primary">每门课程是一座知识岛屿</p>
         </div>
       </div>
       {# 小海浪装饰（右下角，纯 SVG） #}
@@ -77,89 +62,89 @@
 
     {# ===== 表单卡 ===== #}
     <div class="p-6 sm:p-8">
-      <h1 class="text-xl font-bold text-center text-slate-800">登录知屿</h1>
+      <h1 class="text-xl font-bold text-center text-primary">登录知屿</h1>
       {% if college_name %}
-      <p class="mt-1 text-center text-xs text-slate-400">{{ college_name }}</p>
+      <p class="mt-1 text-center text-xs text-muted">{{ college_name }}</p>
       {% endif %}
-      <p class="mt-1 text-center text-xs text-slate-400">登录即认证 · 不对校外开放注册（§3.1 邮箱降级通道）</p>
+      <p class="mt-1 text-center text-xs text-muted">登录即认证 · 不对校外开放注册（§3.1 邮箱降级通道）</p>
 
       {# 步骤指示：1 发送验证码 → 2 验证登录 → 3 补全资料（仅首次） #}
       <ol class="mt-6 flex items-center gap-2 text-xs">
         <li class="flex items-center gap-1.5">
           <span class="flex h-5 w-5 items-center justify-center rounded-full text-[11px] transition-colors"
-                :class="step >= 1 ? 'bg-brand-600 text-white' : 'bg-slate-100 text-slate-400'">1</span>
-          <span :class="step === 1 ? 'font-medium text-brand-700' : 'text-slate-400'">发送验证码</span>
+                :class="step >= 1 ? 'bg-brand-600 text-white' : 'bg-surface-inset text-muted'">1</span>
+          <span :class="step === 1 ? 'font-medium text-brand-700' : 'text-muted'">发送验证码</span>
         </li>
-        <li class="h-px flex-1 bg-slate-200"></li>
+        <li class="h-px flex-1 bg-default"></li>
         <li class="flex items-center gap-1.5">
           <span class="flex h-5 w-5 items-center justify-center rounded-full text-[11px] transition-colors"
-                :class="step >= 2 ? 'bg-brand-600 text-white' : 'bg-slate-100 text-slate-400'">2</span>
-          <span :class="step === 2 ? 'font-medium text-brand-700' : 'text-slate-400'">验证登录</span>
+                :class="step >= 2 ? 'bg-brand-600 text-white' : 'bg-surface-inset text-muted'">2</span>
+          <span :class="step === 2 ? 'font-medium text-brand-700' : 'text-muted'">验证登录</span>
         </li>
-        <li class="h-px flex-1 bg-slate-200"></li>
+        <li class="h-px flex-1 bg-default"></li>
         <li class="flex items-center gap-1.5">
           <span class="flex h-5 w-5 items-center justify-center rounded-full text-[11px] transition-colors"
-                :class="step >= 3 ? 'bg-brand-600 text-white' : 'bg-slate-100 text-slate-400'">3</span>
-          <span :class="step === 3 ? 'font-medium text-brand-700' : 'text-slate-400'">补全资料</span>
+                :class="step >= 3 ? 'bg-brand-600 text-white' : 'bg-surface-inset text-muted'">3</span>
+          <span :class="step === 3 ? 'font-medium text-brand-700' : 'text-muted'">补全资料</span>
         </li>
       </ol>
 
       {# 错误与字段通过 aria-describedby 关联；失败时 Alpine 不清空已输入内容。 #}
       <p id="login-error" x-show="error" x-text="error" x-cloak role="alert"
-         class="mt-4 rounded bg-red-50 px-3 py-2 text-sm text-red-700"></p>
+         class="mt-4 rounded bg-danger-soft px-3 py-2 text-sm text-danger"></p>
       <p id="login-hint" x-show="hint" x-text="hint" x-cloak role="status"
          class="mt-4 rounded bg-brand-50 px-3 py-2 text-sm text-brand-700"></p>
 
       <form @submit.prevent="step === 1 ? sendCode() : verify()" :aria-busy="loading" class="mt-6">
         <div class="space-y-4">
           <div>
-            <label for="login-student-no" class="text-xs font-medium text-slate-500">学号</label>
+            <label for="login-student-no" class="text-xs font-medium text-muted">学号</label>
             <input id="login-student-no" name="student_no" type="text" x-model="student_no" required
                    autocomplete="username" aria-describedby="login-error"
                    placeholder="请输入学号" :disabled="step > 1 || loading" class="input-base mt-1">
           </div>
           <div>
-            <label for="login-email" class="text-xs font-medium text-slate-500">校园邮箱</label>
+            <label for="login-email" class="text-xs font-medium text-muted">校园邮箱</label>
             <input id="login-email" name="email" type="email" x-model="email" required
                    autocomplete="email" aria-describedby="login-email-help login-error"
                    placeholder="name@school.edu.cn" :disabled="step > 1 || loading" class="input-base mt-1">
-            <p id="login-email-help" class="mt-1 text-xs text-slate-400">仅用于学校身份认证，验证码 10 分钟内有效。</p>
+            <p id="login-email-help" class="mt-1 text-xs text-muted">仅用于学校身份认证，验证码 10 分钟内有效。</p>
           </div>
         </div>
 
         <div x-show="step >= 2" x-cloak class="mt-4">
-          <label for="login-code" class="text-xs font-medium text-slate-500">验证码</label>
+          <label for="login-code" class="text-xs font-medium text-muted">验证码</label>
           <input id="login-code" name="code" type="text" x-model="code" placeholder="6 位验证码" maxlength="6"
                  pattern="[0-9]{6}" inputmode="numeric" autocomplete="one-time-code"
                  :required="step >= 2" :disabled="loading" aria-describedby="login-error" class="input-base mt-1">
           <button type="button" @click="sendCode()" :disabled="loading || cooldown > 0"
-                  class="mt-2 text-xs text-slate-500 transition-colors hover:text-brand-700 disabled:opacity-50">
+                  class="mt-2 text-xs text-muted transition-colors hover:text-brand-700 disabled:opacity-50">
             <span x-text="cooldown > 0 ? '没收到？' + cooldown + 's 后可重发' : '没收到验证码？重新发送'"></span>
           </button>
         </div>
 
         <fieldset x-show="step === 3" x-cloak class="mt-4 space-y-4 rounded-lg border border-brand-100 bg-brand-50/40 p-4">
-          <legend class="px-1 text-sm font-medium text-slate-700">首次登录，请补全资料建档</legend>
+          <legend class="px-1 text-sm font-medium text-primary">首次登录，请补全资料建档</legend>
           <div>
-            <label for="login-real-name" class="text-xs font-medium text-slate-500">真实姓名</label>
+            <label for="login-real-name" class="text-xs font-medium text-muted">真实姓名</label>
             <input id="login-real-name" name="real_name" type="text" x-model="real_name" :required="step === 3"
                    :disabled="loading" aria-describedby="login-real-name-help login-error"
                    placeholder="仅认证核验用" class="input-base mt-1 !bg-white">
-            <p id="login-real-name-help" class="mt-1 text-xs text-slate-400">真实姓名不会在社区公开。</p>
+            <p id="login-real-name-help" class="mt-1 text-xs text-muted">真实姓名不会在社区公开。</p>
           </div>
           <div>
-            <label for="login-nickname" class="text-xs font-medium text-slate-500">昵称</label>
+            <label for="login-nickname" class="text-xs font-medium text-muted">昵称</label>
             <input id="login-nickname" name="nickname" type="text" x-model="nickname" :required="step === 3"
                    :disabled="loading" aria-describedby="login-error" placeholder="社区内展示的唯一昵称"
                    class="input-base mt-1 !bg-white">
           </div>
           <div>
-            <label for="login-grade" class="text-xs font-medium text-slate-500">年级（选填）</label>
+            <label for="login-grade" class="text-xs font-medium text-muted">年级（选填）</label>
             <input id="login-grade" name="grade" type="text" x-model="grade" :disabled="loading"
                    placeholder="如 2023级" class="input-base mt-1 !bg-white">
           </div>
           <div>
-            <label for="login-major" class="text-xs font-medium text-slate-500">专业（选填）</label>
+            <label for="login-major" class="text-xs font-medium text-muted">专业（选填）</label>
             <select id="login-major" name="major_id" x-model="major_id" :disabled="loading"
                     class="input-base mt-1 !bg-white">
               <option value="">选择专业（选填）</option>
@@ -175,7 +160,7 @@
           <span x-text="loading ? (step === 1 ? '发送中…' : '验证中…') : (step === 1 ? (cooldown > 0 ? '重新发送（' + cooldown + 's）' : '发送验证码') : (step === 3 ? '建档并登录' : '登录'))">发送验证码</span>
         </button>
         <button type="button" x-show="step >= 2" x-cloak @click="reset()" :disabled="loading"
-                class="mt-2 w-full text-xs text-slate-500 transition-colors hover:text-brand-700">重新填写学号 / 邮箱</button>
+                class="mt-2 w-full text-xs text-muted transition-colors hover:text-brand-700">重新填写学号 / 邮箱</button>
       </form>
     </div>
   </div>

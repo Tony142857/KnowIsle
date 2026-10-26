@@ -11,10 +11,10 @@
 
 {% if majors %}
 <div x-data="majorFilter()">
-  <label for="major-filter" class="text-sm font-medium text-slate-600">筛选专业</label>
+  <label for="major-filter" class="text-sm font-medium text-secondary">筛选专业</label>
   <input id="major-filter" type="search" x-model.debounce.150ms="query"
          placeholder="输入专业名称或代码" autocomplete="off" class="input-base mt-2 max-w-md">
-  <p class="mt-2 text-xs text-slate-400" role="status"
+  <p class="mt-2 text-xs text-muted" role="status"
      x-text="query ? '匹配 ' + visibleCount + ' 个专业' : '共 ' + visibleCount + ' 个专业'"></p>
 <div class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
   {% for m in majors %}
@@ -27,30 +27,30 @@
       </span>
       {% if m.code %}<span class="badge badge-slate">{{ m.code }}</span>{% endif %}
     </div>
-    <h2 class="mt-3 text-card-title text-slate-800 transition-colors duration-island ease-island group-hover:text-brand-700">{{ m.name }}</h2>
+    <h2 class="mt-3 text-card-title text-primary transition-colors duration-island ease-island group-hover:text-brand-700">{{ m.name }}</h2>
     <div class="mt-2 flex items-center justify-between gap-2">
-      <p class="flex items-center gap-1.5 text-sm text-slate-500">
+      <p class="flex items-center gap-1.5 text-sm text-muted">
         {{ icon('book-open', 'h-4 w-4 text-brand-500') }}
         {{ m.course_count }} 个课程空间
       </p>
-      {{ icon('chevron-right', 'h-4 w-4 shrink-0 text-slate-300 transition-all duration-island ease-island group-hover:translate-x-0.5 group-hover:text-brand-500') }}
+      {{ icon('chevron-right', 'h-4 w-4 shrink-0 text-disabled transition-all duration-island ease-island group-hover:translate-x-0.5 group-hover:text-brand-500') }}
     </div>
   </a>
   {% endfor %}
 </div>
   <div x-show="query && visibleCount === 0" x-cloak class="empty-state mt-4 bg-white py-12">
     {{ illo('search', 'mx-auto w-24 h-24') }}
-    <p class="mt-3 text-sm text-slate-500">没有匹配的专业</p>
+    <p class="mt-3 text-sm text-muted">没有匹配的专业</p>
     <button type="button" @click="query = ''" class="btn btn-secondary mt-4">清空筛选</button>
   </div>
 </div>
 {% else %}
 <div class="empty-state bg-white py-16">
   {{ illo('island', 'mx-auto w-28 h-28') }}
-  <p class="mt-4 text-slate-600">暂未导入专业名单，知识岛屿还在筹建中</p>
-  <p class="mt-1 text-sm text-slate-400">
+  <p class="mt-4 text-secondary">暂未导入专业名单，知识岛屿还在筹建中</p>
+  <p class="mt-1 text-sm text-muted">
     管理员可在容器内执行
-    <code class="rounded bg-slate-100 px-1">python scripts/init_majors.py majors.csv</code>
+    <code class="rounded bg-surface-inset px-1">python scripts/init_majors.py majors.csv</code>
     批量导入（§4.1）
   </p>
   <a href="/" class="btn btn-secondary mt-6">{{ icon('home', 'w-4 h-4') }} 返回首页</a>

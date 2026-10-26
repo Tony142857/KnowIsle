@@ -89,6 +89,7 @@
             else this.$root.parentElement.appendChild(list);
           }
           list.appendChild(node);
+          if (window.ZY.motion) ZY.motion.update(node);
           ZY.md.renderInto(node.querySelector('[data-slot="body"]'), content);
           this.content = '';
           ZY.drafts.remove('comment:' + pd.post_id);
@@ -147,7 +148,7 @@
           if (!wrap) {
             wrap = document.createElement('div');
             wrap.className = 'comment-children mt-3 space-y-3' +
-              (nodeDepth(this.$root) < 4 ? ' ml-4 border-l-2 border-slate-200 pl-4' : '');
+              (nodeDepth(this.$root) < 4 ? ' ml-4 border-l-2 border-default pl-4' : '');
             this.$root.appendChild(wrap);
           }
           wrap.appendChild(node);
@@ -199,7 +200,7 @@
     const wrap = document.createElement('div');
     wrap.className = 'mt-4 border-t border-brand-100 pt-3';
     const label = document.createElement('p');
-    label.className = 'text-xs font-medium text-slate-500';
+    label.className = 'text-xs font-medium text-muted';
     label.textContent = '引用来源';
     const grid = document.createElement('div');
     grid.className = 'mt-2 grid gap-2 sm:grid-cols-2';
@@ -208,14 +209,14 @@
       a.href = '/documents/' + c.document_id + '/source#' + c.chunk_id;
       a.className = 'block rounded-lg border border-brand-100 bg-white/80 p-3 text-xs card-hover';
       const id = document.createElement('span');
-      id.className = 'font-mono text-slate-400';
+      id.className = 'font-mono text-muted';
       id.textContent = c.chunk_id;
       const loc = document.createElement('p');
-      loc.className = 'mt-1 text-slate-600';
+      loc.className = 'mt-1 text-secondary';
       loc.textContent = (c.chapter || '') + (c.section ? ' · ' + c.section : '') +
         (c.page_num !== null && c.page_num !== undefined ? ' · 第 ' + c.page_num + ' 页' : '');
       const up = document.createElement('p');
-      up.className = 'mt-0.5 text-slate-400';
+      up.className = 'mt-0.5 text-muted';
       up.textContent = '资料由 ' + (c.uploader || '') + ' 上传';
       a.append(id, loc, up);
       grid.appendChild(a);
@@ -236,9 +237,10 @@
         .join('[\\[' + c.chunk_id + '\\]](/documents/' + c.document_id + '/source#' + c.chunk_id + ')');
     }
     const body = document.createElement('div');
-    body.className = 'md-body mt-3 text-sm text-slate-700';
+    body.className = 'md-body mt-3 text-sm text-primary';
     root.appendChild(body);
     ZY.md.renderInto(body, md);
+    if (window.ZY.motion) ZY.motion.update(root);
     if (data.ai_citations && data.ai_citations.length) renderCitationsGrid(root, data.ai_citations);
   }
 
@@ -247,9 +249,10 @@
     root.textContent = '';
     root.appendChild(aiCardHeader('AI 摘要', 'accent'));
     const body = document.createElement('div');
-    body.className = 'md-body mt-3 text-sm text-slate-700';
+    body.className = 'md-body mt-3 text-sm text-primary';
     root.appendChild(body);
     ZY.md.renderInto(body, data.ai_summary);
+    if (window.ZY.motion) ZY.motion.update(root);
   }
 
   function asyncPoll(postId, kind, initialStatus) {

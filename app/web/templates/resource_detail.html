@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% block title %}{{ resource.title }} · 知屿 KnowIsle{% endblock %}
 {% from "_icons.html" import icon %}
+{% from "_page_header.html" import page_header %}
 {% block head %}
 {# 页面数据惰性注入（CSP 安全的 application/json 数据块，不执行）+ 页面交互外置 #}
 <script type="application/json" id="page-data">{{ {
@@ -12,49 +13,30 @@
 {% endblock %}
 
 {% block content %}
-<div class="mb-6 animate-fade-up">
-  {% if course %}
-  <a href="/courses/{{ course.id }}" class="inline-flex items-center gap-1 text-sm text-slate-500 transition-colors duration-island ease-island hover:text-brand-700">
-    {{ icon('arrow-left', 'h-4 w-4') }}{{ course.name }}
-  </a>
+{% call page_header(resource.title,
+                    subtitle=(uploader.nickname ~ ' 上传' ~ (' · ' ~ course.name if course else '') ~ (' · ' ~ chapter.title if chapter else '')),
+                    back_href='/courses/' ~ course.id if course else '',
+                    back_label=course.name if course else '', icon='file-text', eyebrow='课程资料') %}
+  <span class="badge badge-slate">{{ {'pdf_textbook': 'PDF 教材', 'ppt': 'PPT', 'word': 'Word', 'markdown': 'Markdown'}.get(doc.file_type, doc.file_type) }}</span>
+  {% if resource.review_status != 'approved' %}
+  <span class="badge badge-accent">{{ {'pending': '预检中', 'co_reviewing': '审核中', 'rejected': '已驳回'}.get(resource.review_status, resource.review_status) }}</span>
   {% endif %}
-  <div class="mt-2 flex flex-wrap items-center gap-3">
-    <h1 class="text-2xl font-bold text-slate-800">{{ resource.title }}</h1>
-    <span class="badge badge-slate">
-      {{ {'pdf_textbook': 'PDF 教材', 'ppt': 'PPT', 'word': 'Word', 'markdown': 'Markdown'}.get(doc.file_type, doc.file_type) }}
-    </span>
-    {# 非上架状态仅本人/管理员可见，给出状态徽章 #}
-    {% if resource.review_status != 'approved' %}
-    <span class="badge badge-accent">
-      {{ {'pending': '预检中', 'co_reviewing': '审核中', 'rejected': '已驳回'}.get(resource.review_status, resource.review_status) }}
-    </span>
-    {% endif %}
-  </div>
-  <p class="mt-1 text-sm text-slate-500">
-    {{ uploader.nickname }} 上传
-    {% if course %} · {{ course.name }}{% endif %}
-    {% if chapter %} · {{ chapter.title }}{% endif %}
-    {% if resource.created_at %}
-    · <span x-data x-init="$el.textContent = ZY.relTime('{{ resource.created_at.isoformat() }}')"
-            title="{{ resource.created_at.strftime('%Y-%m-%d %H:%M') }}">{{ resource.created_at.strftime('%Y-%m-%d') }}</span>
-    {% endif %}
-  </p>
-</div>
+{% endcall %}
 
 <div class="grid gap-6 lg:grid-cols-3">
   {# 主栏：描述 + 预览 #}
   <div class="space-y-6 lg:col-span-2">
     <div class="card p-4">
-      <h2 class="text-sm font-semibold text-slate-700">资料简介</h2>
-      <p class="mt-2 whitespace-pre-wrap text-sm text-slate-600">{{ resource.description or '暂无简介' }}</p>
-      <p class="mt-3 text-xs text-slate-400">
+      <h2 class="text-sm font-semibold text-primary">资料简介</h2>
+      <p class="mt-2 whitespace-pre-wrap text-sm text-secondary">{{ resource.description or '暂无简介' }}</p>
+      <p class="mt-3 text-xs text-muted">
         源文件：{{ doc.file_name }}
-        <a href="/documents/{{ doc.id }}/source" class="ml-2 text-brand-600 hover:underline">原文溯源</a>
+        <a href="/documents/{{ doc.id }}/source" class="ml-2 text-brand-600 underline underline-offset-2 hover:text-brand-700">原文溯源</a>
       </p>
     </div>
 
     <div class="card p-4">
-      <h2 class="text-sm font-semibold text-slate-700">在线预览</h2>
+      <h2 class="text-sm font-semibold text-primary">在线预览</h2>
       {% if preview_available %}
       <div class="mt-3" x-data="resourcePreview('/api/resources/{{ resource.id }}/preview')" x-init="loadPreview()">
         <div x-show="failed" x-cloak role="alert" class="empty-state py-12 text-sm">
@@ -65,7 +47,7 @@
           <div x-show="loading" class="skeleton absolute inset-0 z-10 rounded-lg"></div>
           <template x-if="previewUrl">
             <iframe :src="previewUrl" @load="checkPreview($event)"
-                    class="h-[36rem] w-full rounded-lg border border-slate-200 bg-slate-50"
+                    class="h-[36rem] w-full rounded-lg border border-default bg-surface-inset"
                     title="资源预览"></iframe>
           </template>
         </div>
@@ -82,27 +64,27 @@
       {# 元信息定义列表：dt 小图标 + 灰小字 / dd 正文双栏对齐 #}
       <dl class="space-y-2.5">
         <div class="flex items-baseline justify-between">
-          <dt class="flex items-center gap-1.5 text-xs text-slate-400">{{ icon('star-solid', 'h-3.5 w-3.5 text-accent-500') }}综合评分</dt>
+          <dt class="flex items-center gap-1.5 text-xs text-muted">{{ icon('star-solid', 'h-3.5 w-3.5 text-accent-500') }}综合评分</dt>
           <dd id="avg-line" class="flex items-center gap-1 text-sm font-medium text-accent-600">
-            {% if resource.rating is not none %}{{ icon('star-solid', 'h-4 w-4') }}{{ '%.1f'|format(resource.rating) }}{% else %}<span class="font-normal text-slate-500">暂无评分</span>{% endif %}
-            <span class="text-xs font-normal text-slate-400">（{{ resource.rating_count }} 人）</span>
+            {% if resource.rating is not none %}{{ icon('star-solid', 'h-4 w-4') }}{{ '%.1f'|format(resource.rating) }}{% else %}<span class="font-normal text-muted">暂无评分</span>{% endif %}
+            <span class="text-xs font-normal text-muted">（{{ resource.rating_count }} 人）</span>
           </dd>
         </div>
         <div class="flex items-baseline justify-between">
-          <dt class="flex items-center gap-1.5 text-xs text-slate-400">{{ icon('user', 'h-3.5 w-3.5') }}上传者</dt>
-          <dd class="text-sm text-slate-700">{{ uploader.nickname }}</dd>
+          <dt class="flex items-center gap-1.5 text-xs text-muted">{{ icon('user', 'h-3.5 w-3.5') }}上传者</dt>
+          <dd class="text-sm text-primary">{{ uploader.nickname }}</dd>
         </div>
         <div class="flex items-baseline justify-between">
-          <dt class="flex items-center gap-1.5 text-xs text-slate-400">{{ icon('download', 'h-3.5 w-3.5') }}下载量</dt>
-          <dd class="text-sm text-slate-700">{{ resource.download_count }}</dd>
+          <dt class="flex items-center gap-1.5 text-xs text-muted">{{ icon('download', 'h-3.5 w-3.5') }}下载量</dt>
+          <dd class="text-sm text-primary">{{ resource.download_count }}</dd>
         </div>
         <div class="flex items-baseline justify-between">
-          <dt class="flex items-center gap-1.5 text-xs text-slate-400">{{ icon('bookmark', 'h-3.5 w-3.5') }}收藏</dt>
-          <dd id="fav-count" class="text-sm text-slate-700">{{ resource.fav_count }}</dd>
+          <dt class="flex items-center gap-1.5 text-xs text-muted">{{ icon('bookmark', 'h-3.5 w-3.5') }}收藏</dt>
+          <dd id="fav-count" class="text-sm text-primary">{{ resource.fav_count }}</dd>
         </div>
         <div class="flex items-baseline justify-between">
-          <dt class="flex items-center gap-1.5 text-xs text-slate-400">{{ icon('upload', 'h-3.5 w-3.5') }}上传时间</dt>
-          <dd class="text-sm text-slate-700">
+          <dt class="flex items-center gap-1.5 text-xs text-muted">{{ icon('upload', 'h-3.5 w-3.5') }}上传时间</dt>
+          <dd class="text-sm text-primary">
             {% if resource.created_at %}
             <span x-data x-init="$el.textContent = ZY.relTime('{{ resource.created_at.isoformat() }}')"
                   title="{{ resource.created_at.strftime('%Y-%m-%d %H:%M') }}">{{ resource.created_at.strftime('%Y-%m-%d') }}</span>
@@ -111,8 +93,8 @@
         </div>
         {% if resource.approved_at %}
         <div class="flex items-baseline justify-between">
-          <dt class="flex items-center gap-1.5 text-xs text-slate-400">{{ icon('clock', 'h-3.5 w-3.5') }}上架时间</dt>
-          <dd class="text-sm text-slate-700">
+          <dt class="flex items-center gap-1.5 text-xs text-muted">{{ icon('clock', 'h-3.5 w-3.5') }}上架时间</dt>
+          <dd class="text-sm text-primary">
             <span x-data x-init="$el.textContent = ZY.relTime('{{ resource.approved_at.isoformat() }}')"
                   title="{{ resource.approved_at.strftime('%Y-%m-%d %H:%M') }}">{{ resource.approved_at.strftime('%Y-%m-%d') }}</span>
           </dd>
@@ -126,7 +108,7 @@
           <span x-text="loading ? '正在下载…' : '下载原件{{ '（' ~ resource.download_cost ~ ' 贡献分）' if resource.download_cost > 0 and resource.uploader_id != user.id else '' }}'"></span>
         </button>
         <p x-show="error" x-text="error" x-cloak role="alert"
-           class="mt-2 rounded-md bg-red-50 px-2 py-1.5 text-xs text-red-600"></p>
+           class="mt-2 rounded-md bg-danger-soft px-2 py-1.5 text-xs text-danger"></p>
       </div>
       <button @click="openClone()"
               class="mt-2 block w-full rounded-md border border-brand-600 py-2 text-center text-sm text-brand-700 transition-colors hover:bg-brand-50">
@@ -139,16 +121,16 @@
         <button @click="toggle()" :disabled="loading"
                 :class="favorited
                   ? 'border-accent-400 bg-accent-50 text-accent-700'
-                  : 'border-slate-300 text-slate-500 hover:border-accent-400 hover:text-accent-700'"
+                  : 'border-strong text-muted hover:border-accent-400 hover:text-accent-700'"
                 class="mt-2 flex w-full items-center justify-center gap-1.5 rounded-md border py-2 text-sm transition-colors disabled:opacity-50">
           {{ icon('bookmark', 'h-4 w-4') }}
           <span x-text="favorited ? '已收藏' : '收藏'"></span>
         </button>
         <p x-show="error" x-text="error" x-cloak
-           class="mt-2 rounded-md bg-red-50 px-2 py-1.5 text-xs text-red-600"></p>
+           class="mt-2 rounded-md bg-danger-soft px-2 py-1.5 text-xs text-danger"></p>
       </div>
       <button type="button" @click="ZY.report('resource', {{ resource.id }})"
-              class="mt-3 w-full text-xs text-slate-400 transition-colors hover:text-red-600">举报此资料</button>
+              class="mt-3 w-full text-xs text-muted transition-colors hover:text-danger">举报此资料</button>
       {% endif %}
     </div>
 
@@ -156,21 +138,21 @@
     {% if resource.review_status == 'approved' %}
     <div x-show="cloneOpen" x-cloak id="clone-modal"
          role="dialog" aria-modal="true" aria-label="克隆到个人库"
-         class="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4"
+         class="fixed inset-0 z-50 flex items-center justify-center modal-backdrop p-4"
          @keydown.escape.window="cloneOpen = false">
-      <div class="w-full max-w-md rounded-card bg-white p-5 shadow-lift" @click.outside="cloneOpen = false">
-        <h2 class="text-base font-semibold text-slate-800">克隆到个人库</h2>
-        <p class="mt-1 text-xs text-slate-400">克隆后资料进入你的个人知识库，可向 AI 提问，不影响原公共资源。</p>
+      <div class="modal-panel w-full max-w-md rounded-card bg-white p-5 shadow-lift" @click.outside="cloneOpen = false">
+        <h2 class="text-base font-semibold text-primary">克隆到个人库</h2>
+        <p class="mt-1 text-xs text-muted">克隆后资料进入你的个人知识库，可向 AI 提问，不影响原公共资源。</p>
 
         <p x-show="cloneError" x-text="cloneError" x-cloak
-           class="mt-3 rounded-md bg-red-50 px-3 py-2 text-sm text-red-600"></p>
+           class="mt-3 rounded-md bg-danger-soft px-3 py-2 text-sm text-danger"></p>
         <div x-show="cloneDone" x-cloak
              class="mt-3 rounded-md bg-brand-50 px-3 py-2 text-sm text-brand-700">
           <p x-text="cloneMsg"></p>
           <a href="/library" class="mt-1 inline-flex items-center gap-1 text-brand-700 hover:underline">前往个人库查看 {{ icon('arrow-right', 'h-3.5 w-3.5') }}</a>
         </div>
 
-        <label class="mt-4 block text-xs font-medium text-slate-500">目标课程</label>
+        <label class="mt-4 block text-xs font-medium text-muted">目标课程</label>
         {# 课程列表加载期骨架行 #}
         <div x-show="coursesLoading" x-cloak class="mt-1 space-y-2" aria-hidden="true">
           <div class="skeleton h-9 rounded-md"></div>
@@ -198,25 +180,25 @@
     {% if resource.review_status == 'approved' and resource.uploader_id != user.id %}
     <div class="card p-4"
          x-data="ratingBox({{ resource.id }}, {{ my_rating or 0 }})">
-      <h3 class="text-sm font-semibold text-slate-700">我的评分</h3>
+      <h3 class="text-sm font-semibold text-primary">我的评分</h3>
       <div class="mt-2 flex items-center gap-1" role="radiogroup" aria-label="为资料评分">
         <template x-for="star in 5" :key="star">
           <button type="button" role="radio" @click="rate(star)" @mouseenter="hover = star" @mouseleave="hover = 0"
                   :disabled="loading"
                   class="transition-all duration-island ease-island hover:scale-110 disabled:opacity-50"
-                  :class="star <= (hover || myRating) ? 'text-accent-400' : 'text-slate-300 hover:text-accent-300'"
+                  :class="star <= (hover || myRating) ? 'text-accent-400' : 'text-disabled hover:text-accent-300'"
                   :aria-checked="star === myRating" :aria-label="'评 ' + star + ' 星'" :title="'评 ' + star + ' 星'">
             <span x-show="star <= (hover || myRating)" x-cloak class="block">{{ icon('star-solid', 'h-6 w-6') }}</span>
             <span x-show="star > (hover || myRating)" x-cloak class="block">{{ icon('star', 'h-6 w-6') }}</span>
           </button>
         </template>
-        <span x-show="myRating" x-cloak class="ml-1 text-xs text-slate-400">
+        <span x-show="myRating" x-cloak class="ml-1 text-xs text-muted">
           已评 <span x-text="myRating"></span> 星
         </span>
       </div>
       <p x-show="error" x-text="error" x-cloak
-         class="mt-2 rounded-md bg-red-50 px-2 py-1.5 text-xs text-red-600"></p>
-      <p x-show="count > 0" x-cloak class="mt-2 text-xs text-slate-500">
+         class="mt-2 rounded-md bg-danger-soft px-2 py-1.5 text-xs text-danger"></p>
+      <p x-show="count > 0" x-cloak class="mt-2 text-xs text-muted">
         当前均分 <span x-text="avg" class="text-accent-600"></span>
         · <span x-text="count"></span> 人评分
       </p>

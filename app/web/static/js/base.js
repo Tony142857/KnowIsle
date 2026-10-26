@@ -14,4 +14,13 @@
       badge.classList.toggle('hidden', !data.unread);
     } catch (e) { /* 接口未就绪时忽略 */ }
   });
+
+  function initMotion() {
+    if (!window.ZY.motion) return;
+    document.querySelectorAll('[data-motion="page-header"]').forEach(function (el) {
+      ZY.motion.enter(el);
+    });
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', initMotion);
+  else initMotion();
 })();

@@ -7,8 +7,8 @@
 
 §20.5 B1（v1.1）：consume_quota 合并「检查 + 扣减」为一个原子操作——
 对 ai_quotas 当日行 SELECT ... FOR UPDATE 行锁内判定并扣减，并发请求
-串行化，不再超扣；路由层的 check_quota 仍是生成前的预检（不加锁，失败
-才 429），预检与扣减之间的并发窗口由原子扣减兜底（耗尽抛 429）。
+串行化，不再超扣；路由层的 check_quota 是生成前的只读预检（失败才 429），
+预检与扣减之间的并发窗口由原子扣减兜底（耗尽抛 429）。
 """
 
 from datetime import date
@@ -78,18 +78,25 @@ async def _get_quota_row(
 
 
 async def ensure_quota(session: AsyncSession, user: User) -> AiQuota:
-    """查/建当日额度行（不加锁，预检/展示用）；只 flush，提交由调用方负责。"""
+    """查/建当日额度行（展示/兑换用）；只 flush，提交由调用方负责。"""
     return await _get_quota_row(session, user)
 
 
 async def check_quota(session: AsyncSession, user: User) -> None:
-    """问答前预检：免费额度用尽且兑换余额为 0 时抛 429。
+    """问答前只读预检：免费额度用尽且兑换余额为 0 时抛 429。
 
-    不加行锁（避免把行锁持有到生成结束）；并发窗口由 consume_quota 的
-    原子扣减兜底（§20.5 B1）。
+    无当日行时只读取平台限额，不插入未提交数据；回答成功后由 consume_quota
+    原子建行、复检并扣减，避免 SSE 期间持有唯一键锁。
     """
-    quota = await _get_quota_row(session, user)
-    if not can_answer(quota.used, quota.daily_limit, quota.bonus_balance):
+    quota = (
+        await session.execute(
+            select(AiQuota).where(AiQuota.user_id == user.id, AiQuota.date == date.today())
+        )
+    ).scalar_one_or_none()
+    if quota is None:
+        if not can_answer(0, await get_config(session, "ai_daily_limit"), 0):
+            raise HTTPException(status_code=429, detail=_QUOTA_EXHAUSTED_DETAIL)
+    elif not can_answer(quota.used, quota.daily_limit, quota.bonus_balance):
         raise HTTPException(status_code=429, detail=_QUOTA_EXHAUSTED_DETAIL)
 
 

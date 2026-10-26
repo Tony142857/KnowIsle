@@ -1,23 +1,13 @@
 {% extends "base.html" %}
 {% block title %}页面不存在 · 知屿 KnowIsle{% endblock %}
 {% block content %}
+{% from "_illustrations.html" import illo %}
 <div class="mx-auto max-w-lg py-16 text-center animate-fade-up">
-  {# 岛屿意象插画（纯 SVG）：迷雾中的小岛与灯塔 #}
-  <svg class="mx-auto h-36 w-36 text-brand-300 animate-[float-soft_4s_ease-in-out_infinite]" viewBox="0 0 120 120"
-       fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true">
-    <circle cx="60" cy="46" r="26" stroke-width="1.5" class="text-brand-100" stroke-dasharray="3 5"/>
-    <path stroke-linecap="round" stroke-linejoin="round" d="M52 84l3-22h10l3 22"/>
-    <path stroke-linecap="round" stroke-linejoin="round" d="M53 62h14l-2-8h-10l-2 8z"/>
-    <path stroke-linecap="round" d="M60 54v-6"/>
-    <path stroke-linecap="round" d="M42 52l8 2M78 52l-8 2"/>
-    <path stroke-linecap="round" d="M24 92c4-3 8-3 12 0s8 3 12 0M68 92c4-3 8-3 12 0s8 3 12 0"/>
-    <path stroke-linecap="round" d="M36 102c4-3 8-3 12 0s8 3 12 0 8-3 12 0" class="text-brand-200"/>
-  </svg>
+  {{ illo('island', 'mx-auto h-36 w-36 text-brand-300 animate-[float-soft_4s_ease-in-out_infinite]') }}
   <p class="mt-6 text-6xl font-black tracking-tight text-brand-600">404</p>
-  <h1 class="mt-3 text-lg font-semibold text-slate-700">这座岛屿还没有被测绘</h1>
-  <p class="mt-2 text-sm leading-relaxed text-slate-500">
+  <h1 class="mt-3 text-lg font-semibold text-primary">这座岛屿还没有被测绘</h1>
+  <p class="mt-2 text-sm leading-relaxed text-muted">
     页面不存在，或你没有访问该资源的权限。<br>
-    {# 注：越权访问统一返回 404 而非 403，避免暴露资源存在性（文档 §3.2） #}
     换个航向，继续探索吧。
   </p>
   <div class="mt-8 flex flex-wrap items-center justify-center gap-x-4 gap-y-3">

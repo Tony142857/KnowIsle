@@ -1,16 +1,14 @@
 {% extends "base.html" %}
 {% from "_icons.html" import icon %}
 {% from "_illustrations.html" import illo %}
+{% from "_page_header.html" import page_header %}
 {% block title %}搜索 · 知屿 KnowIsle{% endblock %}
 {% block head %}<script src="/static/js/pages/search.js"></script>{% endblock %}
 
 {% block content %}
 <script type="application/json" id="page-data">{{ {"q": q, "type": search_type, "board": board, "course_id": course_id} | tojson }}</script>
 <div x-data="searchPage()" :aria-busy="loading">
-  <header class="text-center">
-    <h1 class="text-2xl font-bold text-slate-800">全站搜索</h1>
-    <p class="mt-1 text-sm text-slate-400">检索全站帖子与上架资料，支持按类型、专业、板块、课程过滤</p>
-  </header>
+  {{ page_header('全站搜索', subtitle='检索全站帖子与上架资料，支持按类型、专业、板块、课程过滤', icon='search') }}
 
   <form @submit.prevent="applyFilters()" class="card mx-auto mt-6 max-w-4xl p-4 sm:p-5" role="search">
     <div class="flex flex-wrap items-center gap-2">
@@ -36,14 +34,14 @@
         <template x-for="c in courseOptions" :key="c.id"><option :value="c.id" x-text="c.name"></option></template>
       </select>
     </div>
-    <p class="mt-2 text-xs text-slate-400">板块过滤仅对帖子生效；专业过滤同时作用于帖子与资源。</p>
-    <div x-show="optionsError" x-cloak role="alert" class="mt-2 text-xs text-red-700" :aria-busy="optionsLoading">
+    <p class="mt-2 text-xs text-muted">板块过滤仅对帖子生效；专业过滤同时作用于帖子与资源。</p>
+    <div x-show="optionsError" x-cloak role="alert" class="mt-2 text-xs text-danger" :aria-busy="optionsLoading">
       <span x-text="optionsError"></span><button type="button" @click="loadOptions()" class="ml-2 underline">重试</button>
     </div>
   </form>
 
   <div x-show="searched" x-cloak class="mx-auto mt-4 flex max-w-4xl flex-wrap items-center gap-2 text-xs">
-    <span class="text-slate-400">当前筛选：</span>
+    <span class="text-muted">当前筛选：</span>
     <span class="badge badge-brand" x-text="typeLabel(type)"></span>
     <button x-show="board" type="button" @click="clearFilter('board')" class="badge badge-slate" x-text="'板块：' + boardLabel(board) + ' ×'"></button>
     <button x-show="majorId" type="button" @click="clearFilter('majorId')" class="badge badge-slate" x-text="'专业：' + majorName() + ' ×'"></button>
@@ -54,60 +52,60 @@
   <div x-show="loading && !searched" x-cloak class="mx-auto mt-6 max-w-3xl space-y-4" aria-hidden="true">
     {% for _ in range(2) %}<div class="card p-5"><div class="skeleton h-5 w-2/3 rounded-md"></div><div class="skeleton mt-3 h-3 w-full rounded-md"></div><div class="skeleton mt-2 h-3 w-1/3 rounded-md"></div></div>{% endfor %}
   </div>
-  <div x-show="error" x-cloak role="alert" class="mx-auto mt-6 max-w-3xl rounded-lg bg-red-50 px-3 py-3 text-sm text-red-600">
+  <div x-show="error" x-cloak role="alert" class="mx-auto mt-6 max-w-3xl rounded-lg bg-danger-soft px-3 py-3 text-sm text-danger">
     <span x-text="error"></span><button type="button" @click="retry()" class="ml-2 font-medium underline">重试</button>
   </div>
 
   <div x-show="!searched && !loading && !error" x-cloak class="empty-state mx-auto mt-6 max-w-3xl bg-white px-4 py-16">
-    {{ illo('search', 'mx-auto w-28 h-28') }}<p class="mt-4 text-slate-600">输入关键词，检索全站帖子与资料</p>
+    {{ illo('search', 'mx-auto w-28 h-28') }}<p class="mt-4 text-secondary">输入关键词，检索全站帖子与资料</p>
   </div>
   <div x-show="searched && !loading && !error && !posts.length && !resources.length" x-cloak
        class="empty-state mx-auto mt-6 max-w-3xl bg-white px-4 py-16">
     {{ illo('search', 'mx-auto w-28 h-28') }}
-    <p class="mt-4 text-slate-600">没有找到与「<span x-text="submittedQuery"></span>」相关的内容</p>
-    <p class="mt-1 text-sm text-slate-400">换个关键词，或清空筛选后重试。</p>
+    <p class="mt-4 text-secondary">没有找到与「<span x-text="submittedQuery"></span>」相关的内容</p>
+    <p class="mt-1 text-sm text-muted">换个关键词，或清空筛选后重试。</p>
     <button type="button" @click="clearAll()" class="btn btn-secondary mt-4">清空筛选</button>
   </div>
 
   <section x-show="posts.length || (searched && type === 'post')" x-cloak class="mx-auto mt-6 max-w-3xl" :aria-busy="postLoading">
-    <h2 class="text-sm font-semibold text-slate-700">帖子 <span class="font-normal text-slate-400" x-text="'共 ' + postsTotal + ' 条'"></span></h2>
+    <h2 class="text-sm font-semibold text-primary">帖子 <span class="font-normal text-muted" x-text="'共 ' + postsTotal + ' 条'"></span></h2>
     <div class="mt-3 space-y-3">
       <template x-for="p in posts" :key="'p' + p.id">
         <a :href="'/posts/' + p.id" class="card card-hover group block p-4">
           <div class="flex items-start gap-3">
             <span class="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-brand-50 text-brand-600" aria-hidden="true">{{ icon('message', 'w-5 h-5') }}</span>
             <div class="min-w-0 flex-1">
-              <div class="flex flex-wrap items-center gap-2"><span class="badge badge-brand" x-text="boardLabel(p.board)"></span><span class="text-base font-medium text-slate-800 group-hover:text-brand-700" x-text="p.title"></span></div>
-              <p class="mt-1 line-clamp-2 text-sm text-slate-500" x-text="p.excerpt"></p>
-              <p class="mt-2 flex flex-wrap gap-3 text-xs text-slate-400"><span x-text="p.author_nickname"></span><span x-text="relTime(p.created_at)"></span><span x-text="'浏览 ' + p.view_count"></span></p>
+              <div class="flex flex-wrap items-center gap-2"><span class="badge badge-brand" x-text="boardLabel(p.board)"></span><span class="text-base font-medium text-primary group-hover:text-brand-700" x-text="p.title"></span></div>
+              <p class="mt-1 line-clamp-2 text-sm text-muted" x-text="p.excerpt"></p>
+              <p class="mt-2 flex flex-wrap gap-3 text-xs text-muted"><span x-text="p.author_nickname"></span><span x-text="relTime(p.created_at)"></span><span x-text="'浏览 ' + p.view_count"></span></p>
             </div>
           </div>
         </a>
       </template>
     </div>
-    <div x-show="postError" x-cloak role="alert" class="mt-3 rounded bg-red-50 px-3 py-2 text-sm text-red-700">
+    <div x-show="postError" x-cloak role="alert" class="mt-3 rounded bg-danger-soft px-3 py-2 text-sm text-danger">
       <span x-text="postError"></span><button type="button" @click="retryGroup('post')" class="ml-2 font-medium underline">重试本页</button>
     </div>
     <div x-show="posts.length < postsTotal" class="mt-4 text-center"><button type="button" @click="loadMore('post')" :disabled="postLoading" :aria-busy="postLoading" class="btn btn-ghost">加载更多帖子</button></div>
   </section>
 
   <section x-show="resources.length || (searched && type === 'resource')" x-cloak class="mx-auto mt-6 max-w-3xl" :aria-busy="resourceLoading">
-    <h2 class="text-sm font-semibold text-slate-700">资源 <span class="font-normal text-slate-400" x-text="'共 ' + resourcesTotal + ' 条'"></span></h2>
+    <h2 class="text-sm font-semibold text-primary">资源 <span class="font-normal text-muted" x-text="'共 ' + resourcesTotal + ' 条'"></span></h2>
     <div class="mt-3 space-y-3">
       <template x-for="r in resources" :key="'r' + r.id">
         <a :href="'/resources/' + r.id" class="card card-hover group block p-4">
           <div class="flex items-start gap-3">
             <span class="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-brand-50 text-brand-600" aria-hidden="true">{{ icon('file-text', 'w-5 h-5') }}</span>
             <div class="min-w-0 flex-1">
-              <div class="flex flex-wrap items-center gap-2"><span class="text-base font-medium text-slate-800 group-hover:text-brand-700" x-text="r.title"></span><span x-show="r.course_name" x-text="r.course_name" class="badge badge-slate"></span></div>
-              <p x-show="r.description" class="mt-1 line-clamp-2 text-sm text-slate-500" x-text="r.description"></p>
-              <p class="mt-2 flex flex-wrap gap-3 text-xs text-slate-400"><span x-text="'评分 ' + (r.rating ?? '—')"></span><span x-text="'下载 ' + r.download_count"></span><span x-text="'收藏 ' + r.fav_count"></span></p>
+              <div class="flex flex-wrap items-center gap-2"><span class="text-base font-medium text-primary group-hover:text-brand-700" x-text="r.title"></span><span x-show="r.course_name" x-text="r.course_name" class="badge badge-slate"></span></div>
+              <p x-show="r.description" class="mt-1 line-clamp-2 text-sm text-muted" x-text="r.description"></p>
+              <p class="mt-2 flex flex-wrap gap-3 text-xs text-muted"><span x-text="'评分 ' + (r.rating ?? '—')"></span><span x-text="'下载 ' + r.download_count"></span><span x-text="'收藏 ' + r.fav_count"></span></p>
             </div>
           </div>
         </a>
       </template>
     </div>
-    <div x-show="resourceError" x-cloak role="alert" class="mt-3 rounded bg-red-50 px-3 py-2 text-sm text-red-700">
+    <div x-show="resourceError" x-cloak role="alert" class="mt-3 rounded bg-danger-soft px-3 py-2 text-sm text-danger">
       <span x-text="resourceError"></span><button type="button" @click="retryGroup('resource')" class="ml-2 font-medium underline">重试本页</button>
     </div>
     <div x-show="resources.length < resourcesTotal" class="mt-4 text-center"><button type="button" @click="loadMore('resource')" :disabled="resourceLoading" :aria-busy="resourceLoading" class="btn btn-ghost">加载更多资源</button></div>

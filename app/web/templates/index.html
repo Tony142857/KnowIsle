@@ -7,15 +7,15 @@
 {% endblock %}
 {% block content %}
 {# ===== Hero：岛屿主题视觉 + 品牌标语 + 登录态分路 CTA + 平台统计（SSR 注入，数字滚动动画） ===== #}
-<section class="relative overflow-hidden rounded-card border border-brand-100 bg-gradient-to-br from-brand-50 via-white to-slate-50 px-6 pt-14 pb-24 text-center shadow-card animate-fade-up">
+<section class="relative overflow-hidden rounded-card border border-brand-100 bg-gradient-to-br from-brand-50 via-white to-surface-page px-6 pt-14 pb-24 text-center shadow-card animate-fade-up">
   {# 装饰性光斑与海浪（纯 CSS/SVG 岛屿意象，不拦截交互） #}
   <div class="pointer-events-none absolute -top-24 -left-24 h-64 w-64 rounded-full bg-brand-300/30 blur-3xl" aria-hidden="true"></div>
   <div class="pointer-events-none absolute -bottom-28 -right-16 h-72 w-72 rounded-full bg-brand-200/40 blur-3xl" aria-hidden="true"></div>
   <div class="pointer-events-none absolute -top-10 right-10 h-40 w-40 rounded-full bg-accent-200/30 blur-2xl" aria-hidden="true"></div>
   <div class="relative">
     <span class="badge badge-accent">学生社区驱动 · 结构化 RAG-AI 学习引擎</span>
-    <h1 class="mt-4 text-display-sm md:text-display text-slate-800">每门课程是一座<span class="text-brand-600">知识岛屿</span></h1>
-    <p class="mx-auto mt-3 max-w-xl text-slate-500">让资料、问答与经验沉淀为可检索的知识——每位学生是岛屿的建设者，社区让孤岛连成群岛。</p>
+    <h1 class="mt-4 text-display-sm md:text-display text-primary">每门课程是一座<span class="text-brand-600">知识岛屿</span></h1>
+    <p class="mx-auto mt-3 max-w-xl text-muted">让资料、问答与经验沉淀为可检索的知识——每位学生是岛屿的建设者，社区让孤岛连成群岛。</p>
     <div class="mt-8 flex items-center justify-center gap-3">
       {% if user %}
       <a href="/library" class="btn btn-primary !px-5 !py-2.5">进入个人知识库</a>
@@ -31,7 +31,7 @@
       {% for value, label in [(stats.courses, '门公共课程'), (stats.resources, '份上架资料'), (stats.posts, '篇社区帖子')] %}
       <div x-data="countUp({{ value }})">
         <p class="text-3xl font-bold tabular-nums text-brand-700" x-text="display">{{ value }}</p>
-        <p class="mt-1 text-xs text-slate-400">{{ label }}</p>
+        <p class="mt-1 text-xs text-muted">{{ label }}</p>
       </div>
       {% endfor %}
     </div>
@@ -51,8 +51,8 @@
 
 {# ===== 板块导览（§4.2）：功能描述导向，图标为内联 SVG 简笔画 ===== #}
 <section id="boards" class="mt-12 scroll-mt-20 animate-fade-up">
-  <h2 class="text-lg font-semibold text-slate-800">板块导览</h2>
-  <p class="mt-1 text-sm text-slate-400">从资料到问答再到经验，一条完整的学习沉淀链路。</p>
+  <h2 class="text-lg font-semibold text-primary">板块导览</h2>
+  <p class="mt-1 text-sm text-muted">从资料到问答再到经验，一条完整的学习沉淀链路。</p>
   <div class="mt-5 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
     {% set cards = [
       ('课程空间', '/majors',
@@ -76,15 +76,15 @@
     ] %}
     {% for name, href, desc, icon_name in cards %}
     <a href="{{ href }}"
-       class="group card-hover block rounded-card border border-slate-200 bg-white p-5 shadow-card">
+       class="group card-hover block rounded-card border border-default bg-white p-5 shadow-card">
       <div class="flex items-center gap-3">
         <span class="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-brand-50 text-brand-600 transition-all duration-island ease-island group-hover:scale-110 group-hover:bg-brand-100">
           {{ icon(icon_name, 'h-5 w-5') }}
         </span>
-        <h3 class="font-semibold text-slate-700 transition-colors group-hover:text-brand-700">{{ name }}</h3>
-        {{ icon('chevron-right', 'ml-auto h-4 w-4 text-slate-300 transition-all duration-island ease-island group-hover:translate-x-1 group-hover:text-brand-500') }}
+        <h3 class="font-semibold text-primary transition-colors group-hover:text-brand-700">{{ name }}</h3>
+        {{ icon('chevron-right', 'ml-auto h-4 w-4 text-disabled transition-all duration-island ease-island group-hover:translate-x-1 group-hover:text-brand-500') }}
       </div>
-      <p class="mt-3 text-sm leading-relaxed text-slate-500">{{ desc }}</p>
+      <p class="mt-3 text-sm leading-relaxed text-muted">{{ desc }}</p>
     </a>
     {% endfor %}
   </div>
@@ -96,7 +96,7 @@
   <div class="grid grid-cols-1 gap-6 lg:grid-cols-2">
     {# 加载占位：接口返回前的骨架屏 #}
     <div x-show="loading" x-cloak aria-busy="true"
-         class="rounded-card border border-slate-200 bg-white p-5 shadow-card lg:col-span-2">
+         class="rounded-card border border-default bg-white p-5 shadow-card lg:col-span-2">
       <div class="skeleton h-4 w-24 rounded-md"></div>
       <div class="mt-4 space-y-3">
         <div class="skeleton h-4 w-2/3 rounded-md"></div>
@@ -105,32 +105,30 @@
       </div>
     </div>
     <div x-show="error" x-cloak role="alert"
-         class="rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700 lg:col-span-2">
+         class="rounded-lg bg-danger-soft px-4 py-3 text-sm text-danger lg:col-span-2">
       <span x-text="error"></span>
-      <button type="button" @click="init()" :disabled="loading" class="ml-2 underline hover:text-red-700">重试</button>
+      <button type="button" @click="init()" :disabled="loading" class="ml-2 underline hover:text-danger">重试</button>
     </div>
 
     {% if user %}
     {# 我的动态：关注课程的新上架资料 #}
     <div x-show="!loading && !error" x-cloak
-         class="rounded-card border border-slate-200 bg-white p-5 shadow-card animate-fade-up d-80">
+         class="rounded-card border border-default bg-white p-5 shadow-card animate-fade-up d-80">
       <div class="flex items-center justify-between">
-        <h2 class="font-semibold text-slate-700">我的动态</h2>
-        <a href="/me" class="inline-flex items-center gap-0.5 text-xs text-slate-400 transition-colors hover:text-brand-700">我的关注 {{ icon('arrow-right', 'h-3 w-3') }}</a>
+        <h2 class="font-semibold text-primary">我的动态</h2>
+        <a href="/me" class="inline-flex items-center gap-0.5 text-xs text-muted transition-colors hover:text-brand-700">我的关注 {{ icon('arrow-right', 'h-3 w-3') }}</a>
       </div>
-      <ul x-show="newResources.length" class="mt-4 divide-y divide-slate-100">
+      <ul x-show="newResources.length" class="mt-4 divide-y divide-default">
         <template x-for="r in newResources" :key="r.id">
           <li class="py-3 first:pt-0 last:pb-0">
             <div class="flex items-start gap-3">
               <span class="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-brand-50 text-brand-600">
-                <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24" aria-hidden="true">
-                  <path stroke-linecap="round" stroke-linejoin="round" d="M12 6.5c-2-1.5-5-1.5-8-.5v12c3-1 6-1 8 .5 2-1.5 5-1.5 8-.5v-12c-3-1-6-1-8 .5zM12 6.5v12"/>
-                </svg>
+                {{ icon('book-open', 'h-4 w-4') }}
               </span>
               <div class="min-w-0">
-                <a :href="r.url" class="block truncate text-sm font-medium text-slate-700 transition-colors hover:text-brand-700"
+                <a :href="r.url" class="block truncate text-sm font-medium text-primary transition-colors hover:text-brand-700"
                    x-text="r.title"></a>
-                <p class="mt-1 text-xs text-slate-400">
+                <p class="mt-1 text-xs text-muted">
                   <a :href="'/courses/' + r.course_id" class="text-brand-600 transition-colors hover:text-brand-700"
                      x-text="r.course_name"></a>
                   <span class="mx-1">·</span><span x-text="rel(r.created_at)"></span>
@@ -141,12 +139,8 @@
         </template>
       </ul>
       <div x-show="!newResources.length" x-cloak class="empty-state mt-4">
-        <svg class="mx-auto h-10 w-10 text-brand-200" fill="none" stroke="currentColor" stroke-width="1.5"
-             viewBox="0 0 24 24" aria-hidden="true">
-          <path stroke-linecap="round" stroke-linejoin="round" d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z"/>
-          <path stroke-linecap="round" d="M8 13h8M8 16h5"/>
-        </svg>
-        <p class="mt-2 text-sm text-slate-500">关注的课程还没有新资料</p>
+        {{ icon('folder-lines', 'mx-auto h-10 w-10 text-brand-200') }}
+        <p class="mt-2 text-sm text-muted">关注的课程还没有新资料</p>
         <a href="/majors" class="mt-2 inline-flex items-center gap-0.5 text-sm text-brand-600 transition-colors hover:text-brand-700">去课程空间逛逛 {{ icon('arrow-right', 'h-3.5 w-3.5') }}</a>
       </div>
     </div>
@@ -154,21 +148,21 @@
 
     {# 社区热帖：登录/匿名共用 #}
     <div x-show="!loading && !error" x-cloak
-         class="rounded-card border border-slate-200 bg-white p-5 shadow-card animate-fade-up d-150">
+         class="rounded-card border border-default bg-white p-5 shadow-card animate-fade-up d-150">
       <div class="flex items-center justify-between">
-        <h2 class="font-semibold text-slate-700">社区热帖</h2>
-        <span class="text-xs text-slate-400">近 7 天</span>
+        <h2 class="font-semibold text-primary">社区热帖</h2>
+        <span class="text-xs text-muted">近 7 天</span>
       </div>
-      <ul x-show="hotPosts.length" class="mt-4 divide-y divide-slate-100">
+      <ul x-show="hotPosts.length" class="mt-4 divide-y divide-default">
         <template x-for="p in hotPosts" :key="p.id">
           <li class="py-3 first:pt-0 last:pb-0">
             <div class="flex items-center gap-2">
               <span class="shrink-0" :class="p.board === 'bounty' ? 'badge badge-accent' : 'badge badge-brand'"
                     x-text="p.board_name"></span>
-              <a :href="p.url" class="min-w-0 truncate text-sm font-medium text-slate-700 transition-colors hover:text-brand-700"
+              <a :href="p.url" class="min-w-0 truncate text-sm font-medium text-primary transition-colors hover:text-brand-700"
                  x-text="p.title"></a>
             </div>
-            <p class="mt-1 flex items-center gap-3 text-xs text-slate-400">
+            <p class="mt-1 flex items-center gap-3 text-xs text-muted">
               <span class="inline-flex items-center gap-0.5 text-brand-600">{{ icon('arrow-up', 'h-3 w-3') }}<span x-text="p.score"></span></span>
               <span x-text="p.comment_count + ' 评论'"></span>
               <span x-text="rel(p.created_at)"></span>
@@ -177,12 +171,8 @@
         </template>
       </ul>
       <div x-show="!hotPosts.length" x-cloak class="empty-state mt-4">
-        <svg class="mx-auto h-10 w-10 text-brand-200" fill="none" stroke="currentColor" stroke-width="1.5"
-             viewBox="0 0 24 24" aria-hidden="true">
-          <path stroke-linecap="round" stroke-linejoin="round" d="M21 12a8 8 0 0 1-8 8H4l2-3a8 8 0 1 1 15-5z"/>
-          <path stroke-linecap="round" d="M8.5 12h.01M12 12h.01M15.5 12h.01"/>
-        </svg>
-        <p class="mt-2 text-sm text-slate-500">最近一周还没有热帖</p>
+        {{ icon('comment', 'mx-auto h-10 w-10 text-brand-200') }}
+        <p class="mt-2 text-sm text-muted">最近一周还没有热帖</p>
         {% if user %}
         <a href="/posts/new" class="mt-2 inline-flex items-center gap-0.5 text-sm text-brand-600 transition-colors hover:text-brand-700">来发第一帖 {{ icon('arrow-right', 'h-3.5 w-3.5') }}</a>
         {% else %}
@@ -194,8 +184,8 @@
     {% if not user %}
     {# 匿名登录引导卡（静态 SSR，不依赖接口） #}
     <div class="flex flex-col justify-center rounded-card border border-brand-100 bg-gradient-to-br from-brand-50 to-white p-5 shadow-card animate-fade-up d-300">
-      <h2 class="font-semibold text-slate-700">登录后解锁你的专属动态</h2>
-      <p class="mt-2 text-sm leading-relaxed text-slate-500">
+      <h2 class="font-semibold text-primary">登录后解锁你的专属动态</h2>
+      <p class="mt-2 text-sm leading-relaxed text-muted">
         关注课程后，新上架的资料会第一时间出现在「我的动态」；
         还能使用个人知识库、AI 问答溯源与发帖互动。
       </p>

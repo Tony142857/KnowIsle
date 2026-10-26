@@ -61,7 +61,14 @@
         this.tab = tab;
         this.syncUrl(true);
         this.activateTab(false);
+        if (window.ZY.motion) ZY.motion.tabs(this.$el);
       },
+      nextTab(direction) {
+        const index = tabs.indexOf(this.tab);
+        this.setTab(tabs[(index + direction + tabs.length) % tabs.length]);
+      },
+      firstTab() { this.setTab(tabs[0]); },
+      lastTab() { this.setTab(tabs[tabs.length - 1]); },
       activateTab(push) {
         this.syncUrl(push);
         if (this.tab === 'resources') this.loadResources();
@@ -149,32 +156,14 @@
     if (!tree) return;
     const empty = document.getElementById('chapter-tree-empty');
     if (empty) empty.classList.add('hidden');
-    const li = document.createElement('li');
-    li.setAttribute('x-data', '{ open: true }');
-    li.setAttribute('data-chapter-id', ch.id);
-    li.className = 'animate-fade-up';
-    const row = document.createElement('div');
-    row.className = 'flex items-center gap-0.5';
-    const spacer = document.createElement('span');
-    spacer.className = 'w-4 shrink-0';
-    const label = document.createElement('button');
-    label.type = 'button';
-    label.dataset.chapterTitle = ch.title;
-    label.setAttribute(':aria-pressed', 'selectedChapter === ' + ch.id);
-    label.className = 'block min-w-0 flex-1 truncate rounded px-2 py-1 text-left text-sm transition-colors';
-    label.setAttribute(':class', 'selectedChapter === ' + ch.id +
-      " ? 'bg-brand-50 text-brand-700 font-medium ring-1 ring-brand-200' : 'text-slate-600 hover:bg-slate-100'");
-    label.setAttribute('@click', 'selectChapter(' + ch.id + ')');
-    label.textContent = ch.title;
-    row.append(spacer, label);
-    li.appendChild(row);
+    const li = ZY.ui.chapterNode(ch);
     if (ch.parent_id) {
       const parent = tree.querySelector('li[data-chapter-id="' + ch.parent_id + '"]');
       if (parent) {
         let ul = parent.querySelector(':scope > ul');
         if (!ul) {
           ul = document.createElement('ul');
-          ul.className = 'ml-3 border-l border-slate-200 pl-2';
+          ul.className = 'ml-3 border-l border-default pl-2';
           parent.appendChild(ul);
         }
         ul.appendChild(li);
@@ -182,6 +171,7 @@
       }
     }
     tree.appendChild(li);
+    if (window.ZY.motion) ZY.motion.enter(li);
   }
 
   function chapterAdder(courseId) {

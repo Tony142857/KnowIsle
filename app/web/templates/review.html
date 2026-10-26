@@ -19,18 +19,18 @@
   {# 任务队列（服务端 query 参数 ?task= 选中）；链接带 id 供裁决成功后局部移除 #}
   <aside class="lg:w-72 shrink-0">
     <div class="card overflow-hidden">
-      <h2 class="border-b border-slate-100 px-4 py-3 text-sm font-semibold text-slate-700">
-        待审任务 <span id="review-queue-count" class="text-xs font-normal text-slate-400">{{ tasks|length }} 条</span>
+      <h2 class="border-b border-default px-4 py-3 text-sm font-semibold text-primary">
+        待审任务 <span id="review-queue-count" class="text-xs font-normal text-muted">{{ tasks|length }} 条</span>
       </h2>
       {% if tasks %}
-      <ul class="divide-y divide-slate-100">
+      <ul class="divide-y divide-default">
         {% for t in tasks %}
         <li>
           <a href="/review?task={{ t.task_id }}" id="task-link-{{ t.task_id }}"
              class="block px-4 py-3 transition-colors
-                    {{ 'bg-brand-50 ring-1 ring-inset ring-brand-200' if selected and selected.task_id == t.task_id else 'hover:bg-slate-50' }}">
-            <p class="truncate text-sm font-medium text-slate-700">{{ t.resource.title }}</p>
-            <p class="mt-0.5 flex items-center justify-between text-xs text-slate-400">
+                    {{ 'bg-brand-50 ring-1 ring-inset ring-brand-200' if selected and selected.task_id == t.task_id else 'hover:bg-surface-inset' }}">
+            <p class="truncate text-sm font-medium text-primary">{{ t.resource.title }}</p>
+            <p class="mt-0.5 flex items-center justify-between text-xs text-muted">
               <span class="truncate">{{ t.resource.course_name }}</span>
               <span class="shrink-0" x-data
                     x-init="$el.textContent = ZY.relTime('{{ t.created_at.isoformat() }}')"
@@ -41,7 +41,7 @@
         {% endfor %}
       </ul>
       {% else %}
-      <p class="px-4 py-8 text-center text-xs text-slate-400">暂无待审任务</p>
+      <p class="px-4 py-8 text-center text-xs text-muted">暂无待审任务</p>
       {% endif %}
     </div>
   </aside>
@@ -52,11 +52,11 @@
     <div class="empty-state py-16">
       {{ illo('inbox', 'mx-auto w-28 h-28') }}
       {% if tasks %}
-      <p class="mt-4 text-slate-600">从左侧选择一条任务开始协审</p>
+      <p class="mt-4 text-secondary">从左侧选择一条任务开始协审</p>
       <a href="/review?task={{ tasks[0].task_id }}" class="btn btn-primary mt-4">开始协审第一条</a>
       {% else %}
-      <p class="mt-4 text-slate-600">你的协审队列是空的</p>
-      <p class="mt-1 text-sm text-slate-400">有新的投稿指派给你时会出现在这里。</p>
+      <p class="mt-4 text-secondary">你的协审队列是空的</p>
+      <p class="mt-1 text-sm text-muted">有新的投稿指派给你时会出现在这里。</p>
       <a href="/majors" class="btn btn-secondary mt-4">去课程空间逛逛</a>
       {% endif %}
     </div>
@@ -65,21 +65,21 @@
       {# 资源信息 #}
       <div class="card p-4">
         <div class="flex flex-wrap items-center gap-3">
-          <h2 class="text-lg font-semibold text-slate-800">{{ selected.resource.title }}</h2>
+          <h2 class="text-lg font-semibold text-primary">{{ selected.resource.title }}</h2>
           <span class="badge badge-slate">
             {{ {'pdf_textbook': 'PDF 教材', 'ppt': 'PPT', 'word': 'Word', 'markdown': 'Markdown'}.get(selected.doc.file_type, selected.doc.file_type) }}
           </span>
         </div>
-        <p class="mt-1 text-sm text-slate-500">
+        <p class="mt-1 text-sm text-muted">
           投稿到 <a href="/courses/{{ selected.resource.course_id }}" class="text-brand-600 hover:underline">{{ selected.course_name }}</a>
           {% if selected.chapter_title %} · {{ selected.chapter_title }}{% endif %}
           · <span x-data x-init="$el.textContent = ZY.relTime('{{ selected.created_at.isoformat() }}')"
                   title="{{ selected.created_at.strftime('%Y-%m-%d %H:%M') }}">{{ selected.created_at.strftime('%Y-%m-%d %H:%M') }}</span> 投稿
         </p>
         {% if selected.resource.description %}
-        <p class="mt-2 whitespace-pre-wrap text-sm text-slate-600">{{ selected.resource.description }}</p>
+        <p class="mt-2 whitespace-pre-wrap text-sm text-secondary">{{ selected.resource.description }}</p>
         {% endif %}
-        <p class="mt-2 text-xs text-slate-400">源文件：{{ selected.doc.file_name }}</p>
+        <p class="mt-2 text-xs text-muted">源文件：{{ selected.doc.file_name }}</p>
       </div>
 
       {# 预检结果 #}
@@ -88,20 +88,20 @@
       {# 已有协审意见（时间线样式：左侧竖线 + 裁决色圆点图标） #}
       {% if selected.records %}
       <div class="card mt-4 p-4">
-        <h3 class="text-sm font-semibold text-slate-700">已提交意见</h3>
-        <ol class="mt-3 space-y-3 border-l-2 border-slate-100 pl-4">
+        <h3 class="text-sm font-semibold text-primary">已提交意见</h3>
+        <ol class="mt-3 space-y-3 border-l-2 border-default pl-4">
           {% for r in selected.records %}
-          <li class="relative text-xs text-slate-600">
+          <li class="relative text-xs text-secondary">
             <span class="absolute -left-[27px] -top-0.5 flex h-5 w-5 items-center justify-center rounded-full ring-2 ring-white
-                         {{ 'bg-brand-500' if r.verdict == 'approve' else 'bg-red-500' }}"
+                         {{ 'bg-brand-500' if r.verdict == 'approve' else 'bg-danger' }}"
                   aria-hidden="true">
               {{ icon('check' if r.verdict == 'approve' else 'x', 'w-3 h-3 text-white') }}
             </span>
             <span class="rounded px-1.5 py-0.5
-                         {{ 'bg-brand-50 text-brand-700' if r.verdict == 'approve' else 'bg-red-50 text-red-600' }}">
+                         {{ 'bg-brand-50 text-brand-700' if r.verdict == 'approve' else 'bg-danger-soft text-danger' }}">
               {{ '通过' if r.verdict == 'approve' else '驳回' }}
             </span>
-            <span class="ml-1 text-slate-500">{{ r.reviewer }}</span>
+            <span class="ml-1 text-muted">{{ r.reviewer }}</span>
             {% if r.comment %}<span class="ml-1">：{{ r.comment }}</span>{% endif %}
           </li>
           {% endfor %}
@@ -111,7 +111,7 @@
 
       {# 在线预览：word/ppt 转换未完成时后端返回 409 JSON，检测后显示「预览生成中」；加载期骨架屏 #}
       <div class="card mt-4 p-4">
-        <h3 class="text-sm font-semibold text-slate-700">在线预览</h3>
+        <h3 class="text-sm font-semibold text-primary">在线预览</h3>
         <div x-show="previewFailed" x-cloak role="status" class="empty-state mt-3 py-12 text-sm">
           <p x-text="previewMessage"></p>
           <button type="button" @click="loadPreview()" class="btn btn-secondary mt-3">立即重试</button>
@@ -119,15 +119,15 @@
         <div x-show="!previewFailed" class="relative mt-3" :aria-busy="previewLoading">
           <div x-show="previewLoading" class="skeleton absolute inset-0 z-10 rounded-lg"></div>
           <template x-if="previewUrl"><iframe :src="previewUrl" @load="checkPreview($event)"
-                  class="h-[36rem] w-full rounded-lg border border-slate-200 bg-slate-50" title="资源预览"></iframe></template>
+                  class="h-[36rem] w-full rounded-lg border border-default bg-surface-inset" title="资源预览"></iframe></template>
         </div>
       </div>
 
       {# 裁决表单（按钮层级：通过实心 brand / 驳回实心 red） #}
       <div class="card mt-4 p-4" :aria-busy="loading">
-        <h3 class="text-sm font-semibold text-slate-700">我的协审意见</h3>
+        <h3 class="text-sm font-semibold text-primary">我的协审意见</h3>
         <p x-show="error" x-text="error" x-cloak role="alert"
-           class="mt-2 rounded bg-red-50 px-3 py-2 text-sm text-red-600"></p>
+           class="mt-2 rounded bg-danger-soft px-3 py-2 text-sm text-danger"></p>
         <p x-show="result" x-cloak
            class="mt-2 rounded bg-brand-50 px-3 py-2 text-sm text-brand-700">
           <span x-text="result"></span>（即将跳转到下一任务）

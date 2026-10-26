@@ -237,6 +237,13 @@ async def test_ensure_quota_creates_row(monkeypatch):
     assert row.used == 0 and row.daily_limit == 30
 
 
+async def test_check_quota_missing_row_is_read_only(monkeypatch):
+    monkeypatch.setattr(quota, "get_config", _fake_daily_limit)
+    session = FakeQuotaSession(None)
+    await check_quota(session, SimpleNamespace(id=7))
+    assert session.added == [] and session.flushed is False
+
+
 async def test_check_quota_passes_with_free_remaining():
     row = SimpleNamespace(used=5, daily_limit=30, bonus_balance=0)
     await check_quota(FakeQuotaSession(row), SimpleNamespace(id=7))

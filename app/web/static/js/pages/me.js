@@ -102,14 +102,17 @@
       async loadKey() {
         this.keyError = '';
         try { this.keyInfo = await ZY.api.get('/api/users/me/llm-key'); }
-        catch (e) { this.keyError = e.message; }
+        catch (e) {
+          if (e.status === 404) this.keyInfo = null;
+          else this.keyError = e.message;
+        }
       },
       startEdit() {
         this.keyEditing = true; this.keyError = '';
         this.keyForm = {
-          base_url: this.keyInfo.base_url || '', api_key: '',
-          model_short: this.keyInfo.model_short || '', model_medium: this.keyInfo.model_medium || '',
-          model_long: this.keyInfo.model_long || '',
+          base_url: this.keyInfo?.base_url || '', api_key: '',
+          model_short: this.keyInfo?.model_short || '', model_medium: this.keyInfo?.model_medium || '',
+          model_long: this.keyInfo?.model_long || '',
         };
       },
       async saveKey() {

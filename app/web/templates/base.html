@@ -7,40 +7,35 @@
   <meta name="description" content="知屿 KnowIsle —— 智能课程知识社区：课程资料库、AI 问答溯源、知屿问答与经验长廊，让每门课程沉淀为一座知识岛屿。">
   <title>{% block title %}知屿 KnowIsle{% endblock %}</title>
   <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
-  {# 前端依赖已全部本地化到 static/vendor（断网可演示） #}
+  {% from "_icons.html" import icon %}
   <script src="/static/vendor/tailwind-3.4.16.js"></script>
-  {# 设计令牌 v2（v1.1「翡翠绿·海岛」）：须在 tailwind Play CDN 之后、页面渲染前 #}
   <script src="/static/js/tailwind-config.js"></script>
   <script src="/static/vendor/htmx-1.9.12.min.js"></script>
-  {# api.js / components.js 须在 Alpine 之前加载（components 经 alpine:init 注册全局组件） #}
   <script defer src="/static/js/api.js"></script>
+  <script defer src="/static/js/render.js"></script>
+  <script defer src="/static/js/motion.js"></script>
   <script defer src="/static/js/components.js"></script>
-  {# Markdown 渲染 + 代码高亮：marked 解析 + DOMPurify 消毒 + highlight.js + ZY.md 封装 #}
+  {% if needs_markdown|default(false) %}
   <script defer src="/static/vendor/marked-12.0.2.min.js"></script>
   <script defer src="/static/vendor/purify-3.1.6.min.js"></script>
   <script defer src="/static/vendor/highlight-11.9.0.min.js"></script>
   <link rel="stylesheet" href="/static/vendor/highlight-github-11.9.0.min.css">
   <script defer src="/static/js/markdown.js"></script>
+  {% endif %}
   <script defer src="/static/js/base.js"></script>
   <script defer src="/static/vendor/alpine-3.14.1.min.js"></script>
   <link rel="stylesheet" href="/static/css/main.css">
   {% block head %}{% endblock %}
 </head>
-<body class="bg-gradient-to-b from-brand-50/40 via-slate-50 to-slate-50 bg-fixed text-slate-800 min-h-screen flex flex-col">
+<body class="min-h-screen bg-surface-page text-primary flex flex-col">
   <a href="#main-content" class="skip-link">跳到正文</a>
   {# ===== 导航栏（§13 通用交互规范：含通知未读角标，30s 轮询） ===== #}
   <header class="bg-white/80 backdrop-blur border-b border-brand-100/80 sticky top-0 z-40 shadow-[0_1px_2px_0_rgb(2_44_34/0.05)]"
           x-data="mobileNav()" @keydown.escape.window="close()">
-    <nav class="max-w-6xl mx-auto px-4 h-14 flex items-center gap-6">
-      <a href="/" class="flex items-center gap-1.5 text-lg font-bold text-brand-700 shrink-0">
-        {# 岛屿意象：海浪上的灯塔（知识灯塔照亮岛屿） #}
-        <svg class="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
-          <path stroke-linecap="round" stroke-linejoin="round" d="M10 21l.8-8h2.4l.8 8"/>
-          <path stroke-linecap="round" stroke-linejoin="round" d="M10.2 9h3.6l-.5-3h-2.6l-.5 3z"/>
-          <path stroke-linecap="round" d="M12 6V3.5M6 5.5 8.5 7M18 5.5 15.5 7"/>
-          <path stroke-linecap="round" d="M2.5 18c1.3-1 2.7-1 4 0M17.5 18c1.3-1 2.7-1 4 0"/>
-        </svg>
-        知屿 <span class="text-sm font-normal text-slate-400">KnowIsle</span>
+    <nav class="max-w-6xl mx-auto px-4 min-h-14 flex flex-wrap items-center gap-x-6 gap-y-2 py-2">
+      <a href="/" class="flex items-center gap-1.5 text-lg font-bold text-brand-700 shrink-0" aria-label="知屿首页">
+        {{ icon('lighthouse', 'h-6 w-6') }}
+        知屿 <span class="text-sm font-normal text-muted">KnowIsle</span>
       </a>
 
       {# 功能板块入口（§4.2）；active 变量由页面路由传入用于高亮（药丸态） #}
@@ -57,7 +52,7 @@
         <a href="{{ href }}" aria-current="{{ 'page' if active == key else 'false' }}"
            class="px-3 py-1.5 rounded-full transition-colors duration-island ease-island
                   {{ 'bg-brand-600 text-white font-medium shadow-sm' if active == key
-                     else 'text-slate-600 hover:text-brand-700 hover:bg-brand-50' }}">
+                     else 'text-secondary hover:text-brand-700 hover:bg-brand-50' }}">
           {{ label }}
         </a>
         {% endfor %}
@@ -66,7 +61,7 @@
         <a href="/review"
            class="px-3 py-1.5 rounded-full transition-colors duration-island ease-island
                   {{ 'bg-brand-600 text-white font-medium shadow-sm' if active == 'review'
-                     else 'text-slate-600 hover:text-brand-700 hover:bg-brand-50' }}">
+                     else 'text-secondary hover:text-brand-700 hover:bg-brand-50' }}">
           协审
         </a>
         {% endif %}
@@ -74,13 +69,13 @@
         <a href="/admin"
            class="px-3 py-1.5 rounded-full transition-colors duration-island ease-island
                   {{ 'bg-brand-600 text-white font-medium shadow-sm' if active == 'admin'
-                     else 'text-slate-600 hover:text-brand-700 hover:bg-brand-50' }}">
+                     else 'text-secondary hover:text-brand-700 hover:bg-brand-50' }}">
           管理后台
         </a>
         <a href="/admin/review"
            class="px-3 py-1.5 rounded-full transition-colors duration-island ease-island
                   {{ 'bg-brand-600 text-white font-medium shadow-sm' if active == 'admin_review'
-                     else 'text-slate-600 hover:text-brand-700 hover:bg-brand-50' }}">
+                     else 'text-secondary hover:text-brand-700 hover:bg-brand-50' }}">
           终审
         </a>
         {% endif %}
@@ -97,7 +92,7 @@
         <form action="/search" method="get" class="hidden md:block" role="search">
           <label for="global-search" class="sr-only">搜索帖子或资料</label>
           <input id="global-search" type="search" name="q" placeholder="搜索帖子 / 资料…" required
-                 class="w-32 rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-sm
+                 class="w-32 rounded-full border border-default bg-surface-inset px-3 py-1.5 text-sm
                         transition-all duration-island ease-island focus:w-48 focus:border-brand-400 focus:bg-white focus:outline-none">
         </form>
         {% if user %}
@@ -105,20 +100,16 @@
            aria-label="贡献分 {{ user.score }}，查看积分明细"><span id="top-score">{{ user.score }}</span> 分</a>
         {% endif %}
         {# 通知未读角标（模块 B5）：HTMX 加载时 + 每 30s 轮询；移动端保留在汉堡按钮左侧 #}
-        <a href="/me#notifications" class="relative text-slate-500 transition-colors hover:text-brand-700" title="站内通知"
+        <a href="/me#notifications" class="relative text-secondary transition-colors hover:text-brand-700" title="站内通知" aria-label="站内通知"
            hx-get="/api/notifications/unread-count" hx-trigger="load, every 30s" hx-swap="none">
-          <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2"
-               viewBox="0 0 24 24" aria-hidden="true">
-            <path stroke-linecap="round" stroke-linejoin="round"
-                  d="M15 17h5l-1.4-1.4A2 2 0 0 1 18 14.2V11a6 6 0 1 0-12 0v3.2a2 2 0 0 1-.6 1.4L4 17h5m6 0v1a3 3 0 1 1-6 0v-1m6 0H9"/>
-          </svg>
+          {{ icon('bell', 'h-5 w-5') }}
           <span id="notif-badge"
                 class="absolute -top-1 -right-1 hidden min-w-4 h-4 px-1 rounded-full
-                       bg-red-500 text-white text-[10px] leading-4 text-center">0</span>
+                       bg-danger text-white text-[10px] leading-4 text-center">0</span>
         </a>
         {# 桌面端登录态区（移动端收纳进汉堡面板） #}
         <div class="hidden md:flex items-center gap-4">
-          <a href="/me" class="text-sm text-slate-600 transition-colors hover:text-brand-700">个人中心</a>
+          <a href="/me" class="text-sm text-secondary transition-colors hover:text-brand-700">个人中心</a>
           {# 登录态：已登录显示昵称 + 退出，未登录显示登录按钮（§13） #}
           {% if user %}
           <span class="flex items-center gap-2 text-sm">
@@ -129,13 +120,13 @@
               {{ user.nickname[:1] }}
             </span>
             {% endif %}
-            <span class="text-slate-700">{{ user.nickname }}</span>
+            <span class="text-primary">{{ user.nickname }}</span>
             {% if user.role == 'admin' %}
             <span class="badge badge-accent !text-[10px] !px-1 !py-0">管理员</span>
             {% endif %}
           </span>
           <form method="post" action="/logout" class="inline">
-            <button type="submit" class="text-sm text-slate-400 transition-colors hover:text-brand-700">退出</button>
+            <button type="submit" class="text-sm text-muted transition-colors hover:text-brand-700">退出</button>
           </form>
           {% else %}
           <a href="/login" class="btn btn-primary !py-1.5 !px-3 text-sm">登录</a>
@@ -144,15 +135,9 @@
         {# 汉堡按钮：仅 md 以下显示，切换移动端导航面板 #}
         <button type="button" x-ref="menuButton" @click="toggle()" :aria-expanded="mobileOpen"
                 :aria-label="mobileOpen ? '关闭导航菜单' : '打开导航菜单'" aria-controls="mobile-navigation"
-                class="md:hidden -mr-1 rounded-md p-1.5 text-slate-600 transition-colors hover:bg-brand-50 hover:text-brand-700">
-          <svg x-show="!mobileOpen" class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2"
-               viewBox="0 0 24 24" aria-hidden="true">
-            <path stroke-linecap="round" d="M4 6h16M4 12h16M4 18h16"/>
-          </svg>
-          <svg x-show="mobileOpen" x-cloak class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2"
-               viewBox="0 0 24 24" aria-hidden="true">
-            <path stroke-linecap="round" d="M6 6l12 12M18 6L6 18"/>
-          </svg>
+                class="icon-button md:hidden -mr-1 text-secondary transition-colors hover:bg-brand-50 hover:text-brand-700">
+          <span x-show="!mobileOpen">{{ icon('menu', 'h-6 w-6') }}</span>
+          <span x-show="mobileOpen" x-cloak>{{ icon('x', 'h-6 w-6') }}</span>
         </button>
       </div>
     </nav>
@@ -163,7 +148,7 @@
         <form action="/search" method="get" class="pb-2" role="search">
           <label for="mobile-search" class="sr-only">搜索帖子或资料</label>
           <input id="mobile-search" type="search" name="q" placeholder="搜索帖子 / 资料…" required
-                 class="w-full rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm
+                 class="w-full rounded-md border border-default bg-surface-inset px-3 py-2 text-sm
                         focus:border-brand-400 focus:bg-white focus:outline-none">
         </form>
         {% if user %}
@@ -176,7 +161,7 @@
         <a href="{{ href }}" aria-current="{{ 'page' if active == key else 'false' }}" @click="mobileOpen = false"
            class="block rounded-md px-3 py-2 text-sm transition-colors
                   {{ 'bg-brand-50 text-brand-700 font-medium' if active == key
-                     else 'text-slate-600 hover:text-brand-700 hover:bg-brand-50' }}">
+                     else 'text-secondary hover:text-brand-700 hover:bg-brand-50' }}">
           {{ label }}
         </a>
         {% endfor %}
@@ -184,7 +169,7 @@
         <a href="/review" @click="mobileOpen = false"
            class="block rounded-md px-3 py-2 text-sm transition-colors
                   {{ 'bg-brand-50 text-brand-700 font-medium' if active == 'review'
-                     else 'text-slate-600 hover:text-brand-700 hover:bg-brand-50' }}">
+                     else 'text-secondary hover:text-brand-700 hover:bg-brand-50' }}">
           协审
         </a>
         {% endif %}
@@ -192,20 +177,20 @@
         <a href="/admin" @click="mobileOpen = false"
            class="block rounded-md px-3 py-2 text-sm transition-colors
                   {{ 'bg-brand-50 text-brand-700 font-medium' if active == 'admin'
-                     else 'text-slate-600 hover:text-brand-700 hover:bg-brand-50' }}">
+                     else 'text-secondary hover:text-brand-700 hover:bg-brand-50' }}">
           管理后台
         </a>
         <a href="/admin/review" @click="mobileOpen = false"
            class="block rounded-md px-3 py-2 text-sm transition-colors
                   {{ 'bg-brand-50 text-brand-700 font-medium' if active == 'admin_review'
-                     else 'text-slate-600 hover:text-brand-700 hover:bg-brand-50' }}">
+                     else 'text-secondary hover:text-brand-700 hover:bg-brand-50' }}">
           终审
         </a>
         {% endif %}
-        <div class="border-t border-slate-100 pt-2 mt-2">
+        <div class="border-t border-default pt-2 mt-2">
           {% if user %}
           <a href="/me" @click="mobileOpen = false"
-             class="flex items-center gap-2 rounded-md px-3 py-2 text-sm text-slate-600 hover:bg-brand-50 hover:text-brand-700">
+             class="flex items-center gap-2 rounded-md px-3 py-2 text-sm text-secondary hover:bg-brand-50 hover:text-brand-700">
             {% if user.avatar_url %}
             <img src="{{ user.avatar_url }}" alt="" class="w-6 h-6 rounded-full object-cover ring-1 ring-brand-100">
             {% else %}
@@ -220,7 +205,7 @@
           </a>
           <form method="post" action="/logout">
             <button type="submit"
-                    class="block w-full text-left rounded-md px-3 py-2 text-sm text-slate-400 hover:bg-brand-50 hover:text-brand-700">退出登录</button>
+                    class="block w-full text-left rounded-md px-3 py-2 text-sm text-muted hover:bg-brand-50 hover:text-brand-700">退出登录</button>
           </form>
           {% else %}
           <a href="/login"
@@ -232,35 +217,29 @@
   </header>
 
   {# ===== 全局提示（表单提交 / 操作结果的 flash 区域，HTMX 可局部替换） ===== #}
-  <div id="flash" class="max-w-6xl w-full mx-auto px-4 mt-4 empty:mt-0">
+  <div id="flash" class="page-shell w-full mx-auto px-4 mt-4 empty:mt-0 sm:px-6 lg:px-8">
     {% block flash %}{% endblock %}
   </div>
 
-  <main id="main-content" tabindex="-1" class="flex-1 max-w-6xl w-full mx-auto px-4 py-8">
+  <main id="main-content" tabindex="-1" class="page-shell w-full flex-1 mx-auto px-4 py-8 sm:px-6 lg:px-8">
     {% block content %}{% endblock %}
   </main>
 
-  {# ===== 页脚（v1.1 分栏重排：品牌语 / 板块链接 / 项目信息） ===== #}
-  <footer class="border-t border-brand-100/80 bg-white/80 backdrop-blur">
-    <div class="max-w-6xl mx-auto px-4 py-8 grid grid-cols-1 gap-6 text-sm sm:grid-cols-3">
+  <footer class="border-t border-default bg-surface-raised/90">
+    <div class="page-shell mx-auto px-4 py-8 grid grid-cols-1 gap-6 text-sm sm:px-6 sm:grid-cols-3 lg:px-8">
       <div>
         <p class="flex items-center gap-1.5 font-bold text-brand-700">
-          <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M10 21l.8-8h2.4l.8 8"/>
-            <path stroke-linecap="round" stroke-linejoin="round" d="M10.2 9h3.6l-.5-3h-2.6l-.5 3z"/>
-            <path stroke-linecap="round" d="M12 6V3.5M6 5.5 8.5 7M18 5.5 15.5 7"/>
-            <path stroke-linecap="round" d="M2.5 18c1.3-1 2.7-1 4 0M17.5 18c1.3-1 2.7-1 4 0"/>
-          </svg>
+          {{ icon('lighthouse', 'h-5 w-5') }}
           知屿 KnowIsle
         </p>
-        <p class="mt-2 text-xs leading-relaxed text-slate-400">
+        <p class="mt-2 text-xs leading-relaxed text-muted">
           每门课程是一座知识岛屿，每位学生是岛屿的建设者。<br>
           学习通管理"教"，知屿沉淀"学"。
         </p>
       </div>
       <nav aria-label="板块链接">
-        <p class="text-xs font-medium text-slate-500">板块</p>
-        <ul class="mt-2 space-y-1.5 text-xs text-slate-400">
+        <p class="text-xs font-medium text-secondary">板块</p>
+        <ul class="mt-2 space-y-1.5 text-xs text-muted">
           <li><a href="/majors" class="transition-colors hover:text-brand-700">课程空间</a></li>
           <li><a href="/boards/qa" class="transition-colors hover:text-brand-700">知屿问答</a></li>
           <li><a href="/boards/experience" class="transition-colors hover:text-brand-700">经验长廊</a></li>
@@ -268,8 +247,8 @@
         </ul>
       </nav>
       <nav aria-label="项目信息">
-        <p class="text-xs font-medium text-slate-500">项目</p>
-        <ul class="mt-2 space-y-1.5 text-xs text-slate-400">
+        <p class="text-xs font-medium text-secondary">项目</p>
+        <ul class="mt-2 space-y-1.5 text-xs text-muted">
           <li><a href="/" class="transition-colors hover:text-brand-700">首页</a></li>
           <li><a href="/search" class="transition-colors hover:text-brand-700">全站搜索</a></li>
           <li><a href="/library" class="transition-colors hover:text-brand-700">个人知识库</a></li>
@@ -277,7 +256,7 @@
         </ul>
       </nav>
     </div>
-    <div class="border-t border-slate-100 py-3 text-center text-xs text-slate-400">
+    <div class="border-t border-default py-3 text-center text-xs text-muted">
       知屿 KnowIsle · 学生社区驱动的智能课程知识社区
     </div>
   </footer>
@@ -291,18 +270,14 @@
   <div x-data="confirmModal()" @zy-ask.window="ask($event.detail)">
     <div x-show="open" x-cloak @keydown.escape.window="close()"
          role="dialog" aria-modal="true" aria-labelledby="zy-confirm-title"
-         class="fixed inset-0 z-50 flex items-center justify-center bg-brand-950/40 p-4 animate-fade-in">
-      <div class="w-full max-w-sm rounded-card bg-white p-5 shadow-lift animate-scale-in" @click.outside="close()">
-        <h2 id="zy-confirm-title" class="flex items-center gap-1.5 text-base font-semibold text-slate-800">
+         class="fixed inset-0 z-50 flex items-center justify-center modal-backdrop p-4 animate-fade-in">
+      <div class="modal-panel w-full max-w-sm rounded-card bg-white p-5 shadow-lift animate-scale-in" @click.outside="close()">
+        <h2 id="zy-confirm-title" class="flex items-center gap-1.5 text-base font-semibold text-primary">
           {# 危险变体警示图标（danger: true 时显示） #}
-          <svg x-show="danger" x-cloak class="h-5 w-5 shrink-0 text-red-500" viewBox="0 0 24 24"
-               fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
-            <path stroke-linecap="round" stroke-linejoin="round"
-                  d="M12 9v4m0 4h.01M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0Z"/>
-          </svg>
+          <span x-show="danger" x-cloak class="shrink-0 text-danger">{{ icon('warn', 'h-5 w-5') }}</span>
           <span x-text="title"></span>
         </h2>
-        <p x-show="message" x-text="message" x-cloak class="mt-2 text-sm leading-6 text-slate-600"></p>
+        <p x-show="message" x-text="message" x-cloak class="mt-2 text-sm leading-6 text-secondary"></p>
         <input x-show="withInput" x-model="input" type="text" :placeholder="placeholder"
                @keydown.enter.prevent="confirm()"
                class="input-base mt-3">
@@ -319,17 +294,17 @@
   {# 资源 / 帖子 / 评论共用的举报理由对话框，调用 ZY.report(type, id) 打开。 #}
   <div x-data="reportModal()" @zy-report.window="ask($event.detail)">
     <div x-show="open" x-cloak role="dialog" aria-modal="true" aria-labelledby="zy-report-title"
-         class="fixed inset-0 z-50 flex items-center justify-center bg-brand-950/40 p-4">
-      <form @submit.prevent="submit()" class="w-full max-w-md rounded-card bg-white p-5 shadow-lift"
+         class="fixed inset-0 z-50 flex items-center justify-center modal-backdrop p-4">
+      <form @submit.prevent="submit()" class="modal-panel w-full max-w-md rounded-card bg-white p-5 shadow-lift"
             :aria-busy="loading">
-        <h2 id="zy-report-title" class="text-base font-semibold text-slate-800">举报内容</h2>
-        <p class="mt-1 text-sm text-slate-500">请说明需要管理员核查的问题，恶意举报可能影响信用分。</p>
-        <label for="zy-report-reason" class="mt-4 block text-sm font-medium text-slate-700">举报理由</label>
+        <h2 id="zy-report-title" class="text-base font-semibold text-primary">举报内容</h2>
+        <p class="mt-1 text-sm text-muted">请说明需要管理员核查的问题，恶意举报可能影响信用分。</p>
+        <label for="zy-report-reason" class="mt-4 block text-sm font-medium text-primary">举报理由</label>
         <textarea id="zy-report-reason" x-model="reason" rows="4" maxlength="500" required
                   aria-describedby="zy-report-error" class="input-base mt-1"
                   placeholder="例如：资料内容与标题不符、包含侵权或攻击性内容"></textarea>
         <p id="zy-report-error" x-show="error" x-text="error" x-cloak role="alert"
-           class="mt-2 rounded bg-red-50 px-3 py-2 text-sm text-red-700"></p>
+           class="mt-2 rounded bg-danger-soft px-3 py-2 text-sm text-danger"></p>
         <div class="mt-4 flex justify-end gap-2">
           <button type="button" @click="close()" :disabled="loading" class="btn btn-ghost">取消</button>
           <button type="submit" :disabled="loading || !reason.trim()" :aria-busy="loading"
@@ -340,7 +315,7 @@
   </div>
 
   {# 全局轻提示容器（ZY.toast，components.js）；错误提示驻留，需手动关闭。 #}
-  <div id="zy-toasts" aria-label="操作提示" class="pointer-events-none fixed right-4 top-16 z-[60] flex max-w-[calc(100vw-2rem)] flex-col items-end gap-2"></div>
+  <div id="zy-toasts" role="region" aria-label="操作提示" class="pointer-events-none fixed right-4 top-16 z-[60] flex max-w-[calc(100vw-2rem)] flex-col items-end gap-2"></div>
 
   {# 未读角标更新逻辑已外置到 /static/js/base.js（CSP 兼容，v1.0） #}
 </body>

@@ -1,6 +1,8 @@
 {% extends "base.html" %}
+{% set needs_markdown = true %}
 {% from "_icons.html" import icon %}
 {% from "_illustrations.html" import illo %}
+{% from "_page_header.html" import page_header %}
 {% block title %}{{ board_name }} · 知屿 KnowIsle{% endblock %}
 {% block head %}
 {# 页面交互外置（CSP）：同步加载，须先于 defer 的 Alpine 启动（x-data 引用全局函数） #}
@@ -14,7 +16,7 @@
 <article class="card card-hover p-4 animate-fade-up {{ delay }}
                 {{ 'card-accent-left' if p.status == 'featured' }}">
   <div class="flex flex-wrap items-center gap-2">
-    <a href="/posts/{{ p.id }}" class="text-base font-medium text-slate-800 transition-colors hover:text-brand-700">
+    <a href="/posts/{{ p.id }}" class="text-base font-medium text-primary transition-colors hover:text-brand-700">
       {{ p.title }}
     </a>
     {% if p.status == 'featured' %}
@@ -32,10 +34,10 @@
     <span class="badge badge-slate">AI 已答</span>
     {% endif %}
   </div>
-  <p class="mt-1 line-clamp-2 text-sm text-slate-500">{{ p.excerpt }}</p>
+  <p class="mt-1 line-clamp-2 text-sm text-muted">{{ p.excerpt }}</p>
   {# 经验帖 AI 摘要折叠卡（§13：AI 摘要折叠卡） #}
   {% if board == 'experience' and p.ai_summary %}
-  <details class="mt-2 rounded-lg border border-accent-200/70 bg-accent-50/60 px-3 py-2 text-xs text-slate-500">
+  <details class="mt-2 rounded-lg border border-accent-200/70 bg-accent-50/60 px-3 py-2 text-xs text-muted">
     <summary class="cursor-pointer select-none text-accent-700/80 transition-colors hover:text-accent-800">
       <span class="badge badge-accent mr-1 !px-1 !py-0 !text-[10px]">AI</span>AI 摘要
     </summary>
@@ -43,7 +45,7 @@
          x-init='ZY.md.renderInto($el, {{ p.ai_summary|tojson }})'></div>
   </details>
   {% endif %}
-  <div class="mt-2 flex flex-wrap items-center gap-3 text-xs text-slate-400">
+  <div class="mt-2 flex flex-wrap items-center gap-3 text-xs text-muted">
     <span class="flex items-center gap-1">
       {% if p.author.avatar_url %}
       <img src="{{ p.author.avatar_url }}" alt="" class="w-4 h-4 rounded-full object-cover ring-1 ring-brand-100">
@@ -55,67 +57,64 @@
     {# SSR 先渲染绝对日期，Alpine 就绪后替换为相对时间（无 JS 环境仍可读）。
        图标放外层，避免 x-init 的 $el.textContent 替换把图标抹掉 #}
     <span class="flex items-center gap-1">
-      {{ icon('clock', 'w-3.5 h-3.5 text-slate-400') }}
+      {{ icon('clock', 'w-3.5 h-3.5 text-muted') }}
       <span x-data x-init="$el.textContent = ZY.relTime('{{ p.created_at.isoformat() }}')"
             title="{{ p.created_at.strftime('%Y-%m-%d %H:%M') }}">{{ p.created_at.strftime('%Y-%m-%d') }}</span>
     </span>
     {% endif %}
-    <span class="flex items-center gap-1">{{ icon('eye', 'w-3.5 h-3.5 text-slate-400') }}{{ p.view_count }}</span>
-    <span class="flex items-center gap-1">{{ icon('comment', 'w-3.5 h-3.5 text-slate-400') }}{{ p.comment_count }}</span>
-    <span class="flex items-center gap-1">{{ icon('thumb-up', 'w-3.5 h-3.5 text-slate-400') }}{{ p.vote_score }}</span>
+    <span class="flex items-center gap-1">{{ icon('eye', 'w-3.5 h-3.5 text-muted') }}{{ p.view_count }}</span>
+    <span class="flex items-center gap-1">{{ icon('comment', 'w-3.5 h-3.5 text-muted') }}{{ p.comment_count }}</span>
+    <span class="flex items-center gap-1">{{ icon('thumb-up', 'w-3.5 h-3.5 text-muted') }}{{ p.vote_score }}</span>
     {% for t in p.tags %}
     <a href="/boards/{{ board }}?tag={{ t|urlencode }}"
-       class="rounded bg-slate-100 px-1.5 py-0.5 text-slate-500 transition-colors hover:bg-brand-50 hover:text-brand-700">#{{ t }}</a>
+       class="rounded bg-surface-inset px-1.5 py-0.5 text-muted transition-colors hover:bg-brand-50 hover:text-brand-700">#{{ t }}</a>
     {% endfor %}
   </div>
 </article>
 {% endmacro %}
 
 {% block content %}
-<div class="mb-6 flex flex-wrap items-end gap-3 animate-fade-up">
-  {# 板块切换 Tab（§4.2 四板块）：下划线式导航，窄屏横向滚动 #}
-  <div class="flex max-w-full gap-1 overflow-x-auto border-b border-slate-200 text-sm
-              [&::-webkit-scrollbar]:hidden [scrollbar-width:none]">
+{% call page_header(board_name, subtitle='围绕课程与经验，查找值得沉淀的内容', icon='message') %}
+  <a href="/posts/new?board={{ board }}" class="btn btn-primary">发帖</a>
+{% endcall %}
+<div class="mb-6 flex flex-wrap items-end gap-3">
+  <nav class="page-tabs" aria-label="社区板块">
     {% for key, label in [('qa', '知屿问答'), ('discuss', '讨论区'), ('experience', '经验长廊'), ('bounty', '资料求援')] %}
-    <a href="/boards/{{ key }}"
-       class="shrink-0 -mb-px border-b-2 px-4 py-2 transition-colors duration-island ease-island
-              {{ 'border-brand-600 font-medium text-brand-700' if board == key
-                 else 'border-transparent text-slate-600 hover:border-brand-300 hover:text-brand-700' }}">{{ label }}</a>
+    <a href="/boards/{{ key }}" class="page-tab" aria-current="{{ 'page' if board == key else 'false' }}">{{ label }}</a>
     {% endfor %}
-  </div>
+  </nav>
   {% if tag %}
-  <p class="flex items-center gap-1.5 text-sm text-slate-500">
+  <p class="flex items-center gap-1.5 text-sm text-muted">
     标签筛选：<span class="badge badge-brand">#{{ tag }}</span>
     <a href="/boards/{{ board }}" class="text-brand-600 transition-colors hover:text-brand-700 hover:underline">清除</a>
   </p>
   {% endif %}
   {% if grade %}
-  <p class="flex items-center gap-1.5 text-sm text-slate-500">
+  <p class="flex items-center gap-1.5 text-sm text-muted">
     届别筛选：<span class="badge badge-brand">{{ grade }}</span>
     <a href="/boards/{{ board }}" class="text-brand-600 transition-colors hover:text-brand-700 hover:underline">清除</a>
   </p>
   {% endif %}
   {% if course_id %}
-  <p class="flex items-center gap-1.5 text-sm text-slate-500">
+  <p class="flex items-center gap-1.5 text-sm text-muted">
     课程筛选：<span class="badge badge-brand">{{ course.name if course else ('课程 #' ~ course_id) }}</span>
     <a href="/boards/{{ board }}" class="text-brand-600 transition-colors hover:text-brand-700 hover:underline">清除</a>
   </p>
   {% endif %}
-  <a href="/posts/new?board={{ board }}" class="btn btn-primary ml-auto">发帖</a>
 </div>
 
 {# 经验长廊：精华区入口 + 标签云 + 届别过滤（§13） #}
 {% if board == 'experience' and ssr_ok and (tag_cloud or grades) %}
 <div class="card mb-4 p-4 animate-fade-up">
   <div class="flex flex-wrap items-center gap-2 text-xs">
-    <span class="font-medium text-slate-500">精华区</span>
+    <span class="font-medium text-muted">精华区</span>
     {% if featured %}
     <a href="/boards/experience" class="badge badge-accent transition-colors hover:bg-accent-200">全部帖子</a>
     {% else %}
     <a href="/boards/experience?featured=1" class="badge badge-accent transition-colors hover:bg-accent-200">只看精华</a>
     {% endif %}
     {% if grades %}
-    <span class="ml-3 font-medium text-slate-500">按届别</span>
+    <span class="ml-3 font-medium text-muted">按届别</span>
     {% for g in grades %}
     <a href="/boards/experience?grade={{ g|urlencode }}"
        class="badge transition-colors {{ 'badge-brand' if grade == g else 'badge-slate hover:bg-brand-50 hover:text-brand-700' }}">{{ g }}</a>
@@ -126,15 +125,15 @@
   {# 标签云：pill 大小按频次分三档（相对本页最大频次） #}
   {% set max_count = (tag_cloud | map(attribute='count') | list | max) or 1 %}
   <div class="mt-2 flex flex-wrap items-center gap-2 text-xs">
-    <span class="font-medium text-slate-500">标签云</span>
+    <span class="font-medium text-muted">标签云</span>
     {% for t in tag_cloud %}
     {% set tier = 2 if t.count >= max_count * 0.66 else (1 if t.count >= max_count * 0.33 else 0) %}
     <a href="/boards/experience?tag={{ t.tag|urlencode }}"
        aria-label="标签 {{ t.tag }}，出现 {{ t.count }} 次"
        class="rounded-full transition-colors duration-island ease-island
-              {{ 'bg-brand-100 text-brand-800' if tag == t.tag else 'bg-slate-100 text-slate-500 hover:bg-brand-50 hover:text-brand-700' }}
+              {{ 'bg-brand-100 text-brand-800' if tag == t.tag else 'bg-surface-inset text-muted hover:bg-brand-50 hover:text-brand-700' }}
               {{ ['px-2 py-0.5', 'px-2.5 py-1 font-medium', 'px-3 py-1 text-sm font-medium'][tier] }}">
-      #{{ t.tag }} <span class="text-slate-400">{{ t.count }}</span>
+      #{{ t.tag }} <span class="text-muted">{{ t.count }}</span>
     </a>
     {% endfor %}
   </div>
@@ -160,33 +159,33 @@
 <nav class="mt-6 flex items-center justify-center gap-1.5 text-sm" aria-label="分页">
   {% if page > 1 %}
   <a href="/boards/{{ board }}?page={{ page - 1 }}{{ extra_qs }}"
-     class="rounded-md border border-slate-200 bg-white px-3 py-1.5 text-slate-600 transition-colors hover:border-brand-300 hover:text-brand-700">上一页</a>
+     class="rounded-md border border-default bg-white px-3 py-1.5 text-secondary transition-colors hover:border-brand-300 hover:text-brand-700">上一页</a>
   {% else %}
-  <span class="rounded-md border border-slate-100 px-3 py-1.5 text-slate-300" aria-disabled="true">上一页</span>
+  <span class="rounded-md border border-default px-3 py-1.5 text-disabled" aria-disabled="true">上一页</span>
   {% endif %}
   {% if lo > 1 %}
   <a href="/boards/{{ board }}?page=1{{ extra_qs }}"
-     class="rounded-md border border-slate-200 bg-white px-3 py-1.5 text-slate-600 transition-colors hover:border-brand-300 hover:text-brand-700">1</a>
-  {% if lo > 2 %}<span class="px-1 text-slate-300">…</span>{% endif %}
+     class="rounded-md border border-default bg-white px-3 py-1.5 text-secondary transition-colors hover:border-brand-300 hover:text-brand-700">1</a>
+  {% if lo > 2 %}<span class="px-1 text-disabled">…</span>{% endif %}
   {% endif %}
   {% for i in range(lo, hi + 1) %}
     {% if i == page %}
     <span class="rounded-md bg-brand-600 px-3 py-1.5 font-medium text-white shadow-sm" aria-current="page">{{ i }}</span>
     {% else %}
     <a href="/boards/{{ board }}?page={{ i }}{{ extra_qs }}"
-       class="rounded-md border border-slate-200 bg-white px-3 py-1.5 text-slate-600 transition-colors hover:border-brand-300 hover:text-brand-700">{{ i }}</a>
+       class="rounded-md border border-default bg-white px-3 py-1.5 text-secondary transition-colors hover:border-brand-300 hover:text-brand-700">{{ i }}</a>
     {% endif %}
   {% endfor %}
   {% if hi < pages %}
-  {% if hi < pages - 1 %}<span class="px-1 text-slate-300">…</span>{% endif %}
+  {% if hi < pages - 1 %}<span class="px-1 text-disabled">…</span>{% endif %}
   <a href="/boards/{{ board }}?page={{ pages }}{{ extra_qs }}"
-     class="rounded-md border border-slate-200 bg-white px-3 py-1.5 text-slate-600 transition-colors hover:border-brand-300 hover:text-brand-700">{{ pages }}</a>
+     class="rounded-md border border-default bg-white px-3 py-1.5 text-secondary transition-colors hover:border-brand-300 hover:text-brand-700">{{ pages }}</a>
   {% endif %}
   {% if page < pages %}
   <a href="/boards/{{ board }}?page={{ page + 1 }}{{ extra_qs }}"
-     class="rounded-md border border-slate-200 bg-white px-3 py-1.5 text-slate-600 transition-colors hover:border-brand-300 hover:text-brand-700">下一页</a>
+     class="rounded-md border border-default bg-white px-3 py-1.5 text-secondary transition-colors hover:border-brand-300 hover:text-brand-700">下一页</a>
   {% else %}
-  <span class="rounded-md border border-slate-100 px-3 py-1.5 text-slate-300" aria-disabled="true">下一页</span>
+  <span class="rounded-md border border-default px-3 py-1.5 text-disabled" aria-disabled="true">下一页</span>
   {% endif %}
 </nav>
 {% endif %}
@@ -194,8 +193,8 @@
 {% elif ssr_ok %}
 <div class="empty-state bg-white py-16 animate-fade-up">
   {{ illo('island', 'mx-auto w-28 h-28') }}
-  <p class="mt-4 text-slate-600">还没有帖子</p>
-  <p class="mt-1 text-sm text-slate-400">
+  <p class="mt-4 text-secondary">还没有帖子</p>
+  <p class="mt-1 text-sm text-muted">
     {% if tag %}该标签下暂无帖子，<a href="/boards/{{ board }}" class="text-brand-600 hover:underline">查看全部</a>。
     {% else %}点击右上角「发帖」，成为第一个分享的人。{% endif %}
   </p>
@@ -221,14 +220,14 @@
     </div>
     {% endfor %}
   </div>
-  <div x-show="error" x-cloak role="alert" class="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">
+  <div x-show="error" x-cloak role="alert" class="rounded-lg bg-danger-soft px-3 py-2 text-sm text-danger">
     <span x-text="error"></span><button type="button" @click="load()" class="ml-2 font-medium underline">重试</button>
   </div>
   <div id="board-fallback-list" class="space-y-3"></div>
   <div x-show="loaded && !items.length" x-cloak class="empty-state bg-white py-16">
     {{ illo('island', 'mx-auto w-28 h-28') }}
-    <p class="mt-4 text-slate-600">还没有帖子</p>
-    <p class="mt-1 text-sm text-slate-400">点击右上角「发帖」，成为第一个分享的人。</p>
+    <p class="mt-4 text-secondary">还没有帖子</p>
+    <p class="mt-1 text-sm text-muted">点击右上角「发帖」，成为第一个分享的人。</p>
     <a href="/posts/new?board={{ board }}" class="btn btn-primary mt-4">去发帖 {{ icon('arrow-right', 'w-4 h-4') }}</a>
   </div>
 </div>
@@ -238,31 +237,31 @@
 <template id="board-post-card">
   <article class="card card-hover p-4 animate-fade-up" data-slot="root">
     <div class="flex flex-wrap items-center gap-2">
-      <a data-slot="title" href="#" class="text-base font-medium text-slate-800 transition-colors hover:text-brand-700"></a>
+      <a data-slot="title" href="#" class="text-base font-medium text-primary transition-colors hover:text-brand-700"></a>
       <span data-slot="badge-featured" hidden class="badge badge-accent">精华</span>
       <span data-slot="badge-settled" hidden class="badge badge-brand">已结算</span>
       <span data-slot="badge-bounty" hidden class="badge badge-accent"></span>
       <span data-slot="badge-accepted" hidden class="badge badge-brand">已采纳</span>
       <span data-slot="badge-ai" hidden class="badge badge-slate">AI 已答</span>
     </div>
-    <p data-slot="excerpt" class="mt-1 line-clamp-2 text-sm text-slate-500"></p>
+    <p data-slot="excerpt" class="mt-1 line-clamp-2 text-sm text-muted"></p>
     <details data-slot="ai-summary" hidden
-             class="mt-2 rounded-lg border border-accent-200/70 bg-accent-50/60 px-3 py-2 text-xs text-slate-500">
+             class="mt-2 rounded-lg border border-accent-200/70 bg-accent-50/60 px-3 py-2 text-xs text-muted">
       <summary class="cursor-pointer select-none text-accent-700/80 transition-colors hover:text-accent-800">
         <span class="badge badge-accent mr-1 !px-1 !py-0 !text-[10px]">AI</span>AI 摘要
       </summary>
       <div data-slot="ai-summary-body" class="md-body mt-1 leading-6"></div>
     </details>
-    <div class="mt-2 flex flex-wrap items-center gap-3 text-xs text-slate-400">
+    <div class="mt-2 flex flex-wrap items-center gap-3 text-xs text-muted">
       <span class="flex items-center gap-1">
         <img data-slot="avatar" hidden alt="" class="w-4 h-4 rounded-full object-cover ring-1 ring-brand-100">
         <span data-slot="author"></span>
       </span>
       <span data-slot="grade" hidden class="badge badge-slate"></span>
-      <span class="flex items-center gap-1">{{ icon('clock', 'w-3.5 h-3.5 text-slate-400') }}<span data-slot="time"></span></span>
-      <span class="flex items-center gap-1">{{ icon('eye', 'w-3.5 h-3.5 text-slate-400') }}<span data-slot="views"></span></span>
-      <span class="flex items-center gap-1">{{ icon('comment', 'w-3.5 h-3.5 text-slate-400') }}<span data-slot="comments"></span></span>
-      <span class="flex items-center gap-1">{{ icon('thumb-up', 'w-3.5 h-3.5 text-slate-400') }}<span data-slot="votes"></span></span>
+      <span class="flex items-center gap-1">{{ icon('clock', 'w-3.5 h-3.5 text-muted') }}<span data-slot="time"></span></span>
+      <span class="flex items-center gap-1">{{ icon('eye', 'w-3.5 h-3.5 text-muted') }}<span data-slot="views"></span></span>
+      <span class="flex items-center gap-1">{{ icon('comment', 'w-3.5 h-3.5 text-muted') }}<span data-slot="comments"></span></span>
+      <span class="flex items-center gap-1">{{ icon('thumb-up', 'w-3.5 h-3.5 text-muted') }}<span data-slot="votes"></span></span>
       <span data-slot="tags" class="contents"></span>
     </div>
   </article>

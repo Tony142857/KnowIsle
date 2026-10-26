@@ -1,0 +1,78 @@
+{% from "_icons.html" import icon %}
+{% from "_illustrations.html" import illo %}
+
+{% macro status_badge(status, label='') %}
+{% set styles = {
+  'approved': ('badge-success', '已上架'), 'parsed': ('badge-success', '已完成'),
+  'active': ('badge-success', '正常'), 'resolved': ('badge-success', '已解决'),
+  'pending': ('badge-warning', '处理中'), 'co_reviewing': ('badge-warning', '审核中'),
+  'co_review': ('badge-warning', '协审中'), 'final': ('badge-warning', '终审中'),
+  'precheck': ('badge-slate', '预检中'), 'parsing': ('badge-slate', '解析中'),
+  'rejected': ('badge-danger', '已驳回'), 'failed': ('badge-danger', '失败'),
+  'disabled': ('badge-slate', '已停用'), 'closed': ('badge-slate', '已关闭'),
+} %}
+{% set style, default_label = styles.get(status, ('badge-slate', status)) %}
+<span class="badge {{ style }}">{{ label or default_label }}</span>
+{% endmacro %}
+
+{% macro empty_state(title, description='', illustration='island', action_href='', action_label='') %}
+<div class="empty-state bg-surface-raised py-12 sm:py-16" role="status">
+  {{ illo(illustration, 'mx-auto w-24 h-24 sm:w-28 sm:h-28') }}
+  <h2 class="mt-4 text-base font-semibold text-primary">{{ title }}</h2>
+  {% if description %}<p class="mx-auto mt-1 max-w-md text-sm text-muted">{{ description }}</p>{% endif %}
+  {% if action_href %}<a href="{{ action_href }}" class="btn btn-primary mt-5">{{ action_label }}</a>{% endif %}
+</div>
+{% endmacro %}
+
+{% macro pagination(page, pages, href) %}
+{% if pages > 1 %}
+<nav class="pagination mt-6 text-sm" aria-label="分页">
+  {% if page > 1 %}<a href="{{ href }}{{ page - 1 }}" class="btn-ghost">上一页</a>{% else %}<span class="text-muted" aria-disabled="true">上一页</span>{% endif %}
+  <span class="text-muted" aria-current="page">{{ page }} / {{ pages }}</span>
+  {% if page < pages %}<a href="{{ href }}{{ page + 1 }}" class="btn-ghost">下一页</a>{% else %}<span class="text-muted" aria-disabled="true">下一页</span>{% endif %}
+</nav>
+{% endif %}
+{% endmacro %}
+
+{% macro tabs(items, current, name='tabs') %}
+<div class="page-tabs" role="tablist" aria-label="{{ name }}">
+  {% for key, label in items %}
+  <button type="button" role="tab" id="tab-{{ name }}-{{ key }}" class="page-tab"
+          aria-selected="{{ 'true' if current == key else 'false' }}"
+          @click="setTab('{{ key }}')" @keydown.right.prevent="nextTab(1)" @keydown.left.prevent="nextTab(-1)"
+          @keydown.home.prevent="firstTab()" @keydown.end.prevent="lastTab()">{{ label }}</button>
+  {% endfor %}
+</div>
+{% endmacro %}
+
+{% macro form_field(id, label, help='', required=false) %}
+<div class="form-field">
+  <label for="{{ id }}" class="field-label">{{ label }}{% if required %} <span class="text-danger" aria-hidden="true">*</span>{% endif %}</label>
+  {{ caller() }}
+  {% if help %}<p id="{{ id }}-help" class="field-help">{{ help }}</p>{% endif %}
+</div>
+{% endmacro %}
+
+{% macro filter_bar(label='筛选') %}
+<div class="filter-bar" role="search" aria-label="{{ label }}">{{ caller() }}</div>
+{% endmacro %}
+
+{% macro modal(id, title) %}
+<div id="{{ id }}" x-show="open" x-cloak role="dialog" aria-modal="true" aria-label="{{ title }}"
+     class="fixed inset-0 z-50 flex items-center justify-center modal-backdrop p-4">
+  <div class="modal-panel w-full max-w-md rounded-card bg-surface-raised p-5 shadow-lift">
+    <h2 class="text-base font-semibold text-primary">{{ title }}</h2>
+    {{ caller() }}
+  </div>
+</div>
+{% endmacro %}
+
+{% macro list_row(title, meta='') %}
+<div class="list-row">
+  <div class="min-w-0 flex-1">
+    <p class="font-medium text-primary">{{ title }}</p>
+    {% if meta %}<p class="mt-0.5 text-xs text-muted">{{ meta }}</p>{% endif %}
+  </div>
+  {{ caller() }}
+</div>
+{% endmacro %}

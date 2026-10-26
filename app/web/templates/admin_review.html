@@ -17,59 +17,59 @@
 
 {# 终审队列：每个任务完整展开（协审意见聚合 + 预检摘要 + 预览 + 裁决） #}
 <section>
-  <h2 class="mb-3 text-lg font-semibold text-slate-700">
-    待终审 <span id="final-queue-count" class="text-xs font-normal text-slate-400">{{ final_tasks|length }} 条</span>
+  <h2 class="mb-3 text-lg font-semibold text-primary">
+    待终审 <span id="final-queue-count" class="text-xs font-normal text-muted">{{ final_tasks|length }} 条</span>
   </h2>
   {% if final_tasks %}
   <div class="space-y-6">
     {% for t in final_tasks %}
     <div class="card p-4" id="final-task-{{ t.task_id }}" x-data="finalVerdict({{ t.task_id }}, {{ t.preview_url|tojson }})">
       <div class="flex flex-wrap items-center gap-3">
-        <h3 class="text-base font-semibold text-slate-800">{{ t.resource.title }}</h3>
+        <h3 class="text-base font-semibold text-primary">{{ t.resource.title }}</h3>
         <span class="badge badge-accent">待终审</span>
-        <span class="ml-auto text-xs text-slate-400">
+        <span class="ml-auto text-xs text-muted">
           进入终审
           <span x-data x-init="$el.textContent = ZY.relTime('{{ t.created_at.isoformat() }}')"
                 title="{{ t.created_at.strftime('%Y-%m-%d %H:%M') }}">{{ t.created_at.strftime('%Y-%m-%d %H:%M') }}</span>
         </span>
       </div>
-      <p class="mt-1 text-sm text-slate-500">
+      <p class="mt-1 text-sm text-muted">
         投稿到 <a href="/courses/{{ t.resource.course_id }}" class="text-brand-600 hover:underline">{{ t.course_name }}</a>
         · 投稿人 {{ t.uploader_nickname }}
       </p>
       {% if t.resource.description %}
-      <p class="mt-2 whitespace-pre-wrap text-sm text-slate-600">{{ t.resource.description }}</p>
+      <p class="mt-2 whitespace-pre-wrap text-sm text-secondary">{{ t.resource.description }}</p>
       {% endif %}
 
       <div class="mt-4 grid gap-4 lg:grid-cols-2">
         {{ precheck_panel(t.precheck) }}
 
         {# 协审意见聚合（时间线样式：左侧竖线 + 裁决色圆点图标） #}
-        <div class="rounded-card border border-slate-200 bg-slate-50/50 p-4">
-          <h4 class="text-sm font-semibold text-slate-700">协审意见</h4>
+        <div class="rounded-card border border-default bg-surface-inset/50 p-4">
+          <h4 class="text-sm font-semibold text-primary">协审意见</h4>
           {% if t.records %}
-          <ol class="mt-3 space-y-3 border-l-2 border-slate-100 pl-4">
+          <ol class="mt-3 space-y-3 border-l-2 border-default pl-4">
             {% for r in t.records %}
-            <li class="relative text-xs text-slate-600">
+            <li class="relative text-xs text-secondary">
               <span class="absolute -left-[27px] -top-0.5 flex h-5 w-5 items-center justify-center rounded-full ring-2 ring-white
-                           {{ 'bg-brand-500' if r.verdict == 'approve' else 'bg-red-500' }}"
+                           {{ 'bg-brand-500' if r.verdict == 'approve' else 'bg-danger' }}"
                     aria-hidden="true">
                 {{ icon('check' if r.verdict == 'approve' else 'x', 'w-3 h-3 text-white') }}
               </span>
               <span class="rounded px-1.5 py-0.5
-                           {{ 'bg-brand-50 text-brand-700' if r.verdict == 'approve' else 'bg-red-50 text-red-600' }}">
+                           {{ 'bg-brand-50 text-brand-700' if r.verdict == 'approve' else 'bg-danger-soft text-danger' }}">
                 {{ '通过' if r.verdict == 'approve' else '驳回' }}
               </span>
-              <span class="ml-1 text-slate-500">{{ r.reviewer }}</span>
-              <span class="ml-1 text-slate-400" x-data
+              <span class="ml-1 text-muted">{{ r.reviewer }}</span>
+              <span class="ml-1 text-muted" x-data
                     x-init="$el.textContent = ZY.relTime('{{ r.created_at.isoformat() }}')"
                     title="{{ r.created_at.strftime('%Y-%m-%d %H:%M') }}">{{ r.created_at.strftime('%m-%d %H:%M') }}</span>
-              {% if r.comment %}<p class="mt-1 pl-1 text-slate-600">{{ r.comment }}</p>{% endif %}
+              {% if r.comment %}<p class="mt-1 pl-1 text-secondary">{{ r.comment }}</p>{% endif %}
             </li>
             {% endfor %}
           </ol>
           {% else %}
-          <p class="mt-2 text-xs text-slate-400">暂无协审意见记录。</p>
+          <p class="mt-2 text-xs text-muted">暂无协审意见记录。</p>
           {% endif %}
         </div>
       </div>
@@ -85,15 +85,15 @@
           <div x-show="!previewFailed" class="relative" :aria-busy="previewLoading">
             <div x-show="previewLoading" class="skeleton absolute inset-0 z-10 rounded-lg"></div>
             <template x-if="previewUrl"><iframe :src="previewUrl" @load="checkPreview($event)"
-                    class="h-[28rem] w-full rounded-lg border border-slate-200 bg-slate-50" title="资源预览"></iframe></template>
+                    class="h-[28rem] w-full rounded-lg border border-default bg-surface-inset" title="资源预览"></iframe></template>
           </div>
         </div>
       </div>
 
       {# 终审裁决 #}
-      <div class="mt-4 border-t border-slate-100 pt-4" :aria-busy="loading">
+      <div class="mt-4 border-t border-default pt-4" :aria-busy="loading">
         <p x-show="error" x-text="error" x-cloak role="alert"
-           class="mb-2 rounded bg-red-50 px-3 py-2 text-sm text-red-600"></p>
+           class="mb-2 rounded bg-danger-soft px-3 py-2 text-sm text-danger"></p>
         <p x-show="result" x-cloak
            class="mb-2 rounded bg-brand-50 px-3 py-2 text-sm text-brand-700">
           <span x-text="result"></span>（该任务已从队列移除）
@@ -117,8 +117,8 @@
   {% else %}
   <div class="empty-state py-16">
     {{ illo('inbox', 'mx-auto w-28 h-28') }}
-    <p class="mt-4 text-slate-600">终审队列已清空</p>
-    <p class="mt-1 text-sm text-slate-400">新的投稿通过协审后会进入这里。</p>
+    <p class="mt-4 text-secondary">终审队列已清空</p>
+    <p class="mt-1 text-sm text-muted">新的投稿通过协审后会进入这里。</p>
     <a href="/admin" class="btn btn-secondary mt-4">返回管理后台</a>
   </div>
   {% endif %}
@@ -127,21 +127,21 @@
 {# 等待协审（可改派 / 直审）；改派走「搜索 → 选择」两步弹窗，直审走全局 confirmModal #}
 {% if co_tasks %}
 <section class="mt-10" x-data="coReviewBoard()">
-  <h2 class="mb-3 text-lg font-semibold text-slate-700">
-    等待协审 <span id="co-queue-count" class="text-xs font-normal text-slate-400">{{ co_tasks|length }} 条</span>
+  <h2 class="mb-3 text-lg font-semibold text-primary">
+    等待协审 <span id="co-queue-count" class="text-xs font-normal text-muted">{{ co_tasks|length }} 条</span>
   </h2>
   <div class="card overflow-hidden">
-    <ul class="divide-y divide-slate-100">
+    <ul class="divide-y divide-default">
       {% for t in co_tasks %}
       <li class="flex flex-wrap items-center gap-3 px-4 py-3 text-sm" id="co-task-{{ t.task_id }}" :aria-busy="busyTask === {{ t.task_id }}">
-        <span class="min-w-0 flex-1 truncate text-slate-700">{{ t.resource.title }}</span>
-        <span class="text-xs text-slate-400">{{ t.course_name }} · {{ t.uploader_nickname }}</span>
-        <span class="text-xs text-slate-400" x-data
+        <span class="min-w-0 flex-1 truncate text-primary">{{ t.resource.title }}</span>
+        <span class="text-xs text-muted">{{ t.course_name }} · {{ t.uploader_nickname }}</span>
+        <span class="text-xs text-muted" x-data
               x-init="$el.textContent = ZY.relTime('{{ t.created_at.isoformat() }}')"
               title="{{ t.created_at.strftime('%Y-%m-%d %H:%M') }}">{{ t.created_at.strftime('%m-%d %H:%M') }}</span>
         <span class="badge badge-accent" data-slot="review-state">等待协审 · {{ t.assignee_count }} 人</span>
         <button @click="openReassign({{ t.task_id }})" :disabled="busyTask === {{ t.task_id }}"
-                class="rounded-md border border-slate-300 px-2 py-1 text-xs text-slate-600 transition-colors hover:bg-slate-50 disabled:opacity-50">
+                class="rounded-md border border-strong px-2 py-1 text-xs text-secondary transition-colors hover:bg-surface-inset disabled:opacity-50">
           改派
         </button>
         <button @click="askDirect({{ t.task_id }}, 'approve')" :disabled="busyTask === {{ t.task_id }}" :aria-busy="busyTask === {{ t.task_id }}"
@@ -149,7 +149,7 @@
           直审通过
         </button>
         <button @click="askDirect({{ t.task_id }}, 'reject')" :disabled="busyTask === {{ t.task_id }}"
-                class="rounded-md bg-red-600 px-2 py-1 text-xs text-white transition-colors hover:bg-red-700 disabled:opacity-50">
+                class="rounded-md bg-danger px-2 py-1 text-xs text-white transition-colors hover:bg-danger-strong disabled:opacity-50">
           直审驳回
         </button>
       </li>
@@ -161,10 +161,10 @@
      不选人直接确认 = 自动重指派；a11y 焦点圈定由 coReviewBoard.init 接入 #}
   <div x-show="reassignOpen" x-cloak @keydown.escape.window="closeReassign()"
        id="reassign-modal" role="dialog" aria-modal="true" aria-label="改派协审员"
-       class="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4">
+       class="fixed inset-0 z-50 flex items-center justify-center modal-backdrop p-4">
     <div class="w-full max-w-md rounded-card bg-white p-5 shadow-lift" @click.outside="closeReassign()">
-      <h2 class="text-base font-semibold text-slate-800">改派协审员</h2>
-      <p class="mt-1 text-xs text-slate-400">搜索并点击选择新协审员（可多选）；不选择直接确认则自动重指派。</p>
+      <h2 class="text-base font-semibold text-primary">改派协审员</h2>
+      <p class="mt-1 text-xs text-muted">搜索并点击选择新协审员（可多选）；不选择直接确认则自动重指派。</p>
       <div class="mt-3 flex gap-2">
         <input type="text" x-model="rq" x-ref="reassignInput" placeholder="学号 / 昵称"
                aria-label="搜索协审员"
@@ -174,23 +174,23 @@
                 class="btn btn-primary"
                 x-text="searching ? '搜索中…' : '搜索'"></button>
       </div>
-      <div x-show="searchError" x-cloak role="alert" class="mt-2 rounded bg-red-50 px-3 py-2 text-sm text-red-600">
+      <div x-show="searchError" x-cloak role="alert" class="mt-2 rounded bg-danger-soft px-3 py-2 text-sm text-danger">
         <span x-text="searchError"></span><button type="button" @click="searchReviewers()" class="ml-2 underline">重试</button>
       </div>
-      <p x-show="candidates && !candidates.length" x-cloak class="mt-3 text-sm text-slate-400">
+      <p x-show="candidates && !candidates.length" x-cloak class="mt-3 text-sm text-muted">
         无匹配用户，换个关键词试试。
       </p>
       <ul x-show="candidates && candidates.length" x-cloak
-          class="mt-3 max-h-56 divide-y divide-slate-100 overflow-y-auto rounded-md border border-slate-200">
+          class="mt-3 max-h-56 divide-y divide-default overflow-y-auto rounded-md border border-default">
         <template x-for="u in candidates" :key="u.id">
           <li>
             <button type="button" @click="togglePick(u)" :disabled="u.role !== 'reviewer'" :aria-pressed="isPicked(u)"
-                    class="flex w-full items-center gap-2 px-3 py-2 text-left text-sm transition-colors disabled:cursor-not-allowed disabled:text-slate-300"
-                    :class="isPicked(u) ? 'bg-brand-50' : 'hover:bg-slate-50'">
+                    class="flex w-full items-center gap-2 px-3 py-2 text-left text-sm transition-colors disabled:cursor-not-allowed disabled:text-disabled"
+                    :class="isPicked(u) ? 'bg-brand-50' : 'hover:bg-surface-inset'">
               <span class="min-w-0 flex-1 truncate"
                     x-text="u.nickname + '（' + (u.student_no || '无学号') + '）'"></span>
               <span class="shrink-0 rounded px-1.5 py-0.5 text-xs"
-                    :class="u.role === 'reviewer' ? 'bg-brand-50 text-brand-700' : 'bg-slate-100 text-slate-400'"
+                    :class="u.role === 'reviewer' ? 'bg-brand-50 text-brand-700' : 'bg-surface-inset text-muted'"
                     x-text="roleLabel(u.role)"></span>
               <span x-show="isPicked(u)" x-cloak class="shrink-0 text-brand-600">
                 {{ icon('check', 'w-4 h-4') }}
@@ -199,10 +199,10 @@
           </li>
         </template>
       </ul>
-      <p x-show="selected.length" x-cloak class="mt-2 text-xs text-slate-500">
+      <p x-show="selected.length" x-cloak class="mt-2 text-xs text-muted">
         已选 <span x-text="selected.length"></span> 人：<span x-text="selected.map(u => u.nickname).join('、')"></span>
       </p>
-      <div x-show="opError" x-cloak role="alert" class="mt-2 rounded bg-red-50 px-3 py-2 text-sm text-red-600">
+      <div x-show="opError" x-cloak role="alert" class="mt-2 rounded bg-danger-soft px-3 py-2 text-sm text-danger">
         <span x-text="opError"></span><button type="button" @click="confirmReassign()" :disabled="loading" class="ml-2 underline">重试改派</button>
       </div>
       <div class="mt-4 flex justify-end gap-2">
@@ -219,19 +219,19 @@
 {# 最近完成 #}
 {% if done_tasks %}
 <section class="mt-10">
-  <h2 class="mb-3 text-lg font-semibold text-slate-700">最近完成</h2>
+  <h2 class="mb-3 text-lg font-semibold text-primary">最近完成</h2>
   <div class="card overflow-hidden">
-    <ul class="divide-y divide-slate-100">
+    <ul class="divide-y divide-default">
       {% for t in done_tasks %}
       <li class="flex flex-wrap items-center gap-3 px-4 py-3 text-sm">
-        <span class="min-w-0 flex-1 truncate text-slate-700">{{ t.resource.title }}</span>
-        <span class="text-xs text-slate-400">{{ t.course_name }}</span>
+        <span class="min-w-0 flex-1 truncate text-primary">{{ t.resource.title }}</span>
+        <span class="text-xs text-muted">{{ t.course_name }}</span>
         <span class="rounded px-2 py-0.5 text-xs
-                     {{ 'bg-brand-50 text-brand-700' if t.resource.review_status == 'approved' else 'bg-red-50 text-red-600' }}">
+                     {{ 'bg-brand-50 text-brand-700' if t.resource.review_status == 'approved' else 'bg-danger-soft text-danger' }}">
           {{ '已上架' if t.resource.review_status == 'approved' else '已驳回' }}
         </span>
         {% if t.finished_at %}
-        <span class="text-xs text-slate-400" x-data
+        <span class="text-xs text-muted" x-data
               x-init="$el.textContent = ZY.relTime('{{ t.finished_at.isoformat() }}')"
               title="{{ t.finished_at.strftime('%Y-%m-%d %H:%M') }}">{{ t.finished_at.strftime('%Y-%m-%d %H:%M') }}</span>
         {% endif %}

@@ -682,8 +682,7 @@ async def test_ensure_quota_new_row_bonus_balance_zero(monkeypatch):
     with pytest.raises(HTTPException) as exc_info:
         await quota.check_quota(session, user)
     assert exc_info.value.status_code == 429
-    row = next(o for o in session.added if isinstance(o, AiQuota))
-    assert (row.used, row.daily_limit, row.bonus_balance) == (0, 0, 0)
+    assert not any(isinstance(o, AiQuota) for o in session.added)
     # consume（§20.5 B1 原子扣减）：锁内复检额度已尽 → 429，不超扣成负余额
     session = FakeSession(results=[FakeResult(scalar=None)])
     with pytest.raises(HTTPException) as exc_info:

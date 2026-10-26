@@ -1,29 +1,11 @@
-/* 知屿 KnowIsle Tailwind Play CDN 设计令牌（v1.2「翡翠绿·海岛」设计令牌 v3）。
- * 须在 vendor/tailwind-*.js 之后、任何使用扩展类的页面渲染前加载（defer 按序）。
- * CSP 兼容：外置文件，无内联脚本。
- *
- * 令牌约定（后续批次页面统一遵守）：
- * - brand  = 翡翠绿系品牌主色十档 + 950（主色 600）；旧 sky-* 硬编码一律改走 brand；
- * - accent = 暖沙色辅助色板十档（点缀 / 精华 / 悬赏 / 高亮场景）；
- * - shadow-card / shadow-lift：卡片静态 / 悬浮两级阴影（brand 系色调）；
- * - rounded-card：卡片统一圆角；
- * - ease-island / duration-island：统一动效曲线与时长；
- * - animate-fade-up / animate-fade-in / animate-scale-in / animate-pulse-dot：
- *   入场与打字点动画（keyframes 实体定义在 main.css，Play CDN 按需生成 keyframes
- *   不可靠，令牌仅引用名字）；
- * - 骨架屏 shimmer：main.css `.skeleton` 自带 keyframes，无需令牌；
- * - text-display / text-display-sm：Hero 大标题字级令牌；
- * - text-title / text-card-title（v1.2 新增）：页标题 / 卡片标题字级，补齐
- *   text-2xl 到 text-base 之间断档的字级阶梯，配合 _page_header.html 页头宏使用；
- * - gap-section（v1.2 新增）：页面级区块间距令牌（2.5rem），替代各处 mt-4/6/8/12 混用。
- */
+/* 知屿 KnowIsle 设计令牌 v4：品牌色 + 语义表面/文字/边框/状态，零构建。 */
 tailwind.config = {
   theme: {
     extend: {
       colors: {
         brand: {
           50: '#ecfdf5', 100: '#d1fae5', 200: '#a7f3d0', 300: '#6ee7b7',
-          400: '#34d399', 500: '#10b981', 600: '#059669', 700: '#047857',
+          400: '#34d399', 500: '#10b981', 600: '#047857', 700: '#046c52',
           800: '#065f46', 900: '#064e3b', 950: '#022c22',
         },
         accent: {
@@ -31,33 +13,38 @@ tailwind.config = {
           400: '#e8b23a', 500: '#dd9424', 600: '#c47420', 700: '#a3541e',
           800: '#86431f', 900: '#6f381c',
         },
+        surface: {
+          page: '#f6f8f7', raised: '#ffffff', inset: '#eef3f0', subtle: '#f1f5f3',
+        },
+        primary: '#17262e', secondary: '#405462', muted: '#526873', disabled: '#9aa9a2',
+        inverse: '#17262e',
+        slate: {400: '#526873', 500: '#526873'},
+        default: '#d7e1dc', strong: '#a9bab2',
+        success: '#047857', warning: '#a3541e', danger: '#b4232a', info: '#1d5f85',
+        'danger-soft': '#fee4e2', 'danger-border': '#f5b8bc', 'danger-strong': '#911c23',
       },
       boxShadow: {
-        card: '0 1px 2px 0 rgb(2 44 34 / 0.06)',
-        lift: '0 10px 28px -8px rgb(5 150 105 / 0.18), 0 2px 8px -2px rgb(2 44 34 / 0.08)',
+        card: '0 1px 2px 0 rgb(23 38 46 / 0.05)',
+        lift: '0 12px 32px -14px rgb(23 38 46 / 0.18), 0 2px 8px -4px rgb(23 38 46 / 0.08)',
       },
-      borderRadius: {
-        card: '0.75rem',
-      },
+      borderRadius: {card: '0.875rem'},
       fontSize: {
-        display: ['2.5rem', { lineHeight: '1.2', letterSpacing: '-0.02em', fontWeight: '700' }],
-        'display-sm': ['2rem', { lineHeight: '1.25', letterSpacing: '-0.02em', fontWeight: '700' }],
-        title: ['1.75rem', { lineHeight: '1.3', letterSpacing: '-0.01em', fontWeight: '700' }],
-        'card-title': ['1.0625rem', { lineHeight: '1.4', fontWeight: '600' }],
+        display: ['2.75rem', {lineHeight: '1.12', letterSpacing: '-0.025em', fontWeight: '750'}],
+        'display-sm': ['2.125rem', {lineHeight: '1.18', letterSpacing: '-0.02em', fontWeight: '750'}],
+        title: ['1.75rem', {lineHeight: '1.28', letterSpacing: '-0.012em', fontWeight: '700'}],
+        'card-title': ['1.0625rem', {lineHeight: '1.45', fontWeight: '650'}],
+        body: ['0.9375rem', {lineHeight: '1.75'}],
+        caption: ['0.75rem', {lineHeight: '1.55'}],
+        num: ['1.5rem', {lineHeight: '1.2', fontWeight: '700'}],
+        code: ['0.8125rem', {lineHeight: '1.65'}],
       },
-      spacing: {
-        section: '2.5rem',
-      },
-      transitionTimingFunction: {
-        island: 'cubic-bezier(0.22, 1, 0.36, 1)',
-      },
-      transitionDuration: {
-        island: '200ms',
-      },
+      spacing: {section: '2.5rem', reading: '48rem', wide: '80rem'},
+      transitionTimingFunction: {island: 'cubic-bezier(0.22, 1, 0.36, 1)'},
+      transitionDuration: {island: '200ms'},
       animation: {
-        'fade-up': 'fade-up 0.35s cubic-bezier(0.22, 1, 0.36, 1) both',
-        'fade-in': 'fade-in 0.3s ease-out both',
-        'scale-in': 'scale-in 0.25s cubic-bezier(0.22, 1, 0.36, 1) both',
+        'fade-up': 'fade-up 0.2s cubic-bezier(0.22, 1, 0.36, 1) both',
+        'fade-in': 'fade-in 0.18s ease-out both',
+        'scale-in': 'scale-in 0.2s cubic-bezier(0.22, 1, 0.36, 1) both',
         'pulse-dot': 'pulse-dot 1.2s ease-in-out infinite',
       },
     },
